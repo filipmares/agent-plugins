@@ -44,13 +44,9 @@ Example configuration:
 ```json
 {
   "mcpServers": {
-    "web-fetcher": {
+    "my-plugin": {
       "command": "node",
-      "args": ["/path/to/plugins/web-tools/web-fetcher/src/index.js"]
-    },
-    "json-formatter": {
-      "command": "node",
-      "args": ["/path/to/plugins/development-tools/json-formatter/src/index.js"]
+      "args": ["/path/to/plugins/category/my-plugin/src/index.js"]
     }
   }
 }
@@ -64,25 +60,11 @@ Installation varies by plugin. Check each plugin's README for specific instructi
 
 ## Using Plugins
 
-Once installed, AI assistants can access plugin functionality automatically. For example:
-
-- Ask Claude Code to "fetch the content from example.com" (using web-fetcher)
-- Request "format this JSON" (using json-formatter)
-- Use natural language to interact with plugin capabilities
+Once installed, AI assistants can access plugin functionality automatically through natural language interactions.
 
 ## Testing Plugins
 
-Many plugins can be tested standalone before integrating with AI assistants:
-
-```bash
-# Test JSON formatter
-cd plugins/development-tools/json-formatter
-node src/index.js format '{"test": "data"}'
-
-# Test web fetcher
-cd plugins/web-tools/web-fetcher
-node src/index.js https://example.com
-```
+Many plugins can be tested standalone before integrating with AI assistants. Check each plugin's README for specific testing instructions.
 
 ## Creating Your Own Plugin
 

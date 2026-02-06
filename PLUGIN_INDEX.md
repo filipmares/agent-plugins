@@ -17,7 +17,7 @@ Plugins for web-related functionality.
 
 | Plugin | Description | Version | Compatibility |
 |--------|-------------|---------|---------------|
-| [web-fetcher](./plugins/web-tools/web-fetcher) | Fetch and parse web content for AI analysis | 1.0.0 | Claude Code, Copilot CLI |
+| _No plugins yet_ | Be the first to contribute! | - | - |
 
 [Browse all web tools →](./plugins/web-tools)
 
@@ -29,7 +29,7 @@ Plugins for code development and build automation.
 
 | Plugin | Description | Version | Compatibility |
 |--------|-------------|---------|---------------|
-| [json-formatter](./plugins/development-tools/json-formatter) | Format and validate JSON with various options | 1.0.0 | Claude Code, Copilot CLI |
+| _No plugins yet_ | Be the first to contribute! | - | - |
 
 [Browse all development tools →](./plugins/development-tools)
 

@@ -4,8 +4,7 @@ Plugins for code development, formatting, analysis, and build automation.
 
 ## Available Plugins
 
-### [JSON Formatter](./json-formatter)
-Format, validate, and manipulate JSON data with various options including pretty-printing, minification, and key sorting.
+Currently no plugins in this category. Be the first to contribute!
 
 ## Contributing
 

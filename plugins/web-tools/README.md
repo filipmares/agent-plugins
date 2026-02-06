@@ -4,8 +4,7 @@ Plugins for web-related functionality including scraping, HTTP requests, and bro
 
 ## Available Plugins
 
-### [Web Fetcher](./web-fetcher)
-Fetch and parse web content for AI analysis. Simple HTTP/HTTPS client for retrieving web pages and extracting content.
+Currently no plugins in this category. Be the first to contribute!
 
 ## Contributing
 

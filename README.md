@@ -59,8 +59,8 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guid
 📋 View the complete [Plugin Index](./PLUGIN_INDEX.md) for a detailed catalog of all plugins.
 
 Browse by category:
-- [Web Tools](./plugins/web-tools) - 1 plugin
-- [Development Tools](./plugins/development-tools) - 1 plugin
+- [Web Tools](./plugins/web-tools) - Coming soon
+- [Development Tools](./plugins/development-tools) - Coming soon
 - [Data Tools](./plugins/data-tools) - Coming soon
 - [Utilities](./plugins/utilities) - Coming soon
 
