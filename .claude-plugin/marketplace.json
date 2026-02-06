@@ -1,0 +1,10 @@
+{
+  "name": "tinytoolstown-marketplace",
+  "owner": {
+    "name": "tinytoolstown",
+    "url": "https://github.com/tinytoolstown"
+  },
+  "description": "A curated collection of plugins for Claude Code and GitHub Copilot CLI",
+  "homepage": "https://github.com/tinytoolstown/marketplace",
+  "plugins": []
+}

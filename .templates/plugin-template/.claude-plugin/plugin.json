@@ -1,0 +1,13 @@
+{
+  "name": "plugin-template",
+  "version": "1.0.0",
+  "description": "Template for creating Claude Code plugins",
+  "author": "Your Name",
+  "homepage": "https://github.com/username/plugin-template",
+  "license": "MIT",
+  "categories": ["development-tools"],
+  "capabilities": {
+    "skills": ["example-skill"]
+  },
+  "minClaudeCodeVersion": "1.0.0"
+}
