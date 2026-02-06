@@ -46,7 +46,7 @@ The plugin uses default Node.js HTTP/HTTPS modules and doesn't require external 
 
 ## Requirements
 
-- Node.js 18 or higher
+- Node.js 14 or higher (Node.js 18+ recommended for security updates)
 - Internet connection
 
 ## Example Use Cases
@@ -73,6 +73,14 @@ The plugin exposes functions that can be called by AI assistants:
 - **Connection timeout**: Increase timeout settings or check network connectivity
 - **SSL errors**: Ensure you're accessing HTTPS sites with valid certificates
 - **Rate limiting**: Some sites may rate limit requests; implement delays if needed
+- **HTML parsing**: The built-in HTML parser uses regex for simplicity. For complex or malformed HTML, consider using a proper HTML parsing library
+
+## Limitations
+
+- HTML parsing is basic and may not handle deeply nested or malformed HTML perfectly
+- No JavaScript execution (fetches static HTML only)
+- Does not follow redirects automatically
+- Limited to text-based content
 
 ## Security Notes
 

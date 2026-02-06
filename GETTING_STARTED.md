@@ -30,7 +30,7 @@ Check the [PLUGIN_INDEX.md](./PLUGIN_INDEX.md) for a complete catalog of all ava
 
 ### Prerequisites
 
-- Node.js 18 or higher (most plugins use Node.js)
+- Node.js 14 or higher (Node.js 18+ recommended)
 - Claude Code or GitHub Copilot CLI installed
 - Basic familiarity with JSON configuration
 

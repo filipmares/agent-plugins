@@ -104,7 +104,7 @@ console.log(minify(json));
 
 ## Requirements
 
-- Node.js 18 or higher
+- Node.js 14 or higher (Node.js 18+ recommended)
 
 ## Troubleshooting
 

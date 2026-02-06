@@ -71,11 +71,16 @@ function validatePlugin(pluginPath) {
     const readme = fs.readFileSync(readmePath, 'utf8');
     
     // Check for key sections
-    const requiredSections = ['#', 'Features', 'Installation', 'Usage'];
+    const requiredSections = ['## Features', '## Installation', '## Usage'];
     for (const section of requiredSections) {
       if (!readme.includes(section)) {
         results.warnings.push(`README.md should include "${section}" section`);
       }
+    }
+    
+    // Check if README starts with a heading
+    if (!readme.trim().startsWith('# ')) {
+      results.warnings.push('README.md should start with a main heading (# Title)');
     }
   }
 
