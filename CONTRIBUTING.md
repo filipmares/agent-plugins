@@ -37,6 +37,12 @@ Thank you for your interest in contributing to the Plugin Marketplace! This guid
 
 5. **License**: Use MIT license or another permissive open-source license
 
+6. **Validation**: Before submitting, validate your plugin structure:
+   ```bash
+   node scripts/validate-plugin.js path/to/your/plugin
+   ```
+   The validator checks for required files, proper metadata, and documentation.
+
 ### How to Submit a Plugin
 
 1. **Fork the Repository**
