@@ -2,6 +2,10 @@
  * Web Fetcher Plugin
  * 
  * Fetches and parses web content for AI analysis
+ * 
+ * SECURITY NOTE: This plugin provides basic HTML parsing for text extraction.
+ * It should NOT be used to sanitize HTML for rendering in a browser.
+ * For security-critical applications, use a proper HTML parser library.
  */
 
 const https = require('https');
@@ -62,24 +66,54 @@ function fetchUrl(urlString, options = {}) {
 
 /**
  * Parse HTML and extract text content
+ * Note: This is a basic text extractor for simple use cases.
+ * For complex HTML or security-sensitive applications, use a proper HTML parser.
  * @param {string} html - The HTML content to parse
  * @returns {string} Extracted text content
  */
 function parseHtml(html) {
-  // Remove script and style tags
-  let text = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
-  text = text.replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '');
+  if (typeof html !== 'string') {
+    return '';
+  }
   
-  // Remove HTML tags
-  text = text.replace(/<[^>]+>/g, ' ');
+  // Remove script and style tags with their content
+  // This is a basic approach - for production use, consider using a proper HTML parser
+  let text = html;
   
-  // Decode HTML entities
-  text = text.replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'");
+  // Remove script tags and content (multiple passes for nested tags)
+  // Allow for whitespace in closing tags
+  let previousText = '';
+  while (text !== previousText) {
+    previousText = text;
+    text = text.replace(/<script[^>]*>[\s\S]*?<\s*\/\s*script\s*>/gi, ' ');
+  }
+  
+  // Remove style tags and content (multiple passes for nested tags)
+  // Allow for whitespace in closing tags
+  previousText = '';
+  while (text !== previousText) {
+    previousText = text;
+    text = text.replace(/<style[^>]*>[\s\S]*?<\s*\/\s*style\s*>/gi, ' ');
+  }
+  
+  // Remove all remaining HTML tags
+  text = text.replace(/<[^>]*>/g, ' ');
+  
+  // Decode common HTML entities in correct order
+  const entities = {
+    '&amp;': '&',
+    '&lt;': '<',
+    '&gt;': '>',
+    '&quot;': '"',
+    '&#39;': "'",
+    '&apos;': "'",
+    '&nbsp;': ' '
+  };
+  
+  // Replace entities from most specific to least to avoid double-escaping
+  for (const [entity, char] of Object.entries(entities)) {
+    text = text.split(entity).join(char);
+  }
   
   // Clean up whitespace
   text = text.replace(/\s+/g, ' ').trim();

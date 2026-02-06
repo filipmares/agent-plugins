@@ -77,16 +77,19 @@ The plugin exposes functions that can be called by AI assistants:
 
 ## Limitations
 
-- HTML parsing is basic and may not handle deeply nested or malformed HTML perfectly
-- No JavaScript execution (fetches static HTML only)
-- Does not follow redirects automatically
-- Limited to text-based content
+- **HTML parsing is basic**: This plugin uses regex-based parsing for simplicity. It handles standard HTML but may not catch all edge cases or malformed HTML
+- **Not for sanitization**: Do NOT use the `parseHtml` function to sanitize HTML for browser rendering. Use a proper HTML parser library for security-critical applications
+- **No JavaScript execution**: Fetches static HTML only (no dynamic content from JavaScript)
+- **No redirect handling**: Does not follow HTTP redirects automatically
+- **Text content only**: Limited to extracting text-based content
 
 ## Security Notes
 
-- Be cautious when fetching content from untrusted sources
-- Validate URLs before making requests
-- Consider implementing rate limiting to avoid abuse
+- **Untrusted sources**: Be cautious when fetching content from untrusted sources
+- **URL validation**: Always validate URLs before making requests
+- **Rate limiting**: Consider implementing rate limiting to avoid abuse
+- **HTML sanitization**: This plugin is NOT suitable for sanitizing HTML to prevent XSS attacks
+- **Content validation**: Validate and sanitize any extracted content before using it in security-sensitive contexts
 
 ## Contributing
 
