@@ -2,41 +2,44 @@
 /**
  * List All Plugins
  * 
- * Lists all plugins in the marketplace with their metadata
+ * Lists all plugins in the Claude Code marketplace with their metadata
  */
 
 const fs = require('fs');
 const path = require('path');
 
 /**
- * Recursively find all plugin.json files
+ * Read marketplace.json to get plugin list
  * @param {string} dir - Directory to search
- * @returns {Array<string>} Array of plugin.json paths
+ * @returns {Array<object>} Array of plugin metadata
  */
 function findPlugins(dir) {
   const plugins = [];
-  const categories = ['web-tools', 'development-tools', 'data-tools', 'utilities'];
+  const marketplacePath = path.join(dir, '.claude-plugin/marketplace.json');
   
-  for (const category of categories) {
-    const categoryPath = path.join(dir, 'plugins', category);
-    if (!fs.existsSync(categoryPath)) continue;
+  if (!fs.existsSync(marketplacePath)) {
+    return plugins;
+  }
+  
+  try {
+    const marketplace = JSON.parse(fs.readFileSync(marketplacePath, 'utf8'));
     
-    const items = fs.readdirSync(categoryPath);
-    for (const item of items) {
-      const itemPath = path.join(categoryPath, item);
-      const stat = fs.statSync(itemPath);
-      
-      if (stat.isDirectory()) {
-        const pluginJsonPath = path.join(itemPath, 'plugin.json');
+    if (marketplace.plugins && Array.isArray(marketplace.plugins)) {
+      for (const plugin of marketplace.plugins) {
+        const pluginPath = path.join(dir, plugin.source);
+        const pluginJsonPath = path.join(pluginPath, '.claude-plugin/plugin.json');
+        
         if (fs.existsSync(pluginJsonPath)) {
           plugins.push({
-            path: itemPath,
-            category: category,
-            metadataPath: pluginJsonPath
+            path: pluginPath,
+            metadataPath: pluginJsonPath,
+            marketplaceEntry: plugin
           });
         }
       }
     }
+  } catch (error) {
+    console.error('Error reading marketplace.json:', error.message);
   }
   
   return plugins;
@@ -44,7 +47,7 @@ function findPlugins(dir) {
 
 /**
  * Load plugin metadata
- * @param {string} pluginJsonPath - Path to plugin.json
+ * @param {string} pluginJsonPath - Path to .claude-plugin/plugin.json
  * @returns {object} Plugin metadata
  */
 function loadMetadata(pluginJsonPath) {
@@ -67,11 +70,15 @@ function formatPlugin(plugin) {
     return `  ✗ ${path.basename(plugin.path)} - Error loading metadata`;
   }
   
+  const categories = Array.isArray(metadata.categories) ? metadata.categories.join(', ') : metadata.categories;
+  const capabilities = metadata.capabilities ? Object.keys(metadata.capabilities).join(', ') : 'None';
+  
   return [
     `  ${metadata.name} (v${metadata.version})`,
     `    ${metadata.description}`,
-    `    Category: ${metadata.category}`,
-    `    Compatibility: ${metadata.compatibility?.join(', ') || 'Not specified'}`,
+    `    Categories: ${categories}`,
+    `    Capabilities: ${capabilities}`,
+    `    Author: ${metadata.author}`,
     `    Path: ${path.relative(process.cwd(), plugin.path)}`
   ].join('\n');
 }
@@ -82,7 +89,7 @@ function formatPlugin(plugin) {
 function main() {
   const rootDir = path.resolve(__dirname, '..');
   
-  console.log('Plugin Marketplace - All Available Plugins\n');
+  console.log('Claude Code Plugin Marketplace - Available Plugins\n');
   console.log('='.repeat(60));
   console.log('');
   
@@ -90,31 +97,14 @@ function main() {
   
   if (plugins.length === 0) {
     console.log('No plugins found in the marketplace.\n');
+    console.log('Add plugins by following the guidelines in CONTRIBUTING.md\n');
     return;
   }
   
-  // Group by category
-  const byCategory = {};
+  // Display all plugins
   for (const plugin of plugins) {
-    if (!byCategory[plugin.category]) {
-      byCategory[plugin.category] = [];
-    }
-    byCategory[plugin.category].push(plugin);
-  }
-  
-  // Display by category
-  for (const [category, categoryPlugins] of Object.entries(byCategory)) {
-    const categoryName = category.split('-').map(w => 
-      w.charAt(0).toUpperCase() + w.slice(1)
-    ).join(' ');
-    
-    console.log(`${categoryName} (${categoryPlugins.length}):`);
-    console.log('-'.repeat(60));
-    
-    for (const plugin of categoryPlugins) {
-      console.log(formatPlugin(plugin));
-      console.log('');
-    }
+    console.log(formatPlugin(plugin));
+    console.log('');
   }
   
   console.log('='.repeat(60));

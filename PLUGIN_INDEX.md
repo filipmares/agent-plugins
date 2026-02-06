@@ -1,84 +1,52 @@
 # Plugin Index
 
-Complete catalog of available plugins in the marketplace.
+Complete catalog of available plugins in this Claude Code marketplace.
 
-## Quick Links
+## About This Marketplace
 
-- [Web Tools](#web-tools)
-- [Development Tools](#development-tools)
-- [Data Tools](#data-tools)
-- [Utilities](#utilities)
+This marketplace follows the [official Anthropic plugin marketplace guidelines](https://code.claude.com/docs/en/plugin-marketplaces). All plugins are organized by category and can be installed via Claude Code's plugin system.
 
----
+## How to Use
 
-## Web Tools
+```bash
+# Add this marketplace
+/plugin marketplace add https://github.com/tinytoolstown/marketplace
 
-Plugins for web-related functionality.
+# Browse plugins
+/plugin
 
-| Plugin | Description | Version | Compatibility |
-|--------|-------------|---------|---------------|
-| _No plugins yet_ | Be the first to contribute! | - | - |
+# Install a plugin
+/plugin install <plugin-name>@tinytoolstown-marketplace
+```
 
-[Browse all web tools →](./plugins/web-tools)
+## Available Plugins
 
----
+Currently, this marketplace contains **0 plugins**.
 
-## Development Tools
+We're accepting contributions! See [CONTRIBUTING.md](./CONTRIBUTING.md) for how to submit your plugin.
 
-Plugins for code development and build automation.
+## Plugin Categories
 
-| Plugin | Description | Version | Compatibility |
-|--------|-------------|---------|---------------|
-| _No plugins yet_ | Be the first to contribute! | - | - |
-
-[Browse all development tools →](./plugins/development-tools)
-
----
-
-## Data Tools
-
-Plugins for data processing and analysis.
-
-| Plugin | Description | Version | Compatibility |
-|--------|-------------|---------|---------------|
-| _No plugins yet_ | Be the first to contribute! | - | - |
-
-[Browse all data tools →](./plugins/data-tools)
-
----
-
-## Utilities
-
-General-purpose utility plugins.
-
-| Plugin | Description | Version | Compatibility |
-|--------|-------------|---------|---------------|
-| _No plugins yet_ | Be the first to contribute! | - | - |
-
-[Browse all utilities →](./plugins/utilities)
-
----
-
-## How to Use This Index
-
-1. **Browse by Category**: Use the quick links above to jump to a specific category
-2. **Click Plugin Name**: View detailed documentation for each plugin
-3. **Check Compatibility**: Ensure the plugin works with your AI assistant
-4. **Follow Links**: Category links lead to more detailed category pages
+- **development-tools**: Code analysis, formatting, linting, build tools
+- **productivity**: Task automation, note-taking, workflow optimization
+- **web-tools**: Web scraping, HTTP clients, browser automation
+- **data-tools**: Data processing, transformation, analysis
+- **testing**: Test frameworks, test generation, quality assurance
+- **security**: Security scanning, vulnerability detection, compliance
+- **documentation**: Doc generation, API documentation, knowledge management
+- **deployment**: CI/CD, deployment automation, infrastructure
 
 ## Contributing
 
-Want to add your plugin to this index? See [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines on submitting plugins.
+Want to add your plugin? Follow these steps:
 
-## Search Tips
+1. Review [CONTRIBUTING.md](./CONTRIBUTING.md) for requirements
+2. Create your plugin following the official Claude Code structure
+3. Submit a pull request
 
-- Use your browser's find function (Ctrl/Cmd + F) to search for keywords
-- Check the [plugins](./plugins) directory for the full file structure
-- Each plugin has a detailed README with usage examples
+## Resources
 
-## Updates
-
-This index is maintained manually. When adding a new plugin:
-1. Add entry to the appropriate category table
-2. Update the category README
-3. Ensure plugin has proper metadata in plugin.json
+- [Getting Started Guide](./GETTING_STARTED.md) - How to use this marketplace
+- [Contributing Guidelines](./CONTRIBUTING.md) - How to submit plugins
+- [Plugin Template](./.templates/plugin-template) - Example plugin structure
+- [Official Docs](https://code.claude.com/docs/en/plugin-marketplaces) - Anthropic's guide

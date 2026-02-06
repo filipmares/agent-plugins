@@ -1,94 +1,70 @@
-# Plugin Name
+# Plugin Template
 
-Brief description of what this plugin does.
+A template for creating Claude Code plugins following the official Anthropic guidelines.
 
-## Features
+## Overview
 
-- Feature 1
-- Feature 2
-- Feature 3
+This template demonstrates the proper structure for a Claude Code plugin. Use it as a starting point for creating your own plugins.
+
+## Plugin Structure
+
+```
+plugin-template/
+├── .claude-plugin/
+│   └── plugin.json          # Plugin manifest (required)
+├── skills/                   # Skill definitions (optional)
+│   └── example-skill/
+│       └── SKILL.md
+├── commands/                 # Command definitions (optional)
+├── mcp/                      # MCP server implementations (optional)
+└── README.md                 # This file (required)
+```
 
 ## Installation
 
-### For Claude Code
+Add the marketplace containing this plugin:
 
-1. Copy this plugin directory to your Claude Code plugins folder
-2. Add the plugin configuration to your Claude Code config:
-   ```json
-   {
-     "mcpServers": {
-       "plugin-name": {
-         "command": "node",
-         "args": ["path/to/plugin-name/src/index.js"]
-       }
-     }
-   }
-   ```
-3. Restart Claude Code
-
-### For GitHub Copilot CLI
-
-1. Follow the installation instructions specific to your setup
-2. Configure the plugin as needed
+```bash
+/plugin marketplace add https://github.com/tinytoolstown/marketplace
+/plugin install plugin-template@tinytoolstown-marketplace
+```
 
 ## Usage
 
-Describe how to use the plugin with examples:
+After installation, you can use the plugin's capabilities. For this template:
 
-```javascript
-// Example code here
+```bash
+/example-skill
 ```
 
 ## Configuration
 
-List any configuration options:
+No additional configuration required for this template.
 
-- `option1`: Description of option 1
-- `option2`: Description of option 2
+## Development
 
-## Requirements
+To create your own plugin based on this template:
 
-- Node.js 18+
-- Any other dependencies
+1. Copy this directory structure
+2. Update `.claude-plugin/plugin.json` with your plugin details
+3. Add your skills, commands, or MCP servers
+4. Update this README with your plugin documentation
+5. Submit to a marketplace following the contributing guidelines
 
-## Examples
+## Documentation
 
-### Example 1
-
-Description of example 1
-
-```javascript
-// Code example
-```
-
-### Example 2
-
-Description of example 2
-
-```javascript
-// Code example
-```
-
-## Troubleshooting
-
-Common issues and solutions:
-
-- **Issue 1**: Solution 1
-- **Issue 2**: Solution 2
-
-## Contributing
-
-Contributions are welcome! Please see the main [CONTRIBUTING.md](../../CONTRIBUTING.md) for guidelines.
+- Each skill needs a `SKILL.md` file describing its functionality
+- Each command needs a `COMMAND.md` file with usage instructions
+- MCP servers should include implementation documentation
 
 ## License
 
-MIT License - see [LICENSE](../../LICENSE) for details.
+MIT License
 
 ## Author
 
-Your Name - [GitHub Profile](https://github.com/username)
+Your Name
 
-## Changelog
+## Contributing
 
-### 1.0.0
-- Initial release
+See the marketplace [CONTRIBUTING.md](../../CONTRIBUTING.md) for guidelines on submitting plugins.

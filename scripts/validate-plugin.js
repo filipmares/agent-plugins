@@ -2,7 +2,8 @@
 /**
  * Plugin Validator
  * 
- * Validates that a plugin follows the marketplace structure and standards
+ * Validates that a plugin follows the Claude Code marketplace structure
+ * Based on official Anthropic guidelines: https://code.claude.com/docs/en/plugin-marketplaces
  */
 
 const fs = require('fs');
@@ -29,7 +30,7 @@ function validatePlugin(pluginPath) {
   }
 
   // Check required files
-  const requiredFiles = ['README.md', 'plugin.json', 'src/index.js'];
+  const requiredFiles = ['README.md', '.claude-plugin/plugin.json'];
   for (const file of requiredFiles) {
     const filePath = path.join(pluginPath, file);
     if (!fs.existsSync(filePath)) {
@@ -39,13 +40,13 @@ function validatePlugin(pluginPath) {
   }
 
   // Validate plugin.json
-  const pluginJsonPath = path.join(pluginPath, 'plugin.json');
+  const pluginJsonPath = path.join(pluginPath, '.claude-plugin/plugin.json');
   if (fs.existsSync(pluginJsonPath)) {
     try {
       const pluginJson = JSON.parse(fs.readFileSync(pluginJsonPath, 'utf8'));
       
       // Check required fields
-      const requiredFields = ['name', 'version', 'description', 'author', 'license', 'category'];
+      const requiredFields = ['name', 'version', 'description', 'author', 'categories', 'capabilities'];
       for (const field of requiredFields) {
         if (!pluginJson[field]) {
           results.valid = false;
@@ -53,10 +54,28 @@ function validatePlugin(pluginPath) {
         }
       }
 
-      // Check category is valid
-      const validCategories = ['web-tools', 'development-tools', 'data-tools', 'utilities'];
-      if (pluginJson.category && !validCategories.includes(pluginJson.category)) {
-        results.warnings.push(`Category "${pluginJson.category}" is not a standard category`);
+      // Check categories array
+      const validCategories = ['development-tools', 'productivity', 'web-tools', 'data-tools', 'testing', 'security', 'documentation', 'deployment'];
+      if (pluginJson.categories) {
+        if (!Array.isArray(pluginJson.categories)) {
+          results.errors.push('categories must be an array');
+        } else {
+          for (const cat of pluginJson.categories) {
+            if (!validCategories.includes(cat)) {
+              results.warnings.push(`Category "${cat}" is not a standard category`);
+            }
+          }
+        }
+      }
+
+      // Check capabilities object
+      if (pluginJson.capabilities && typeof pluginJson.capabilities === 'object') {
+        const validCapabilities = ['skills', 'commands', 'agents', 'hooks', 'mcpServers'];
+        for (const cap of Object.keys(pluginJson.capabilities)) {
+          if (!validCapabilities.includes(cap)) {
+            results.warnings.push(`Unknown capability type: ${cap}`);
+          }
+        }
       }
 
     } catch (error) {
@@ -71,7 +90,7 @@ function validatePlugin(pluginPath) {
     const readme = fs.readFileSync(readmePath, 'utf8');
     
     // Check for key sections
-    const requiredSections = ['## Features', '## Installation', '## Usage'];
+    const requiredSections = ['## Overview', '## Installation', '## Usage'];
     for (const section of requiredSections) {
       if (!readme.includes(section)) {
         results.warnings.push(`README.md should include "${section}" section`);
@@ -84,17 +103,34 @@ function validatePlugin(pluginPath) {
     }
   }
 
-  // Check if index.js is valid JavaScript
-  const indexPath = path.join(pluginPath, 'src/index.js');
-  if (fs.existsSync(indexPath)) {
+  // Check for capability implementations
+  if (fs.existsSync(pluginJsonPath)) {
     try {
-      const code = fs.readFileSync(indexPath, 'utf8');
-      // Basic syntax check - try to load as module
-      if (!code.includes('module.exports')) {
-        results.warnings.push('src/index.js should export functions via module.exports');
+      const pluginJson = JSON.parse(fs.readFileSync(pluginJsonPath, 'utf8'));
+      
+      if (pluginJson.capabilities) {
+        // Check for skills
+        if (pluginJson.capabilities.skills && pluginJson.capabilities.skills.length > 0) {
+          for (const skill of pluginJson.capabilities.skills) {
+            const skillPath = path.join(pluginPath, 'skills', skill, 'SKILL.md');
+            if (!fs.existsSync(skillPath)) {
+              results.warnings.push(`Skill "${skill}" declared but SKILL.md not found at skills/${skill}/SKILL.md`);
+            }
+          }
+        }
+        
+        // Check for commands
+        if (pluginJson.capabilities.commands && pluginJson.capabilities.commands.length > 0) {
+          for (const command of pluginJson.capabilities.commands) {
+            const commandPath = path.join(pluginPath, 'commands', command, 'COMMAND.md');
+            if (!fs.existsSync(commandPath)) {
+              results.warnings.push(`Command "${command}" declared but COMMAND.md not found at commands/${command}/COMMAND.md`);
+            }
+          }
+        }
       }
     } catch (error) {
-      results.errors.push(`Error reading src/index.js: ${error.message}`);
+      // Already handled above
     }
   }
 

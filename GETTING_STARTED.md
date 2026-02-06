@@ -1,148 +1,136 @@
 # Getting Started with Plugin Marketplace
 
-Welcome to the Plugin Marketplace! This guide will help you get started with finding, installing, and using plugins for AI coding assistants.
+This guide will help you use the tinytoolstown plugin marketplace with Claude Code.
 
-## What Are Plugins?
+## What is Claude Code?
 
-Plugins extend the capabilities of AI coding assistants like Claude Code and GitHub Copilot CLI. They provide additional tools and functionality such as:
-- Web scraping and HTTP requests
-- Code formatting and validation
-- Data processing and transformation
-- File operations and utilities
-- And much more!
+Claude Code is Anthropic's AI coding assistant that can be extended with plugins. Plugins add new commands, skills, agents, hooks, and MCP servers to enhance your development workflow.
 
-## Finding Plugins
+## Adding This Marketplace
 
-### Browse by Category
+To add this marketplace to your Claude Code installation:
 
-Plugins are organized into categories:
+```bash
+/plugin marketplace add https://github.com/tinytoolstown/marketplace
+```
 
-1. **[Web Tools](./plugins/web-tools)** - Web scraping, HTTP clients, API wrappers
-2. **[Development Tools](./plugins/development-tools)** - Formatters, linters, code generators
-3. **[Data Tools](./plugins/data-tools)** - Data parsers, validators, transformers
-4. **[Utilities](./plugins/utilities)** - File operations, text processing, system tools
+This command registers the marketplace, making all its plugins available for installation.
 
-### Plugin Index
+## Managing Marketplaces
 
-Check the [PLUGIN_INDEX.md](./PLUGIN_INDEX.md) for a complete catalog of all available plugins.
+```bash
+/plugin marketplace list              # List all registered marketplaces
+/plugin marketplace update           # Update all marketplace catalogs
+/plugin marketplace remove <name>    # Remove a marketplace
+```
 
 ## Installing Plugins
 
-### Prerequisites
+Once you've added the marketplace, you can browse and install plugins:
 
-- Node.js 14 or higher (Node.js 18+ recommended)
-- Claude Code or GitHub Copilot CLI installed
-- Basic familiarity with JSON configuration
+```bash
+/plugin                              # Open plugin browser UI
+/plugin list                         # List available plugins
+/plugin install <plugin-name>@tinytoolstown-marketplace
+```
 
-### For Claude Code
+## Using Installed Plugins
 
-1. **Choose a Plugin**: Browse the plugins directory and find one you want
-2. **Copy Plugin Files**: Copy the entire plugin directory to a location on your system
-3. **Update Configuration**: Edit your Claude Code configuration file to include the plugin
+Plugins extend Claude Code with new capabilities. Depending on the plugin type:
 
-Example configuration:
+- **Skills**: Access via `/` commands (e.g., `/review`, `/analyze`)
+- **Commands**: Run with `/run <command-name>`
+- **Agents**: Autonomous helpers that work in the background
+- **Hooks**: Automatic actions triggered by events
+- **MCP Servers**: Model Context Protocol integrations
+
+Check each plugin's documentation for specific usage instructions.
+
+## Managing Installed Plugins
+
+```bash
+/plugin list --installed            # Show installed plugins
+/plugin update <plugin-name>        # Update a plugin
+/plugin uninstall <plugin-name>     # Remove a plugin
+```
+
+## Creating Your Own Plugin
+
+Want to create a plugin for this marketplace?
+
+1. **Choose a Plugin Type**: Skills, commands, agents, hooks, or MCP servers
+2. **Create Plugin Structure**: Include `.claude-plugin/plugin.json` manifest
+3. **Follow Guidelines**: See [CONTRIBUTING.md](./CONTRIBUTING.md) for requirements
+4. **Test Locally**: Test your plugin before submitting
+5. **Submit**: Open a pull request to add your plugin to this marketplace
+
+### Basic Plugin Structure
+
+```
+my-plugin/
+├── .claude-plugin/
+│   └── plugin.json          # Required manifest
+├── skills/                   # For skill-based plugins
+│   └── my-skill/
+│       └── SKILL.md
+├── commands/                 # For command-based plugins
+│   └── my-command/
+│       └── COMMAND.md
+└── README.md                # Plugin documentation
+```
+
+### Sample plugin.json
+
 ```json
 {
-  "mcpServers": {
-    "my-plugin": {
-      "command": "node",
-      "args": ["/path/to/plugins/category/my-plugin/src/index.js"]
-    }
+  "name": "my-plugin",
+  "version": "1.0.0",
+  "description": "Brief description of what this plugin does",
+  "author": "Your Name",
+  "homepage": "https://github.com/username/my-plugin",
+  "categories": ["development-tools"],
+  "capabilities": {
+    "skills": ["my-skill"],
+    "commands": ["my-command"]
   }
 }
 ```
 
-4. **Restart Claude Code**: Restart the application to load the new plugins
+## Troubleshooting
 
-### For GitHub Copilot CLI
+### Marketplace Not Loading
 
-Installation varies by plugin. Check each plugin's README for specific instructions.
+- Ensure you have Claude Code installed and running
+- Check your internet connection
+- Verify the marketplace URL is correct
+- Try running `/plugin marketplace update`
 
-## Using Plugins
+### Plugin Installation Fails
 
-Once installed, AI assistants can access plugin functionality automatically through natural language interactions.
+- Check plugin compatibility with your Claude Code version
+- Review plugin dependencies and requirements
+- Check the plugin's README for specific installation notes
+- Ensure you're using the correct marketplace name
 
-## Testing Plugins
+### Plugin Not Working
 
-Many plugins can be tested standalone before integrating with AI assistants. Check each plugin's README for specific testing instructions.
-
-## Creating Your Own Plugin
-
-Want to create a plugin? Follow these steps:
-
-1. **Use the Template**: Copy `.templates/plugin-template` as a starting point
-2. **Follow the Structure**: Include README.md, plugin.json, and source code
-3. **Document Well**: Provide clear usage examples and API documentation
-4. **Test Thoroughly**: Ensure your plugin works correctly
-5. **Submit**: Follow [CONTRIBUTING.md](./CONTRIBUTING.md) to submit your plugin
-
-## Common Issues
-
-### Plugin Not Loading
-
-- Check that Node.js path is correct in configuration
-- Verify file paths are absolute, not relative
-- Ensure Node.js version is 18 or higher
-- Check for syntax errors in configuration JSON
-
-### Plugin Errors
-
-- Review plugin's README for requirements
-- Check console/logs for error messages
-- Verify any dependencies are installed
-- Ensure you're using the plugin correctly
-
-### Configuration Issues
-
-- Validate JSON syntax in configuration files
-- Use absolute paths, not relative paths
-- Restart AI assistant after configuration changes
-- Check for conflicts with other plugins
+- Verify the plugin is installed: `/plugin list --installed`
+- Check the plugin's documentation for usage instructions
+- Look for error messages in Claude Code's output
+- Try reinstalling: `/plugin uninstall <name>` then `/plugin install <name>`
 
 ## Getting Help
 
 Need assistance?
 
-1. **Check Plugin README**: Each plugin has detailed documentation
-2. **Review Examples**: Look at existing plugins for patterns
-3. **Read Contributing Guide**: [CONTRIBUTING.md](./CONTRIBUTING.md) has additional info
-4. **Open an Issue**: Report bugs or ask questions on GitHub
-
-## Best Practices
-
-### Security
-
-- Review plugin source code before installation
-- Don't install plugins from untrusted sources
-- Be cautious with plugins that access external resources
-- Keep plugins updated
-
-### Performance
-
-- Only install plugins you actually use
-- Uninstall unused plugins to reduce overhead
-- Monitor resource usage
-- Report performance issues to plugin authors
-
-### Organization
-
-- Keep plugin directories organized
-- Use meaningful names for plugin configurations
-- Document your configuration
-- Version control your configuration files
-
-## Next Steps
-
-- Browse the [Plugin Index](./PLUGIN_INDEX.md)
-- Try the example plugins
-- Read plugin documentation
-- Consider contributing your own plugin!
+1. **Check Documentation**: Review the plugin's README and documentation
+2. **Review Examples**: Look at existing plugins in this marketplace
+3. **Open an Issue**: Report problems or ask questions on GitHub
+4. **Official Docs**: See [Claude Code documentation](https://code.claude.com/docs)
 
 ## Additional Resources
 
-- [README.md](./README.md) - Main repository documentation
-- [CONTRIBUTING.md](./CONTRIBUTING.md) - How to contribute plugins
-- [PLUGIN_INDEX.md](./PLUGIN_INDEX.md) - Complete plugin catalog
-- [LICENSE](./LICENSE) - License information
-
-Happy coding with plugins! 🚀
+- [Claude Code Plugin Marketplaces](https://code.claude.com/docs/en/plugin-marketplaces) - Official guide
+- [Plugin Discovery](https://code.claude.com/docs/en/discover-plugins) - How to find and use plugins
+- [Contributing Guide](./CONTRIBUTING.md) - Submit your own plugins
+- [Plugin Index](./PLUGIN_INDEX.md) - Browse available plugins
