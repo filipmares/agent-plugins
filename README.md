@@ -71,6 +71,23 @@ Want to add a plugin to this marketplace? See [CONTRIBUTING.md](CONTRIBUTING.md)
 - 📋 [Plugin Index](./PLUGIN_INDEX.md) - Browse available plugins
 - 📚 [Official Docs](https://code.claude.com/docs/en/plugin-marketplaces) - Anthropic's marketplace guide
 
+## Development
+
+This marketplace uses [Bun](https://bun.sh) for TypeScript scripts. To work with the validation and listing tools:
+
+```bash
+# Install Bun if not already installed
+curl -fsSL https://bun.sh/install | bash
+
+# Validate a plugin
+bun run scripts/validate-plugin.ts <plugin-path>
+
+# List all plugins
+bun run scripts/list-plugins.ts
+```
+
+See [scripts/README.md](./scripts/README.md) for more details.
+
 ## Support
 
 For issues or questions:

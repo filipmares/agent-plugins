@@ -1,22 +1,26 @@
 # Marketplace Scripts
 
-Utility scripts for managing and validating Claude Code plugins.
+Utility scripts for managing and validating Claude Code plugins, written in TypeScript and run with Bun.
+
+## Prerequisites
+
+- [Bun](https://bun.sh) runtime installed
 
 ## Available Scripts
 
-### validate-plugin.js
+### validate-plugin.ts
 
 Validates that a plugin follows the official Claude Code structure and standards.
 
 **Usage:**
 ```bash
-node scripts/validate-plugin.js <plugin-path>
+bun run scripts/validate-plugin.ts <plugin-path>
 ```
 
 **Example:**
 ```bash
-node scripts/validate-plugin.js .templates/plugin-template
-node scripts/validate-plugin.js plugins/my-plugin
+bun run scripts/validate-plugin.ts .templates/plugin-template
+bun run scripts/validate-plugin.ts plugins/my-plugin
 ```
 
 **What it checks:**
@@ -26,13 +30,18 @@ node scripts/validate-plugin.js plugins/my-plugin
 - Documentation structure
 - Declared capabilities match implementation files
 
-### list-plugins.js
+### list-plugins.ts
 
 Lists all plugins registered in the marketplace catalog.
 
 **Usage:**
 ```bash
-node scripts/list-plugins.js
+bun run scripts/list-plugins.ts
+```
+
+**Or using npm scripts:**
+```bash
+bun run list
 ```
 
 **Output:**
@@ -47,7 +56,7 @@ Before submitting a plugin:
 
 1. **Validate your plugin structure:**
    ```bash
-   node scripts/validate-plugin.js path/to/your/plugin
+   bun run scripts/validate-plugin.ts path/to/your/plugin
    ```
 
 2. **Ensure it follows Claude Code conventions:**
@@ -60,13 +69,18 @@ Before submitting a plugin:
 
 4. **Verify it appears in the list:**
    ```bash
-   node scripts/list-plugins.js
+   bun run scripts/list-plugins.ts
    ```
 
 ## For Maintainers
 
 These scripts help maintain consistency:
 
-- Use `validate-plugin.js` during PR reviews
-- Run `list-plugins.js` to verify marketplace catalog
+- Use `validate-plugin.ts` during PR reviews
+- Run `list-plugins.ts` to verify marketplace catalog
 - Ensure all plugins meet Claude Code standards
+
+## Development
+
+The scripts are written in TypeScript and use Bun's native TypeScript support. No compilation step is needed.
+

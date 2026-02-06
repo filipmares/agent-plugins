@@ -1,0 +1,9 @@
+{
+  "name": "marketplace-scripts",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "validate": "bun run scripts/validate-plugin.ts",
+    "list": "bun run scripts/list-plugins.ts"
+  }
+}

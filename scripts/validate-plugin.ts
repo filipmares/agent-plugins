@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 /**
  * Plugin Validator
  * 
@@ -6,24 +6,44 @@
  * Based on official Anthropic guidelines: https://code.claude.com/docs/en/plugin-marketplaces
  */
 
-const fs = require('fs');
-const path = require('path');
+import { existsSync, readFileSync } from 'fs';
+import { basename, join, resolve } from 'path';
+
+interface ValidationResults {
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
+  pluginName: string;
+}
+
+interface PluginManifest {
+  name?: string;
+  version?: string;
+  description?: string;
+  author?: string;
+  categories?: string[];
+  capabilities?: {
+    skills?: string[];
+    commands?: string[];
+    agents?: string[];
+    hooks?: string[];
+    mcpServers?: string[];
+  };
+}
 
 /**
  * Validate a plugin directory
- * @param {string} pluginPath - Path to the plugin directory
- * @returns {object} Validation results
  */
-function validatePlugin(pluginPath) {
-  const results = {
+function validatePlugin(pluginPath: string): ValidationResults {
+  const results: ValidationResults = {
     valid: true,
     errors: [],
     warnings: [],
-    pluginName: path.basename(pluginPath)
+    pluginName: basename(pluginPath)
   };
 
   // Check if directory exists
-  if (!fs.existsSync(pluginPath)) {
+  if (!existsSync(pluginPath)) {
     results.valid = false;
     results.errors.push('Plugin directory does not exist');
     return results;
@@ -32,21 +52,21 @@ function validatePlugin(pluginPath) {
   // Check required files
   const requiredFiles = ['README.md', '.claude-plugin/plugin.json'];
   for (const file of requiredFiles) {
-    const filePath = path.join(pluginPath, file);
-    if (!fs.existsSync(filePath)) {
+    const filePath = join(pluginPath, file);
+    if (!existsSync(filePath)) {
       results.valid = false;
       results.errors.push(`Missing required file: ${file}`);
     }
   }
 
   // Validate plugin.json
-  const pluginJsonPath = path.join(pluginPath, '.claude-plugin/plugin.json');
-  if (fs.existsSync(pluginJsonPath)) {
+  const pluginJsonPath = join(pluginPath, '.claude-plugin/plugin.json');
+  if (existsSync(pluginJsonPath)) {
     try {
-      const pluginJson = JSON.parse(fs.readFileSync(pluginJsonPath, 'utf8'));
+      const pluginJson: PluginManifest = JSON.parse(readFileSync(pluginJsonPath, 'utf8'));
       
       // Check required fields
-      const requiredFields = ['name', 'version', 'description', 'author', 'categories', 'capabilities'];
+      const requiredFields: (keyof PluginManifest)[] = ['name', 'version', 'description', 'author', 'categories', 'capabilities'];
       for (const field of requiredFields) {
         if (!pluginJson[field]) {
           results.valid = false;
@@ -80,14 +100,14 @@ function validatePlugin(pluginPath) {
 
     } catch (error) {
       results.valid = false;
-      results.errors.push(`Invalid plugin.json: ${error.message}`);
+      results.errors.push(`Invalid plugin.json: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
   // Validate README.md
-  const readmePath = path.join(pluginPath, 'README.md');
-  if (fs.existsSync(readmePath)) {
-    const readme = fs.readFileSync(readmePath, 'utf8');
+  const readmePath = join(pluginPath, 'README.md');
+  if (existsSync(readmePath)) {
+    const readme = readFileSync(readmePath, 'utf8');
     
     // Check for key sections
     const requiredSections = ['## Overview', '## Installation', '## Usage'];
@@ -104,16 +124,16 @@ function validatePlugin(pluginPath) {
   }
 
   // Check for capability implementations
-  if (fs.existsSync(pluginJsonPath)) {
+  if (existsSync(pluginJsonPath)) {
     try {
-      const pluginJson = JSON.parse(fs.readFileSync(pluginJsonPath, 'utf8'));
+      const pluginJson: PluginManifest = JSON.parse(readFileSync(pluginJsonPath, 'utf8'));
       
       if (pluginJson.capabilities) {
         // Check for skills
         if (pluginJson.capabilities.skills && pluginJson.capabilities.skills.length > 0) {
           for (const skill of pluginJson.capabilities.skills) {
-            const skillPath = path.join(pluginPath, 'skills', skill, 'SKILL.md');
-            if (!fs.existsSync(skillPath)) {
+            const skillPath = join(pluginPath, 'skills', skill, 'SKILL.md');
+            if (!existsSync(skillPath)) {
               results.warnings.push(`Skill "${skill}" declared but SKILL.md not found at skills/${skill}/SKILL.md`);
             }
           }
@@ -122,8 +142,8 @@ function validatePlugin(pluginPath) {
         // Check for commands
         if (pluginJson.capabilities.commands && pluginJson.capabilities.commands.length > 0) {
           for (const command of pluginJson.capabilities.commands) {
-            const commandPath = path.join(pluginPath, 'commands', command, 'COMMAND.md');
-            if (!fs.existsSync(commandPath)) {
+            const commandPath = join(pluginPath, 'commands', command, 'COMMAND.md');
+            if (!existsSync(commandPath)) {
               results.warnings.push(`Command "${command}" declared but COMMAND.md not found at commands/${command}/COMMAND.md`);
             }
           }
@@ -140,19 +160,19 @@ function validatePlugin(pluginPath) {
 /**
  * Main function
  */
-function main() {
+function main(): void {
   const args = process.argv.slice(2);
   
   if (args.length === 0) {
     console.log('Plugin Validator');
-    console.log('Usage: node validate-plugin.js <plugin-path>');
+    console.log('Usage: bun run scripts/validate-plugin.ts <plugin-path>');
     console.log('');
     console.log('Example:');
-    console.log('  node scripts/validate-plugin.js plugins/web-tools/web-fetcher');
+    console.log('  bun run scripts/validate-plugin.ts .templates/plugin-template');
     return;
   }
 
-  const pluginPath = path.resolve(args[0]);
+  const pluginPath = resolve(args[0]);
   console.log(`Validating plugin: ${pluginPath}\n`);
 
   const results = validatePlugin(pluginPath);
@@ -180,9 +200,9 @@ function main() {
 }
 
 // Export for testing
-module.exports = { validatePlugin };
+export { validatePlugin };
 
 // Run if executed directly
-if (require.main === module) {
+if (import.meta.main) {
   main();
 }
