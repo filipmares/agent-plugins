@@ -1,0 +1,18 @@
+{
+  "name": "plugin-name",
+  "version": "1.0.0",
+  "description": "Brief description of what this plugin does",
+  "author": "Your Name",
+  "license": "MIT",
+  "category": "web-tools",
+  "compatibility": ["claude-code", "copilot-cli"],
+  "tags": ["example", "template"],
+  "keywords": ["plugin", "marketplace"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tinytoolstown/marketplace.git"
+  },
+  "main": "src/index.js",
+  "dependencies": {},
+  "devDependencies": {}
+}
