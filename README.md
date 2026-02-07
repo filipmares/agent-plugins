@@ -1,12 +1,12 @@
-# Plugin Marketplace
+# Tiny Tools Plugin Marketplace
 
-A curated collection of plugins for Claude Code, following the official [Anthropic plugin marketplace guidelines](https://code.claude.com/docs/en/plugin-marketplaces).
+A marketplace of tiny plugins intended to boost productivity for developers and anyone working with AI agents, following the official [Anthropic plugin marketplace guidelines](https://code.claude.com/docs/en/plugin-marketplaces).
 
-## 🚀 Quick Start
+## Quick Start
 
-### Installing the Marketplace
+### Adding the Marketplace
 
-Add this marketplace to your Claude Code:
+Add this marketplace to your agent:
 
 ```bash
 /plugin marketplace add https://github.com/tinytoolstown/marketplace
@@ -17,83 +17,48 @@ Add this marketplace to your Claude Code:
 Browse and install plugins from this marketplace:
 
 ```bash
-/plugin                                    # Browse available plugins
+/plugin                                    # Open plugin browser UI
+/plugin list                               # List available plugins
 /plugin install <plugin-name>@tinytoolstown-marketplace
 ```
 
-## What is this?
+## Managing Marketplaces
 
-This is an official Claude Code plugin marketplace that follows Anthropic's marketplace specification. It provides a centralized catalog of plugins that extend Claude Code's capabilities with commands, skills, agents, hooks, and MCP servers.
-
-## Marketplace Structure
-
-This repository follows the official Claude Code marketplace structure:
-
-```
-marketplace/
-├── .claude-plugin/
-│   └── marketplace.json      # Marketplace catalog
-├── plugins/
-│   └── [plugin-directories]  # Individual plugins
-└── README.md
+```bash
+/plugin marketplace list              # List all registered marketplaces
+/plugin marketplace update           # Update all marketplace catalogs
+/plugin marketplace remove <name>    # Remove a marketplace
 ```
 
-Each plugin has its own `.claude-plugin/plugin.json` manifest describing its capabilities.
+## Using Installed Plugins
+
+Plugins extend your agent with new capabilities. Depending on the plugin type:
+
+- **Skills**: Access via `/` commands (e.g., `/review`, `/analyze`)
+- **Commands**: Run with `/run <command-name>`
+- **Agents**: Autonomous helpers that work in the background
+- **Hooks**: Automatic actions triggered by events
+- **MCP Servers**: Model Context Protocol integrations
+
+Check each plugin's documentation for specific usage instructions.
+
+## Managing Installed Plugins
+
+```bash
+/plugin list --installed            # Show installed plugins
+/plugin update <plugin-name>        # Update a plugin
+/plugin uninstall <plugin-name>     # Remove a plugin
+```
 
 ## Available Plugins
 
-Currently, this marketplace contains no plugins. We're accepting contributions!
-
-📋 See the [Plugin Index](./PLUGIN_INDEX.md) for available plugins organized by category.
-
-## Contributing Plugins
-
-Want to add a plugin to this marketplace? See [CONTRIBUTING.md](CONTRIBUTING.md) for:
-
-- Plugin structure requirements
-- How to create a `.claude-plugin/plugin.json` manifest
-- Categories and metadata standards
-- Submission process
-
-## Plugin Categories
-
-- **development-tools**: Code analysis, formatting, linting, and development utilities
-- **productivity**: Task automation, note-taking, and workflow optimization
-- **web-tools**: Web scraping, HTTP requests, and browser automation
-- **data-tools**: Data processing, transformation, and analysis
-- **testing**: Testing frameworks, test generation, and quality assurance
-- **security**: Security scanning, vulnerability detection, and compliance
-
-## Documentation
-
-- 📖 [Getting Started Guide](./GETTING_STARTED.md) - How to use this marketplace
-- 🤝 [Contributing Guidelines](./CONTRIBUTING.md) - Submit your plugins
-- 📋 [Plugin Index](./PLUGIN_INDEX.md) - Browse available plugins
-- 📚 [Official Docs](https://code.claude.com/docs/en/plugin-marketplaces) - Anthropic's marketplace guide
-
-## Development
-
-This marketplace uses [Bun](https://bun.sh) for TypeScript scripts. To work with the validation and listing tools:
-
-```bash
-# Install Bun if not already installed
-curl -fsSL https://bun.sh/install | bash
-
-# Validate a plugin
-bun run scripts/validate-plugin.ts <plugin-path>
-
-# List all plugins
-bun run scripts/list-plugins.ts
-```
-
-See [scripts/README.md](./scripts/README.md) for more details.
+Currently, this marketplace contains no plugins. We're accepting contributions! See [CONTRIBUTING.md](./CONTRIBUTING.md) for how to submit a plugin.
 
 ## Support
 
 For issues or questions:
 - Open an issue in this repository
 - Check the [official Claude Code documentation](https://code.claude.com/docs)
-- Review the [Getting Started Guide](./GETTING_STARTED.md)
 
 ## License
 

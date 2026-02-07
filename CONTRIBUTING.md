@@ -1,6 +1,6 @@
 # Contributing to Plugin Marketplace
 
-Thank you for your interest in contributing to this Claude Code plugin marketplace! This guide follows the [official Anthropic plugin marketplace guidelines](https://code.claude.com/docs/en/plugin-marketplaces).
+Thank you for your interest in contributing to this plugin marketplace! This guide follows the [official Anthropic plugin marketplace guidelines](https://code.claude.com/docs/en/plugin-marketplaces).
 
 ## Before You Start
 
@@ -158,6 +158,23 @@ Open a pull request on GitHub with:
 - Screenshots or examples if applicable
 - Any special installation or usage notes
 
+## Validation Tools
+
+This marketplace uses [Bun](https://bun.sh) for validation and listing scripts:
+
+```bash
+# Install Bun if not already installed
+curl -fsSL https://bun.sh/install | bash
+
+# Validate a plugin
+bun run scripts/validate-plugin.ts <plugin-path>
+
+# List all plugins
+bun run scripts/list-plugins.ts
+```
+
+See [scripts/README.md](./scripts/README.md) for more details.
+
 ## Quality Standards
 
 ### Documentation
@@ -204,7 +221,7 @@ Your README.md must include:
 If you need assistance:
 - Open an issue for questions
 - Review existing plugins for examples
-- Check the [Getting Started Guide](./GETTING_STARTED.md)
+- Check the [README](./README.md)
 - Refer to [Official Claude Code Docs](https://code.claude.com/docs)
 
 ## Security

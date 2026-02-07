@@ -1,6 +1,6 @@
 # Marketplace Scripts
 
-Utility scripts for managing and validating Claude Code plugins, written in TypeScript and run with Bun.
+Utility scripts for managing and validating plugins, written in TypeScript and run with Bun.
 
 ## Prerequisites
 
@@ -10,7 +10,7 @@ Utility scripts for managing and validating Claude Code plugins, written in Type
 
 ### validate-plugin.ts
 
-Validates that a plugin follows the official Claude Code structure and standards.
+Validates that a plugin follows the official plugin structure and standards.
 
 **Usage:**
 ```bash
@@ -64,6 +64,7 @@ Before submitting a plugin:
    - Includes proper README.md
    - Implements declared capabilities
 
+
 3. **Add to marketplace catalog:**
    Update `.claude-plugin/marketplace.json` with your plugin entry
 
@@ -78,7 +79,7 @@ These scripts help maintain consistency:
 
 - Use `validate-plugin.ts` during PR reviews
 - Run `list-plugins.ts` to verify marketplace catalog
-- Ensure all plugins meet Claude Code standards
+- Ensure all plugins meet marketplace standards
 
 ## Development
 

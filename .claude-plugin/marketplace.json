@@ -4,7 +4,7 @@
     "name": "tinytoolstown",
     "url": "https://github.com/tinytoolstown"
   },
-  "description": "A curated collection of plugins for Claude Code and GitHub Copilot CLI",
+  "description": "A marketplace of tiny plugins intended to boost productivity for developers and anyone working with AI agents",
   "homepage": "https://github.com/tinytoolstown/marketplace",
   "plugins": []
 }

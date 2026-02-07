@@ -1,10 +1,10 @@
 # Plugin Template
 
-A template for creating Claude Code plugins following the official Anthropic guidelines.
+A template for creating plugins following the official Anthropic guidelines.
 
 ## Overview
 
-This template demonstrates the proper structure for a Claude Code plugin. Use it as a starting point for creating your own plugins.
+This template demonstrates the proper structure for a plugin. Use it as a starting point for creating your own plugins.
 
 ## Plugin Structure
 
