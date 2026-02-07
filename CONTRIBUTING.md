@@ -158,6 +158,23 @@ Open a pull request on GitHub with:
 - Screenshots or examples if applicable
 - Any special installation or usage notes
 
+## Validation Tools
+
+This marketplace uses [Bun](https://bun.sh) for validation and listing scripts:
+
+```bash
+# Install Bun if not already installed
+curl -fsSL https://bun.sh/install | bash
+
+# Validate a plugin
+bun run scripts/validate-plugin.ts <plugin-path>
+
+# List all plugins
+bun run scripts/list-plugins.ts
+```
+
+See [scripts/README.md](./scripts/README.md) for more details.
+
 ## Quality Standards
 
 ### Documentation
