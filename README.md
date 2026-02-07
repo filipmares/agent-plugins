@@ -1,12 +1,12 @@
-# Plugin Marketplace
+# Tiny Tools Plugin Marketplace
 
-A curated collection of plugins for Claude Code, following the official [Anthropic plugin marketplace guidelines](https://code.claude.com/docs/en/plugin-marketplaces).
+A marketplace of tiny plugins intended to boost productivity for developers and anyone working with AI agents, following the official [Anthropic plugin marketplace guidelines](https://code.claude.com/docs/en/plugin-marketplaces).
 
 ## 🚀 Quick Start
 
 ### Installing the Marketplace
 
-Add this marketplace to your Claude Code:
+Add this marketplace to your agent:
 
 ```bash
 /plugin marketplace add https://github.com/tinytoolstown/marketplace
@@ -87,6 +87,15 @@ bun run scripts/list-plugins.ts
 ```
 
 See [scripts/README.md](./scripts/README.md) for more details.
+
+## Verified Agents
+
+This marketplace has been verified to work with the following agents:
+
+- **Claude Code** - Anthropic's official CLI for Claude
+- **Copilot CLI** - GitHub's CLI-based AI assistant
+
+Other agents may also be compatible but have not been tested.
 
 ## Support
 

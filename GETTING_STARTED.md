@@ -1,14 +1,14 @@
 # Getting Started with Plugin Marketplace
 
-This guide will help you use the tinytoolstown plugin marketplace with Claude Code.
+This guide will help you use the tinytoolstown plugin marketplace with your AI agent.
 
-## What is Claude Code?
+## What is This Marketplace?
 
-Claude Code is Anthropic's AI coding assistant that can be extended with plugins. Plugins add new commands, skills, agents, hooks, and MCP servers to enhance your development workflow.
+A marketplace of tiny plugins intended to boost productivity for developers and anyone working with AI agents. Plugins add new commands, skills, agents, hooks, and MCP servers to enhance your development workflow.
 
 ## Adding This Marketplace
 
-To add this marketplace to your Claude Code installation:
+To add this marketplace to your agent:
 
 ```bash
 /plugin marketplace add https://github.com/tinytoolstown/marketplace
@@ -36,7 +36,7 @@ Once you've added the marketplace, you can browse and install plugins:
 
 ## Using Installed Plugins
 
-Plugins extend Claude Code with new capabilities. Depending on the plugin type:
+Plugins extend your agent with new capabilities. Depending on the plugin type:
 
 - **Skills**: Access via `/` commands (e.g., `/review`, `/analyze`)
 - **Commands**: Run with `/run <command-name>`
@@ -100,14 +100,14 @@ my-plugin/
 
 ### Marketplace Not Loading
 
-- Ensure you have Claude Code installed and running
+- Ensure you have a compatible agent installed and running
 - Check your internet connection
 - Verify the marketplace URL is correct
 - Try running `/plugin marketplace update`
 
 ### Plugin Installation Fails
 
-- Check plugin compatibility with your Claude Code version
+- Check plugin compatibility with your agent version
 - Review plugin dependencies and requirements
 - Check the plugin's README for specific installation notes
 - Ensure you're using the correct marketplace name
@@ -116,7 +116,7 @@ my-plugin/
 
 - Verify the plugin is installed: `/plugin list --installed`
 - Check the plugin's documentation for usage instructions
-- Look for error messages in Claude Code's output
+- Look for error messages in your agent's output
 - Try reinstalling: `/plugin uninstall <name>` then `/plugin install <name>`
 
 ## Getting Help

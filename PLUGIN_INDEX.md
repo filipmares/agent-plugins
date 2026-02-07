@@ -1,6 +1,6 @@
 # Plugin Index
 
-Complete catalog of available plugins in this Claude Code marketplace.
+Complete catalog of available plugins in this marketplace.
 
 ## About This Marketplace
 

@@ -1,6 +1,6 @@
 # Contributing to Plugin Marketplace
 
-Thank you for your interest in contributing to this Claude Code plugin marketplace! This guide follows the [official Anthropic plugin marketplace guidelines](https://code.claude.com/docs/en/plugin-marketplaces).
+Thank you for your interest in contributing to this plugin marketplace! This guide follows the [official Anthropic plugin marketplace guidelines](https://code.claude.com/docs/en/plugin-marketplaces).
 
 ## Before You Start
 
