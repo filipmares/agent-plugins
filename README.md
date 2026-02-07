@@ -52,9 +52,7 @@ Check each plugin's documentation for specific usage instructions.
 
 ## Available Plugins
 
-Currently, this marketplace contains no plugins. We're accepting contributions!
-
-See the [Plugin Index](./PLUGIN_INDEX.md) for available plugins organized by category.
+Currently, this marketplace contains no plugins. We're accepting contributions! See [CONTRIBUTING.md](./CONTRIBUTING.md) for how to submit a plugin.
 
 ## Creating Your Own Plugin
 
