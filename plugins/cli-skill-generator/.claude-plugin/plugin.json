@@ -1,0 +1,10 @@
+{
+  "name": "cli-skill-generator",
+  "version": "1.0.0",
+  "description": "Generate Claude Code skills for any CLI tool",
+  "author": "tinytoolstown",
+  "categories": ["development-tools"],
+  "capabilities": {
+    "skills": ["generate"]
+  }
+}
