@@ -16,6 +16,7 @@ Use this reference to verify a generated plugin is structurally correct and foll
 - `description` — must be present
 - `author` — must be present
 - `capabilities` — must be present
+- `cliVersion` — must be present if CLI version was captured during generation
 
 ### Capability Matching
 For each skill listed in `capabilities.skills`, verify that `skills/<name>/SKILL.md` exists. Each SKILL.md must have valid YAML frontmatter with `name` and `description` fields.
@@ -54,3 +55,5 @@ Before considering the plugin complete, verify:
 - [ ] README.md has Overview, Installation, and Usage sections
 - [ ] Total skill count is 5-7
 - [ ] No SKILL.md exceeds 500 lines
+- [ ] `plugin.json` includes `cliVersion` if CLI version was captured during generation
+- [ ] Every SKILL.md includes a `## Version Check` section (if `cliVersion` is present in `plugin.json`)

@@ -42,6 +42,10 @@ After frontmatter, structure the body as follows:
 
 Brief one-line summary of what this skill covers.
 
+## Version Check
+
+<version check preamble — see Version Check Preamble section below>
+
 ## Commands
 
 ### `<tool> <command>`
@@ -64,6 +68,25 @@ Brief one-line summary of what this skill covers.
 
 ...repeat for each command in this group...
 ```
+
+---
+
+## Version Check Preamble
+
+When `cliVersion` is present in the plugin's `plugin.json`, every generated SKILL.md must include a `## Version Check` section immediately after the H1 heading and summary line, before `## Commands`. This section instructs Claude to verify the user's installed CLI version at invocation time.
+
+The `## Version Check` section should contain the following instructions (substituting the actual tool name):
+
+1. Run `<TOOL> --version` to get the installed version. If that fails, try `<TOOL> version`.
+2. Read `cliVersion` from this plugin's `plugin.json`.
+3. Compare the two versions using semver rules:
+   - **Same major, same or newer minor/patch** — proceed normally (no message needed).
+   - **Same major, older minor/patch** — warn: _"Your `<TOOL>` version (X.Y.Z) is older than the version this plugin was documented against (A.B.C). Some commands or flags mentioned here may not be available."_ Then proceed.
+   - **Newer major version** — warn: _"Your `<TOOL>` version (X.0.0) is a major version ahead of what this plugin was documented against (A.B.C). Commands may have changed significantly."_ Ask the user whether to proceed or stop (consider regenerating the plugin).
+   - **Older major version** — warn: _"Your `<TOOL>` version (X.Y.Z) is a major version behind what this plugin was documented against (A.B.C). Many documented features may not exist in your version."_ Ask the user whether to proceed or stop (consider upgrading the CLI tool).
+   - **Version not parseable or unavailable** — note: _"Could not determine `<TOOL>` version. Proceeding with documented commands — some may not match your installed version."_ Then proceed.
+
+If `cliVersion` is **not** present in `plugin.json`, omit the `## Version Check` section entirely.
 
 ---
 

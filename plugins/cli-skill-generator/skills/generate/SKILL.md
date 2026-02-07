@@ -30,6 +30,23 @@ which <tool>
 
 **If found:** Continue. Store the tool name as `TOOL_NAME` for the rest of the workflow.
 
+**Capture the CLI tool version:**
+
+Run:
+```
+<TOOL_NAME> --version
+```
+
+If that fails or produces no parseable version, try:
+```
+<TOOL_NAME> version
+```
+
+Extract the semantic version string (strip any leading `v`, e.g., `v2.27.0` becomes `2.27.0`). Store this as `TOOL_VERSION`.
+
+If neither command produces a parseable version, set `TOOL_VERSION` to `"unknown"` and inform the user:
+> Could not determine the version of `<TOOL_NAME>`. The generated plugin will not include version checking.
+
 **Ask where to save the generated plugin.** Suggest a default of `.claude/plugins/<TOOL_NAME>-cli/` in the user's current project directory, but let them specify any path. Store the chosen path as `OUTPUT_DIR`.
 
 **Ask for author name.** Ask the user for their name or organization to use as the plugin author. Store this as `AUTHOR_NAME`.
@@ -106,12 +123,14 @@ Set:
 - `description`: A concise description of what the plugin covers
 - `author`: `AUTHOR_NAME` (from Step 1)
 - `capabilities.skills`: Array of all group names from Step 3
+- `cliVersion`: `TOOL_VERSION` from Step 1 (omit this field entirely if `TOOL_VERSION` is `"unknown"`)
 
 ### 4c: Create SKILL.md Files
 
 For each skill group, create a `SKILL.md` following [references/skill-template.md](references/skill-template.md).
 
 Key rules:
+- If `TOOL_VERSION` is not `"unknown"`, every generated SKILL.md must include a `## Version Check` section immediately after the H1 heading and summary, following the preamble defined in [references/skill-template.md](references/skill-template.md)
 - The `description` in frontmatter must start with "Use when working with..."
 - Keep descriptions under 150 characters
 - Document commands with: command syntax, key flags (table), and one example
@@ -150,6 +169,10 @@ Perform a structural self-check on the generated plugin:
    - Starts with a main heading (`# Title`)
    - Contains `## Overview`, `## Installation`, and `## Usage` sections
 
+5. **Version information** (only if `TOOL_VERSION` is not `"unknown"`):
+   - `plugin.json` contains a `cliVersion` field matching `TOOL_VERSION`
+   - Each SKILL.md includes a `## Version Check` section
+
 **If any check fails:** Fix the issue and re-check until all validations pass.
 
 ---
@@ -162,6 +185,7 @@ Present the user with a summary:
 Plugin created: <TOOL_NAME>-cli
 Location: <OUTPUT_DIR>
 Author: <AUTHOR_NAME>
+CLI Version: <TOOL_VERSION>
 Skills: <count> skills covering <count> commands
 Validation: ✓ Passed
 

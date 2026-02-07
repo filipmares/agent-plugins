@@ -32,7 +32,8 @@ Use this reference when creating the directory structure and manifest for a CLI 
   "author": "<your-name>",
   "capabilities": {
     "skills": ["<skill-1>", "<skill-2>", "..."]
-  }
+  },
+  "cliVersion": "<version>"
 }
 ```
 
@@ -45,6 +46,9 @@ Use this reference when creating the directory structure and manifest for a CLI 
 | `description` | string | What the plugin does, 1 sentence. |
 | `author` | string | Author name or organization. |
 | `capabilities` | object | What the plugin provides. |
+| `cliVersion` | string | Semantic version of the CLI tool at generation time (e.g., `2.27.0`). Omit if unknown. |
+
+The `cliVersion` field records the version of the CLI tool that was installed when the plugin was generated. Generated skills use this to warn users when their installed version differs significantly, helping prevent issues with outdated or mismatched documentation.
 
 ### Capability Types
 
