@@ -37,7 +37,7 @@ Your plugin will be added to the marketplace catalog upon approval.
 
 ## Resources
 
-- [Getting Started Guide](./GETTING_STARTED.md) - How to use this marketplace
+- [README](./README.md) - How to use this marketplace
 - [Contributing Guidelines](./CONTRIBUTING.md) - How to submit plugins
 - [Plugin Template](./.templates/plugin-template) - Example plugin structure
 - [Official Docs](https://code.claude.com/docs/en/plugin-marketplaces) - Anthropic's guide

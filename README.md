@@ -2,9 +2,9 @@
 
 A marketplace of tiny plugins intended to boost productivity for developers and anyone working with AI agents, following the official [Anthropic plugin marketplace guidelines](https://code.claude.com/docs/en/plugin-marketplaces).
 
-## 🚀 Quick Start
+## Quick Start
 
-### Installing the Marketplace
+### Adding the Marketplace
 
 Add this marketplace to your agent:
 
@@ -17,43 +17,86 @@ Add this marketplace to your agent:
 Browse and install plugins from this marketplace:
 
 ```bash
-/plugin                                    # Browse available plugins
+/plugin                                    # Open plugin browser UI
+/plugin list                               # List available plugins
 /plugin install <plugin-name>@tinytoolstown-marketplace
 ```
 
-## What is this?
+## Managing Marketplaces
 
-This is an official Claude Code plugin marketplace that follows Anthropic's marketplace specification. It provides a centralized catalog of plugins that extend Claude Code's capabilities with commands, skills, agents, hooks, and MCP servers.
-
-## Marketplace Structure
-
-This repository follows the official Claude Code marketplace structure:
-
-```
-marketplace/
-├── .claude-plugin/
-│   └── marketplace.json      # Marketplace catalog
-├── plugins/
-│   └── [plugin-directories]  # Individual plugins
-└── README.md
+```bash
+/plugin marketplace list              # List all registered marketplaces
+/plugin marketplace update           # Update all marketplace catalogs
+/plugin marketplace remove <name>    # Remove a marketplace
 ```
 
-Each plugin has its own `.claude-plugin/plugin.json` manifest describing its capabilities.
+## Using Installed Plugins
+
+Plugins extend your agent with new capabilities. Depending on the plugin type:
+
+- **Skills**: Access via `/` commands (e.g., `/review`, `/analyze`)
+- **Commands**: Run with `/run <command-name>`
+- **Agents**: Autonomous helpers that work in the background
+- **Hooks**: Automatic actions triggered by events
+- **MCP Servers**: Model Context Protocol integrations
+
+Check each plugin's documentation for specific usage instructions.
+
+## Managing Installed Plugins
+
+```bash
+/plugin list --installed            # Show installed plugins
+/plugin update <plugin-name>        # Update a plugin
+/plugin uninstall <plugin-name>     # Remove a plugin
+```
 
 ## Available Plugins
 
 Currently, this marketplace contains no plugins. We're accepting contributions!
 
-📋 See the [Plugin Index](./PLUGIN_INDEX.md) for available plugins organized by category.
+See the [Plugin Index](./PLUGIN_INDEX.md) for available plugins organized by category.
 
-## Contributing Plugins
+## Creating Your Own Plugin
 
-Want to add a plugin to this marketplace? See [CONTRIBUTING.md](CONTRIBUTING.md) for:
+Want to create a plugin for this marketplace?
 
-- Plugin structure requirements
-- How to create a `.claude-plugin/plugin.json` manifest
-- Categories and metadata standards
-- Submission process
+1. **Choose a Plugin Type**: Skills, commands, agents, hooks, or MCP servers
+2. **Create Plugin Structure**: Include `.claude-plugin/plugin.json` manifest
+3. **Follow Guidelines**: See [CONTRIBUTING.md](./CONTRIBUTING.md) for requirements
+4. **Test Locally**: Test your plugin before submitting
+5. **Submit**: Open a pull request to add your plugin to this marketplace
+
+### Basic Plugin Structure
+
+```
+my-plugin/
+├── .claude-plugin/
+│   └── plugin.json          # Required manifest
+├── skills/                   # For skill-based plugins
+│   └── my-skill/
+│       └── SKILL.md
+├── commands/                 # For command-based plugins
+│   └── my-command/
+│       └── COMMAND.md
+└── README.md                # Plugin documentation
+```
+
+### Sample plugin.json
+
+```json
+{
+  "name": "my-plugin",
+  "version": "1.0.0",
+  "description": "Brief description of what this plugin does",
+  "author": "Your Name",
+  "homepage": "https://github.com/username/my-plugin",
+  "categories": ["development-tools"],
+  "capabilities": {
+    "skills": ["my-skill"],
+    "commands": ["my-command"]
+  }
+}
+```
 
 ## Plugin Categories
 
@@ -63,13 +106,6 @@ Want to add a plugin to this marketplace? See [CONTRIBUTING.md](CONTRIBUTING.md)
 - **data-tools**: Data processing, transformation, and analysis
 - **testing**: Testing frameworks, test generation, and quality assurance
 - **security**: Security scanning, vulnerability detection, and compliance
-
-## Documentation
-
-- 📖 [Getting Started Guide](./GETTING_STARTED.md) - How to use this marketplace
-- 🤝 [Contributing Guidelines](./CONTRIBUTING.md) - Submit your plugins
-- 📋 [Plugin Index](./PLUGIN_INDEX.md) - Browse available plugins
-- 📚 [Official Docs](https://code.claude.com/docs/en/plugin-marketplaces) - Anthropic's marketplace guide
 
 ## Development
 
@@ -88,21 +124,34 @@ bun run scripts/list-plugins.ts
 
 See [scripts/README.md](./scripts/README.md) for more details.
 
-## Verified Agents
+## Troubleshooting
 
-This marketplace has been verified to work with the following agents:
+### Marketplace Not Loading
 
-- **Claude Code** - Anthropic's official CLI for Claude
-- **Copilot CLI** - GitHub's CLI-based AI assistant
+- Ensure you have a compatible agent installed and running
+- Check your internet connection
+- Verify the marketplace URL is correct
+- Try running `/plugin marketplace update`
 
-Other agents may also be compatible but have not been tested.
+### Plugin Installation Fails
+
+- Check plugin compatibility with your agent version
+- Review plugin dependencies and requirements
+- Check the plugin's README for specific installation notes
+- Ensure you're using the correct marketplace name
+
+### Plugin Not Working
+
+- Verify the plugin is installed: `/plugin list --installed`
+- Check the plugin's documentation for usage instructions
+- Look for error messages in your agent's output
+- Try reinstalling: `/plugin uninstall <name>` then `/plugin install <name>`
 
 ## Support
 
 For issues or questions:
 - Open an issue in this repository
 - Check the [official Claude Code documentation](https://code.claude.com/docs)
-- Review the [Getting Started Guide](./GETTING_STARTED.md)
 
 ## License
 

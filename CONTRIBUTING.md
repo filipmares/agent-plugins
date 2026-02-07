@@ -204,7 +204,7 @@ Your README.md must include:
 If you need assistance:
 - Open an issue for questions
 - Review existing plugins for examples
-- Check the [Getting Started Guide](./GETTING_STARTED.md)
+- Check the [README](./README.md)
 - Refer to [Official Claude Code Docs](https://code.claude.com/docs)
 
 ## Security
