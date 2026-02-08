@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /**
  * Plugin Validator
- * 
+ *
  * Validates that a plugin follows the Claude Code marketplace structure
  * Based on official Anthropic guidelines: https://code.claude.com/docs/en/plugin-marketplaces
  */
@@ -16,19 +16,28 @@ interface ValidationResults {
   pluginName: string;
 }
 
+interface PluginAuthor {
+  name: string;
+  email?: string;
+  url?: string;
+}
+
 interface PluginManifest {
   name?: string;
   version?: string;
   description?: string;
-  author?: string;
-  categories?: string[];
-  capabilities?: {
-    skills?: string[];
-    commands?: string[];
-    agents?: string[];
-    hooks?: string[];
-    mcpServers?: string[];
-  };
+  author?: PluginAuthor;
+  homepage?: string;
+  repository?: string;
+  license?: string;
+  keywords?: string[];
+  commands?: string;
+  agents?: string;
+  skills?: string;
+  hooks?: string;
+  mcpServers?: string;
+  outputStyles?: string;
+  lspServers?: string;
 }
 
 /**
@@ -64,9 +73,9 @@ function validatePlugin(pluginPath: string): ValidationResults {
   if (existsSync(pluginJsonPath)) {
     try {
       const pluginJson: PluginManifest = JSON.parse(readFileSync(pluginJsonPath, 'utf8'));
-      
+
       // Check required fields
-      const requiredFields: (keyof PluginManifest)[] = ['name', 'version', 'description', 'author', 'categories', 'capabilities'];
+      const requiredFields: (keyof PluginManifest)[] = ['name', 'version', 'description', 'author'];
       for (const field of requiredFields) {
         if (!pluginJson[field]) {
           results.valid = false;
@@ -74,27 +83,11 @@ function validatePlugin(pluginPath: string): ValidationResults {
         }
       }
 
-      // Check categories array
-      const validCategories = ['development-tools', 'productivity', 'web-tools', 'data-tools', 'testing', 'security', 'documentation', 'deployment'];
-      if (pluginJson.categories) {
-        if (!Array.isArray(pluginJson.categories)) {
-          results.errors.push('categories must be an array');
-        } else {
-          for (const cat of pluginJson.categories) {
-            if (!validCategories.includes(cat)) {
-              results.warnings.push(`Category "${cat}" is not a standard category`);
-            }
-          }
-        }
-      }
-
-      // Check capabilities object
-      if (pluginJson.capabilities && typeof pluginJson.capabilities === 'object') {
-        const validCapabilities = ['skills', 'commands', 'agents', 'hooks', 'mcpServers'];
-        for (const cap of Object.keys(pluginJson.capabilities)) {
-          if (!validCapabilities.includes(cap)) {
-            results.warnings.push(`Unknown capability type: ${cap}`);
-          }
+      // Validate author is an object with a name field
+      if (pluginJson.author) {
+        if (typeof pluginJson.author !== 'object' || typeof pluginJson.author.name !== 'string') {
+          results.valid = false;
+          results.errors.push('author must be an object with a "name" field (e.g. { "name": "Your Name" })');
         }
       }
 
@@ -108,7 +101,7 @@ function validatePlugin(pluginPath: string): ValidationResults {
   const readmePath = join(pluginPath, 'README.md');
   if (existsSync(readmePath)) {
     const readme = readFileSync(readmePath, 'utf8');
-    
+
     // Check for key sections
     const requiredSections = ['## Overview', '## Installation', '## Usage'];
     for (const section of requiredSections) {
@@ -116,37 +109,29 @@ function validatePlugin(pluginPath: string): ValidationResults {
         results.warnings.push(`README.md should include "${section}" section`);
       }
     }
-    
+
     // Check if README starts with a heading
     if (!readme.trim().startsWith('# ')) {
       results.warnings.push('README.md should start with a main heading (# Title)');
     }
   }
 
-  // Check for capability implementations
+  // Check for skill implementations
   if (existsSync(pluginJsonPath)) {
     try {
       const pluginJson: PluginManifest = JSON.parse(readFileSync(pluginJsonPath, 'utf8'));
-      
-      if (pluginJson.capabilities) {
-        // Check for skills
-        if (pluginJson.capabilities.skills && pluginJson.capabilities.skills.length > 0) {
-          for (const skill of pluginJson.capabilities.skills) {
-            const skillPath = join(pluginPath, 'skills', skill, 'SKILL.md');
-            if (!existsSync(skillPath)) {
-              results.warnings.push(`Skill "${skill}" declared but SKILL.md not found at skills/${skill}/SKILL.md`);
-            }
-          }
+
+      if (pluginJson.skills) {
+        const skillsDir = join(pluginPath, pluginJson.skills);
+        if (!existsSync(skillsDir)) {
+          results.warnings.push(`Skills path "${pluginJson.skills}" declared but directory not found`);
         }
-        
-        // Check for commands
-        if (pluginJson.capabilities.commands && pluginJson.capabilities.commands.length > 0) {
-          for (const command of pluginJson.capabilities.commands) {
-            const commandPath = join(pluginPath, 'commands', command, 'COMMAND.md');
-            if (!existsSync(commandPath)) {
-              results.warnings.push(`Command "${command}" declared but COMMAND.md not found at commands/${command}/COMMAND.md`);
-            }
-          }
+      }
+
+      if (pluginJson.commands) {
+        const commandsDir = join(pluginPath, pluginJson.commands);
+        if (!existsSync(commandsDir)) {
+          results.warnings.push(`Commands path "${pluginJson.commands}" declared but directory not found`);
         }
       }
     } catch (error) {
@@ -162,7 +147,7 @@ function validatePlugin(pluginPath: string): ValidationResults {
  */
 function main(): void {
   const args = process.argv.slice(2);
-  
+
   if (args.length === 0) {
     console.log('Plugin Validator');
     console.log('Usage: bun run scripts/validate-plugin.ts <plugin-path>');
