@@ -25,12 +25,8 @@ scripts/          # Validation and listing scripts (Bun + TS)
 ## Plugin Structure
 
 Each plugin lives in `plugins/<name>/` and requires:
-- `.claude-plugin/plugin.json` — manifest with name, version, description, author, categories, capabilities
+- `.claude-plugin/plugin.json` — manifest with name, version, description, author (object), and component paths
 - `README.md` — documentation
-
-## Valid Categories
-
-`development-tools`, `productivity`, `web-tools`, `data-tools`, `testing`, `security`, `documentation`, `deployment`
 
 ## Conventions
 

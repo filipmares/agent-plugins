@@ -48,17 +48,11 @@ Every plugin must have a `.claude-plugin/plugin.json` file:
   "name": "your-plugin",
   "version": "1.0.0",
   "description": "Brief description of what your plugin does",
-  "author": "Your Name",
+  "author": { "name": "Your Name" },
   "homepage": "https://github.com/username/your-plugin",
   "license": "MIT",
-  "categories": ["development-tools"],
-  "capabilities": {
-    "skills": ["skill-name"],
-    "commands": ["command-name"],
-    "mcpServers": ["server-name"]
-  },
-  "dependencies": {},
-  "minClaudeCodeVersion": "1.0.0"
+  "skills": "./skills/",
+  "commands": "./commands/"
 }
 ```
 
@@ -67,29 +61,19 @@ Every plugin must have a `.claude-plugin/plugin.json` file:
 - `name`: Unique plugin identifier (lowercase, hyphens only)
 - `version`: Semantic version (e.g., "1.0.0")
 - `description`: Clear, concise description
-- `author`: Your name or organization
-- `categories`: Array of applicable categories
-- `capabilities`: Object listing what the plugin provides
+- `author`: Author object with `name` (required), `email` (optional), `url` (optional)
 
 ### Optional Fields
 
 - `homepage`: Link to plugin repository or website
+- `repository`: Repository URL
 - `license`: License identifier (default: MIT)
-- `dependencies`: External dependencies
-- `minClaudeCodeVersion`: Minimum Claude Code version required
-
-## Plugin Categories
-
-Choose one or more categories for your plugin:
-
-- **development-tools**: Code analysis, formatting, linting, build tools
-- **productivity**: Task automation, note-taking, workflow optimization
-- **web-tools**: Web scraping, HTTP clients, browser automation
-- **data-tools**: Data processing, transformation, analysis
-- **testing**: Test frameworks, test generation, quality assurance
-- **security**: Security scanning, vulnerability detection, compliance
-- **documentation**: Doc generation, API documentation, knowledge management
-- **deployment**: CI/CD, deployment automation, infrastructure
+- `keywords`: Array of keyword strings
+- `skills`: Path to skills directory
+- `commands`: Path to commands directory
+- `agents`: Path to agents directory
+- `hooks`: Path to hooks directory
+- `mcpServers`: Path to MCP servers directory
 
 ## Submission Process
 
@@ -129,8 +113,7 @@ Add your plugin to `.claude-plugin/marketplace.json`:
       "name": "my-plugin",
       "source": "./plugins/my-plugin",
       "description": "Brief description",
-      "category": "development-tools",
-      "author": "Your Name"
+      "author": { "name": "Your Name" }
     }
   ]
 }
