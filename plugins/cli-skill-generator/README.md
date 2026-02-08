@@ -9,7 +9,7 @@ producing a complete plugin in any directory you choose.
 ## Installation
 
 ```
-/plugin install cli-skill-generator@tinytoolstown-marketplace
+/plugin install cli-skill-generator@agent-plugins
 ```
 
 ## Usage

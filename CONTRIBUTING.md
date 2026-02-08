@@ -142,7 +142,7 @@ Test your plugin with Claude Code:
 
 ```bash
 /plugin marketplace add /path/to/marketplace
-/plugin install my-plugin@tinytoolstown-marketplace
+/plugin install my-plugin@agent-plugins
 ```
 
 ### 6. Submit Pull Request
