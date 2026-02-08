@@ -1,18 +1,19 @@
 {
-  "name": "tinytoolstown-marketplace",
+  "name": "agent-plugins",
   "owner": {
-    "name": "tinytoolstown",
-    "url": "https://github.com/tinytoolstown"
+    "name": "filipmares"
   },
-  "description": "A marketplace of tiny plugins intended to boost productivity for developers and anyone working with AI agents",
-  "homepage": "https://github.com/tinytoolstown/marketplace",
+  "description": "A marketplace of plugins intended to boost productivity for developers and anyone working with AI agents",
+  "homepage": "https://github.com/filipmares/agent-plugins",
   "plugins": [
     {
       "name": "cli-skill-generator",
       "source": "./plugins/cli-skill-generator",
       "description": "Generate Claude Code skills for any CLI tool",
       "category": "development-tools",
-      "author": "tinytoolstown"
+      "author": {
+        "name": "filipmares"
+      }
     }
   ]
 }

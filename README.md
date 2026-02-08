@@ -1,6 +1,6 @@
-# Tiny Tools Plugin Marketplace
+# Plugin Marketplace
 
-A marketplace of tiny plugins intended to boost productivity for developers and anyone working with AI agents, following the official [Anthropic plugin marketplace guidelines](https://code.claude.com/docs/en/plugin-marketplaces).
+A marketplace of plugins intended to boost productivity for anyone working with AI agents, following the official [Anthropic plugin marketplace guidelines](https://code.claude.com/docs/en/plugin-marketplaces).
 
 ## Quick Start
 
@@ -9,7 +9,7 @@ A marketplace of tiny plugins intended to boost productivity for developers and 
 Add this marketplace to your agent:
 
 ```bash
-/plugin marketplace add https://github.com/tinytoolstown/marketplace
+/plugin marketplace add filipmares/agent-plugins
 ```
 
 ### Installing Plugins
@@ -19,7 +19,7 @@ Browse and install plugins from this marketplace:
 ```bash
 /plugin                                    # Open plugin browser UI
 /plugin list                               # List available plugins
-/plugin install <plugin-name>@tinytoolstown-marketplace
+/plugin install <plugin-name>@agent-plugins
 ```
 
 ## Managing Marketplaces

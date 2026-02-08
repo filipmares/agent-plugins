@@ -25,8 +25,8 @@ plugin-template/
 Add the marketplace containing this plugin:
 
 ```bash
-/plugin marketplace add https://github.com/tinytoolstown/marketplace
-/plugin install plugin-template@tinytoolstown-marketplace
+/plugin marketplace add filipmares/agent-plugins
+/plugin install plugin-template@agent-plugins
 ```
 
 ## Usage
