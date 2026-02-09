@@ -1,6 +1,6 @@
 {
   "name": "cli-skill-generator",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Generate Claude Code skills for any CLI tool",
   "author": { "name": "filipmares" },
   "skills": "./skills/"

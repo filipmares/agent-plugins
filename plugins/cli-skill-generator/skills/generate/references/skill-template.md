@@ -18,7 +18,7 @@ description: "Use when working with <tool> <domain>. Covers <key commands>."
 ### Frontmatter Rules
 
 - **name**: Lowercase, hyphens only. Must match the directory name (e.g., `skills/container-management/SKILL.md` has `name: container-management`).
-- **description**: Must start with `"Use when working with..."`. Keep under 150 characters. Should help Claude decide when to load this skill.
+- **description**: Must start with `"Use when working with..."`. Keep under 150 characters. Should help Claude decide when to load this skill. Be specific enough to route queries precisely — especially important for plugins with 10+ skills.
 
 ### Good vs. Bad Descriptions
 
@@ -44,7 +44,7 @@ Brief one-line summary of what this skill covers.
 
 ## Version Check
 
-<version check preamble — see Version Check Preamble section below>
+See [version-check.md](../references/version-check.md) for version verification.
 
 ## Commands
 
@@ -69,13 +69,15 @@ Brief one-line summary of what this skill covers.
 ...repeat for each command in this group...
 ```
 
+If `cliVersion` is **not** present in `plugin.json`, omit the `## Version Check` section entirely.
+
 ---
 
-## Version Check Preamble
+## Version Check Shared Reference
 
-When `cliVersion` is present in the plugin's `plugin.json`, every generated SKILL.md must include a `## Version Check` section immediately after the H1 heading and summary line, before `## Commands`. This section instructs Claude to verify the user's installed CLI version at invocation time.
+When `cliVersion` is present in the plugin's `plugin.json`, the generator creates a shared `references/version-check.md` file in the output plugin. Each generated SKILL.md links to it instead of repeating the version check logic.
 
-The `## Version Check` section should contain the following instructions (substituting the actual tool name):
+The shared `references/version-check.md` should contain these instructions (substituting the actual tool name):
 
 1. Run `<TOOL> --version` to get the installed version. If that fails, try `<TOOL> version`.
 2. Read `cliVersion` from this plugin's `plugin.json`.
@@ -86,7 +88,16 @@ The `## Version Check` section should contain the following instructions (substi
    - **Older major version** — warn: _"Your `<TOOL>` version (X.Y.Z) is a major version behind what this plugin was documented against (A.B.C). Many documented features may not exist in your version."_ Ask the user whether to proceed or stop (consider upgrading the CLI tool).
    - **Version not parseable or unavailable** — note: _"Could not determine `<TOOL>` version. Proceeding with documented commands — some may not match your installed version."_ Then proceed.
 
-If `cliVersion` is **not** present in `plugin.json`, omit the `## Version Check` section entirely.
+---
+
+## Two-Tier Command Documentation
+
+For plugins covering large CLI tools, use two tiers of documentation within each skill:
+
+- **Core commands** (Tier 1/2): Full documentation — description, flag table (3-5 flags), example (~15 lines per command)
+- **Minor commands** (Tier 3): Compact format — command name, one-line description, one example, no flag table (~5 lines per command)
+
+This gives full command coverage while keeping each skill under 300 lines.
 
 ---
 
@@ -97,7 +108,8 @@ If `cliVersion` is **not** present in `plugin.json`, omit the `## Version Check`
 3. **Key flags only.** Include 3-5 of the most useful flags per command. Skip rarely-used options.
 4. **Under 500 lines.** If a skill would exceed this, move detailed flag tables or advanced usage to `references/` files.
 5. **No tutorials.** Skills are reference material, not guides. Assume the user knows the tool basics.
-6. **Concrete values in examples.** Use realistic values, not placeholders like `<name>`. E.g., `docker run -d nginx` not `docker run -d <image>`.
+6. **Concrete values in examples.** Use descriptive defaults for user-chosen names (e.g., `my-rg`, `my-app`, `my-container`). Use zero-pattern placeholders for opaque/system-generated identifiers (e.g., `00000000-0000-0000-0000-000000000000` for UUIDs, `192.168.1.1` for IPs). Never use bare `<placeholder>` syntax.
+7. **Do not duplicate global flags** documented in `references/global-patterns.md`. If the plugin has a shared global patterns reference, omit those flags from individual command flag tables and link to the shared file instead.
 
 ---
 
@@ -114,7 +126,8 @@ Reference files use plain markdown (no frontmatter needed).
 
 ## Size Budget
 
-- **Per skill:** Aim for 100-300 lines. Max 500 lines.
+- **Per skill (5-7 skills):** Aim for 200-300 lines. Max 500 lines.
+- **Per skill (10+ skills):** Aim for 100-200 lines. Max 500 lines.
 - **Description:** 80-150 characters.
-- **Commands per skill:** 3-10. If you have more, consider splitting the skill.
-- **Flags per command:** 3-5 key flags in the main table.
+- **Commands per skill:** 3-15. If you have more, consider splitting the skill.
+- **Flags per command:** 3-5 key flags in the main table (3 for plugins with 10+ skills).

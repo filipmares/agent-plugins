@@ -13,10 +13,13 @@ Use this reference when creating the directory structure and manifest for a CLI 
 ├── skills/                   # One subdirectory per skill (required)
 │   ├── <skill-1>/
 │   │   ├── SKILL.md          # Skill definition (required)
-│   │   └── references/       # Optional reference files
+│   │   └── references/       # Optional per-skill reference files
 │   ├── <skill-2>/
 │   │   └── SKILL.md
 │   └── .../
+├── references/               # Shared reference files (optional)
+│   ├── version-check.md      # Version check instructions (if cliVersion known)
+│   └── global-patterns.md    # Global flags & patterns (if tool has 3+ global flags)
 └── README.md                 # Plugin documentation (required)
 ```
 
@@ -29,10 +32,8 @@ Use this reference when creating the directory structure and manifest for a CLI 
   "name": "<tool-name>-cli",
   "version": "1.0.0",
   "description": "<Concise description of what the plugin provides>",
-  "author": "<your-name>",
-  "capabilities": {
-    "skills": ["<skill-1>", "<skill-2>", "..."]
-  },
+  "author": { "name": "<author-name>" },
+  "skills": "./skills/",
   "cliVersion": "<version>"
 }
 ```
@@ -44,21 +45,11 @@ Use this reference when creating the directory structure and manifest for a CLI 
 | `name` | string | Plugin name. Lowercase, hyphens only. Must match directory name. |
 | `version` | string | Semantic version (e.g., `1.0.0`). |
 | `description` | string | What the plugin does, 1 sentence. |
-| `author` | string | Author name or organization. |
-| `capabilities` | object | What the plugin provides. |
+| `author` | object | Author info. Object with a `name` field (e.g., `{ "name": "Your Name" }`). |
+| `skills` | string | Path to skills directory (e.g., `"./skills/"`). |
 | `cliVersion` | string | Semantic version of the CLI tool at generation time (e.g., `2.27.0`). Omit if unknown. |
 
 The `cliVersion` field records the version of the CLI tool that was installed when the plugin was generated. Generated skills use this to warn users when their installed version differs significantly, helping prevent issues with outdated or mismatched documentation.
-
-### Capability Types
-
-- `skills` — Array of skill names. Each must have a matching `skills/<name>/SKILL.md`.
-- `commands` — Array of command names. Each must have `commands/<name>/COMMAND.md`.
-- `agents` — Array of agent names.
-- `hooks` — Array of hook names.
-- `mcpServers` — Array of MCP server names.
-
-For CLI tool documentation plugins, use `skills` only.
 
 ---
 
