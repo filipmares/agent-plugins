@@ -1,0 +1,9 @@
+{
+  "name": "plugin-analyzer",
+  "version": "1.0.0",
+  "description": "Analyze plugins using multiple AI models in parallel, synthesize consensus findings, and create GitHub issues",
+  "author": { "name": "filipmares" },
+  "homepage": "https://github.com/filipmares/agent-plugins",
+  "license": "MIT",
+  "skills": "./skills/"
+}
