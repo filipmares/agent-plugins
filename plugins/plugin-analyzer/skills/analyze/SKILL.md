@@ -172,7 +172,7 @@ Cases where models give conflicting recommendations. Present both perspectives a
    ...
 ```
 
-If `DRY_RUN` is true, stop here after presenting the report. Skip Steps 5, 6, and 7.
+If `DRY_RUN` is true, proceed to Step 5 (duplicate detection) but skip Steps 6 and 7.
 
 ---
 
@@ -201,7 +201,9 @@ For each finding from Step 4, search for existing GitHub issues that might alrea
 
 **For each potential duplicate found:**
 
-Use `ask_user` to present the match:
+If `DRY_RUN` is true: flag the finding as a potential duplicate in the report (no user prompt needed). Annotate it with the existing issue number.
+
+If `DRY_RUN` is false: use `ask_user` to present the match:
 
 ```
 Finding: "<finding title>"
@@ -215,6 +217,8 @@ Choices:
 - "Create anyway — this is different"
 
 Store decisions. Track skipped findings with the existing issue number they duplicate.
+
+If `DRY_RUN` is true, present the annotated report with duplicate flags and stop. Skip Steps 6 and 7.
 
 ---
 
