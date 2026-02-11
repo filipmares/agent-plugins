@@ -14,6 +14,15 @@
       "author": {
         "name": "filipmares"
       }
+    },
+    {
+      "name": "plugin-analyzer",
+      "source": "./plugins/plugin-analyzer",
+      "description": "Analyze plugins using multiple AI models in parallel, synthesize consensus findings, and create GitHub issues",
+      "category": "development-tools",
+      "author": {
+        "name": "filipmares"
+      }
     }
   ]
 }
