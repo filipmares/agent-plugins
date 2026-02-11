@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.3.0
+
+### Multi-select model selection
+
+**Changes:**
+
+- **Multi-select model picker** — Step 2 now uses `ask_user` with `multiSelect: true` to let users pick all models in a single prompt, replacing the iterative single-select loop that required multiple round-trips
+
 ## 1.2.0
 
 ### Prompt quality, convergence, and reliability improvements
@@ -9,7 +17,7 @@
 - **Context exclusion patterns** — Step 1d now excludes `node_modules`, `dist`, `build`, `.next`, `vendor`, `__pycache__`, and other non-source directories/files from the glob, preventing wasted context slots
 - **Fixed-format output fields** — Planning prompt now requires `**Complexity: S | M | L**` and `**Files changed: <N>**` for reliable summary extraction and convergence checks
 - **Explicit Assumptions section** — Planning prompt requires a dedicated Assumptions subsection, surfacing implicit assumptions that cause plan divergence
-- **Multi-step model selection** — Step 2 uses an iterative `ask_user` loop to work within the single-select constraint, fixing a functional limitation
+- **Multi-step model selection** — Step 2 uses an iterative `ask_user` loop to work within the single-select constraint, fixing a functional limitation (superseded by multi-select in 1.3.0)
 - **Agent failure retry** — Steps 3 and 4 now retry failed agents once before falling back, improving resilience against transient API failures
 - **Output structure validation** — Step 3 validates that all 7 required sections are present in agent output, with a single retry for missing sections
 - **Disagreement ledger** — Feedback prompt now includes structured "Disagreements Resolved" and "Remaining Disagreements" sections, replacing vague convergence heuristics with agent-reported data

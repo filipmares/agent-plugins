@@ -100,13 +100,9 @@ If the project has more than 200 files, tell the user which files you selected a
 
 **Model selection:**
 
-Since `ask_user` is single-select, use an iterative loop to collect 1–5 models:
+Use `ask_user` with `multiSelect: true` to let the user pick 1–5 models in a single prompt. Present all `AVAILABLE_MODELS` as choices.
 
-1. Present all `AVAILABLE_MODELS` as choices → user picks first model
-2. Show remaining models plus a "Done selecting" option → user picks another or finishes
-3. Repeat until the user selects "Done" or 5 models are reached
-
-At each step, show which models are already selected. Recommend 2 models as a good default for cost/diversity balance:
+Recommend 2 models as a good default for cost/diversity balance:
 - For **Copilot CLI**, recommend picking models from different vendors (e.g., one Claude + one GPT + one Gemini)
 - For **Claude Code**, recommend picking models from different tiers (e.g., Opus + Sonnet)
 
