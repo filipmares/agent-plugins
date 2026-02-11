@@ -23,6 +23,15 @@
       "author": {
         "name": "filipmares"
       }
+    },
+    {
+      "name": "consensus-planner",
+      "source": "./plugins/consensus-planner",
+      "description": "Multi-model iterative consensus planning — spawns parallel agents to create, critique, and converge on implementation plans",
+      "category": "development-tools",
+      "author": {
+        "name": "filipmares"
+      }
     }
   ]
 }
