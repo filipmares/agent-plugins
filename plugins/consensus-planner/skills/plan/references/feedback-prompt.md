@@ -40,7 +40,21 @@ Produce a **revised implementation plan** that:
 - Resolves conflicts between plans by choosing the stronger approach (with justification)
 - Maintains the same structure as the original plan (all 7 sections)
 
-### Phase 3: Change Log (append after the revised plan)
+### Phase 3: Disagreement Tracking (append after the revised plan)
+
+After your revised plan, add these sections:
+
+```
+## Disagreements Resolved This Round
+- <topic>: Adopted <approach> because <reason>
+
+## Remaining Disagreements
+- <topic>: <model A approach> vs <model B approach> — <why unresolved>
+
+If no disagreements remain, write: "None — all plans aligned."
+```
+
+### Phase 4: Change Log (append after disagreement tracking)
 
 After your revised plan, add a section:
 
