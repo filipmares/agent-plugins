@@ -22,7 +22,12 @@ Produce a structured implementation plan. Be specific — cite file paths, funct
 ### Required Sections
 
 #### 1. Problem Restatement
-Restate the task in your own words to verify understanding. Call out any ambiguities or assumptions you are making.
+Restate the task in your own words to verify understanding. Call out any ambiguities.
+
+##### Assumptions
+List every assumption you are making that could affect the plan. For each:
+- What you assumed
+- What would change if the assumption is wrong
 
 #### 2. Proposed Approach
 Describe the high-level architecture and strategy. Explain **why** this approach was chosen over alternatives.
