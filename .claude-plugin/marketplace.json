@@ -9,6 +9,7 @@
     {
       "name": "cli-skill-generator",
       "source": "./plugins/cli-skill-generator",
+      "version": "2.0.0",
       "description": "Generate Claude Code skills for any CLI tool",
       "category": "development-tools",
       "author": {
@@ -18,6 +19,7 @@
     {
       "name": "plugin-analyzer",
       "source": "./plugins/plugin-analyzer",
+      "version": "1.0.0",
       "description": "Analyze plugins using multiple AI models in parallel, synthesize consensus findings, and create GitHub issues",
       "category": "development-tools",
       "author": {
@@ -27,6 +29,7 @@
     {
       "name": "consensus-planner",
       "source": "./plugins/consensus-planner",
+      "version": "1.2.0",
       "description": "Multi-model iterative consensus planning — spawns parallel agents to create, critique, and converge on implementation plans",
       "category": "development-tools",
       "author": {
