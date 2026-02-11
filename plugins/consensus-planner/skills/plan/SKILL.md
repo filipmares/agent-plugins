@@ -260,30 +260,20 @@ Proceed to Step 5.
 
 **If only 1 model was used:** Skip this step. Use the single plan directly in Step 6.
 
-Analyze all final-round plans side by side. For every planning element (approach, each file change, each design decision, testing strategy), categorize it:
+Read the synthesis prompt template from `references/synthesis-prompt.md` (relative to this SKILL.md file).
 
-### Consensus (highest confidence)
-Elements where ALL models agree. These form the backbone of the final plan. Use the clearest articulation among the models.
+Replace placeholders:
+- `{TASK_PROMPT}` → the user's task description
+- `{ALL_FINAL_PLANS}` → all models' final plans, each wrapped as:
+  ```
+  --- Plan by <model name> ---
+  <plan text>
+  --- End of plan by <model name> ---
+  ```
+- `{ROUND_COUNT}` → the number of feedback rounds completed
+- `{MODEL_LIST}` → comma-separated list of model names
 
-### Majority (high confidence)
-Elements where 2+ models agree but not all. Use the majority position. Note the dissenting model's alternative in parentheses.
-
-### Divergent (open questions)
-Elements where models fundamentally disagree. Present both/all perspectives and let the user decide.
-
-**Merge into a single consensus plan** following the same 7-section structure from the planning prompt:
-1. Problem Restatement (consensus version)
-2. Proposed Approach (merged — flag any majority/divergent elements)
-3. File-by-File Change List (union of all agreed changes, with confidence markers)
-4. Key Design Decisions (consensus decisions + open questions for divergent ones)
-5. Risk Areas & Edge Cases (union from all models — more eyes = more risks found)
-6. Testing Approach (merged)
-7. Complexity Estimate (majority vote or range if disagreed)
-
-Mark each element with its confidence level:
-- `[consensus]` — all models agree
-- `[majority: N/M]` — N of M models agree
-- `[divergent]` — models disagree (see Open Questions)
+Use the filled template to perform the synthesis yourself (do not spawn a sub-agent). Produce the merged consensus plan with confidence markers (`[consensus]`/`[majority: N/M]`/`[divergent]`), the Consensus Breakdown, Open Questions, and Model Attribution.
 
 ---
 
