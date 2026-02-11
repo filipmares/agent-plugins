@@ -230,11 +230,10 @@ If an agent fails in this round, retry it **once** with the same prompt. If the 
 
 **4d: Convergence check**
 
-Compare this round's plans to the previous round. Check for convergence by examining:
-1. Do all plans agree on the same overall approach/architecture?
-2. Do the file change lists substantially overlap?
-3. Are the key design decisions aligned?
-4. Did the "Changes From Previous Round" sections show only minor refinements?
+Read each agent's "Remaining Disagreements" section from this round's output.
+
+- If ALL agents report "None — all plans aligned" → **converged**
+- Otherwise, collect the remaining disagreements across all agents
 
 **If converged** (all plans substantially agree on approach, files, and key decisions):
 > ✅ **Round <N>/<MAX_ROUNDS> complete — Converged.** All models agree on the approach. Proceeding to synthesis.
