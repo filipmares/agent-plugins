@@ -164,7 +164,7 @@ Launch ALL agents simultaneously in a single response (parallel tool calls).
 
 Use `read_agent` with `wait: true` for each agent. Collect all responses.
 
-If any agent fails, note the failure and continue with remaining results. If all agents fail, stop and report the error to the user.
+If any agent fails, retry it **once** with the same prompt. If the retry also fails, note the failure and continue with remaining results. If all agents fail (including retries), stop and report the error to the user.
 
 Store results as `PLANS` — a map of model name → plan text.
 
@@ -222,7 +222,7 @@ Launch ALL agents simultaneously.
 
 Use `read_agent` with `wait: true` for each agent. Update `PLANS` with the new revised plans.
 
-If an agent fails in this round, carry forward its plan from the previous round. Note the failure.
+If an agent fails in this round, retry it **once** with the same prompt. If the retry also fails, carry forward its plan from the previous round. Note the failure.
 
 **4d: Convergence check**
 
