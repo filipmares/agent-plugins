@@ -1,0 +1,9 @@
+{
+  "name": "consensus-planner",
+  "version": "1.1.0",
+  "description": "Multi-model iterative consensus planning — spawns parallel agents to create, critique, and converge on implementation plans",
+  "author": { "name": "filipmares" },
+  "homepage": "https://github.com/filipmares/agent-plugins",
+  "license": "MIT",
+  "skills": "./skills/"
+}
