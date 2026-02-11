@@ -168,6 +168,10 @@ If any agent fails, retry it **once** with the same prompt. If the retry also fa
 
 Store results as `PLANS` — a map of model name → plan text.
 
+**Validate plan structure:**
+
+For each plan, verify it contains all 7 required section headers: Problem Restatement, Proposed Approach, File-by-File Change List, Key Design Decisions, Risk Areas & Edge Cases, Testing Approach, Complexity Estimate. If any section is missing, retry that agent **once** with: "Your plan is missing sections: [list]. Please regenerate the complete plan with all 7 sections." If the retry also fails, proceed with what was returned and flag missing sections as `[section missing]` in the summary.
+
 **Present summaries:**
 
 For each plan, extract and display:
