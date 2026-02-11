@@ -72,6 +72,12 @@ Use `glob` to discover the project structure:
 **/*.{ts,js,tsx,jsx,py,rs,go,java,cs,md,json,yaml,yml,toml}
 ```
 
+Exclude common non-source directories and generated files from results:
+- **Directories:** `node_modules`, `dist`, `build`, `.next`, `out`, `target`, `vendor`, `__pycache__`, `.git`, `coverage`, `.cache`
+- **Files:** `*.min.js`, `*.map`, `*.lock`, `*.snap`
+
+If the project has a `.gitignore`, use it as additional exclusion guidance.
+
 Identify the most relevant files using these heuristics (in priority order):
 1. README, CONTRIBUTING, or architecture docs at the repo root
 2. Package manifests (package.json, Cargo.toml, go.mod, pyproject.toml, *.csproj, etc.)
