@@ -38,6 +38,8 @@ For each file that needs to be created or modified:
 
 Order files by dependency (foundations first, then consumers).
 
+End this section with: **Files changed: `<N>`**
+
 #### 4. Key Design Decisions
 List the important design choices and their tradeoffs. For each:
 - **Decision:** what you chose
@@ -57,8 +59,9 @@ How should this be tested?
 - Manual verification steps
 
 #### 7. Complexity Estimate
-Rate overall complexity: **Small** / **Medium** / **Large**
-Briefly justify the rating.
+Use exactly this format on its own line: **Complexity: S | M | L**
+
+Then briefly justify the rating on the next line.
 
 ## Rules
 
