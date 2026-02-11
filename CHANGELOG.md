@@ -7,6 +7,9 @@ and plugin versioning follows [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## [Unreleased]
 
+### Changed — consensus-planner v1.3.0
+- Multi-select model picker replaces iterative single-select loop in Step 2 ([#36](https://github.com/filipmares/agent-plugins/pull/36))
+
 ### Fixed
 - Add `version` field to all plugin entries in `marketplace.json` so marketplace installs correctly record plugin versions ([#35](https://github.com/filipmares/agent-plugins/pull/35))
 
