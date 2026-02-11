@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.2.0
+
+### Prompt quality, convergence, and reliability improvements
+
+**Changes:**
+
+- **Context exclusion patterns** — Step 1d now excludes `node_modules`, `dist`, `build`, `.next`, `vendor`, `__pycache__`, and other non-source directories/files from the glob, preventing wasted context slots
+- **Fixed-format output fields** — Planning prompt now requires `**Complexity: S | M | L**` and `**Files changed: <N>**` for reliable summary extraction and convergence checks
+- **Explicit Assumptions section** — Planning prompt requires a dedicated Assumptions subsection, surfacing implicit assumptions that cause plan divergence
+- **Multi-step model selection** — Step 2 uses an iterative `ask_user` loop to work within the single-select constraint, fixing a functional limitation
+- **Agent failure retry** — Steps 3 and 4 now retry failed agents once before falling back, improving resilience against transient API failures
+- **Output structure validation** — Step 3 validates that all 7 required sections are present in agent output, with a single retry for missing sections
+- **Disagreement ledger** — Feedback prompt now includes structured "Disagreements Resolved" and "Remaining Disagreements" sections, replacing vague convergence heuristics with agent-reported data
+- **Synthesis prompt template** — Created `references/synthesis-prompt.md` for Step 5, matching the template pattern of Steps 3 and 4. The most critical step now has a dedicated, structured template instead of inline prose
+
 ## 1.1.0
 
 ### Hardening: Prevent agents from skipping the skill protocol
