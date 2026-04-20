@@ -1,65 +1,88 @@
-# Plugin Marketplace
+# Agent Skills
 
-A marketplace of plugins intended to boost productivity for anyone working with AI agents, following the official [Anthropic plugin marketplace guidelines](https://code.claude.com/docs/en/plugin-marketplaces).
+A collection of reusable skills for AI coding agents (Claude Code, Cursor, GitHub Copilot, Aider, …), distributed via [skills.sh](https://skills.sh) — the open ecosystem and CLI for AI-agent skills.
 
-## Quick Start
+Skills are packaged instructions (and optional supporting files) that extend an agent's capabilities. Unlike a code library, a skill is procedural knowledge the agent loads on demand.
 
-### Adding the Marketplace
+## Installation
 
-Add this marketplace to your agent:
+The only supported installation method is the [skills](https://skills.sh) CLI, which detects which agent you're using and installs each skill in the right place (e.g. `.claude/skills/`, `.cursor/skills/`, …).
 
-```bash
-/plugin marketplace add filipmares/agent-plugins
-```
-
-### Installing Plugins
-
-Browse and install plugins from this marketplace:
+Install **all** skills in this repo:
 
 ```bash
-/plugin                                    # Open plugin browser UI
-/plugin list                               # List available plugins
-/plugin install <plugin-name>@agent-plugins
+npx skills add filipmares/agent-plugins
 ```
 
-## Managing Marketplaces
+Or with pnpm:
 
 ```bash
-/plugin marketplace list              # List all registered marketplaces
-/plugin marketplace update           # Update all marketplace catalogs
-/plugin marketplace remove <name>    # Remove a marketplace
+pnpm dlx skills add filipmares/agent-plugins
 ```
 
-## Using Installed Plugins
-
-Plugins extend your agent with new capabilities. Depending on the plugin type:
-
-- **Skills**: Access via `/` commands (e.g., `/review`, `/analyze`)
-- **Commands**: Run with `/run <command-name>`
-- **Agents**: Autonomous helpers that work in the background
-- **Hooks**: Automatic actions triggered by events
-- **MCP Servers**: Model Context Protocol integrations
-
-Check each plugin's documentation for specific usage instructions.
-
-## Managing Installed Plugins
+Browse and search across the whole ecosystem:
 
 ```bash
-/plugin list --installed            # Show installed plugins
-/plugin update <plugin-name>        # Update a plugin
-/plugin uninstall <plugin-name>     # Remove a plugin
+npx skills find
 ```
 
-## Available Plugins
+> **Note:** This repo previously distributed three Claude Code plugins via a `marketplace.json` catalog. That distribution path has been removed. Reinstall via the `skills` CLI.
 
-Currently, this marketplace contains no plugins. We're accepting contributions! See [CONTRIBUTING.md](./CONTRIBUTING.md) for how to submit a plugin.
+## Available Skills
 
-## Support
+All skills live under [`skills/`](./skills) at the repo root. Each is a self-contained `SKILL.md` (with optional `references/`).
 
-For issues or questions:
-- Open an issue in this repository
-- Check the [official Claude Code documentation](https://code.claude.com/docs)
+| Skill | Description |
+| --- | --- |
+| [`cli-skill-generator`](./skills/cli-skill-generator) | Discover commands of any CLI tool and generate a complete skill bundle documenting it. |
+| [`plugin-analyzer`](./skills/plugin-analyzer) | Analyze a skill/plugin with multiple AI models in parallel, synthesize consensus findings, and optionally file GitHub issues. |
+| [`consensus-planner`](./skills/consensus-planner) | Multi-model iterative consensus planning — spawns parallel agents to create, critique, and converge on an implementation plan. |
+
+After installing, your agent will load these skills automatically when their trigger conditions match (each `SKILL.md` declares a "Use when …" description). You can also invoke a skill by name in your agent's UI.
+
+## Repository Layout
+
+```
+agent-plugins/
+├── skills/                   # Each subdirectory is one skills.sh skill
+│   ├── cli-skill-generator/
+│   │   ├── SKILL.md
+│   │   └── references/
+│   ├── plugin-analyzer/
+│   │   ├── SKILL.md
+│   │   └── references/
+│   └── consensus-planner/
+│       ├── SKILL.md
+│       └── references/
+├── .templates/skill-template/ # Starter for new skills
+├── scripts/                   # Validation + listing utilities (Bun + TS)
+├── CONTRIBUTING.md
+├── CHANGELOG.md
+├── LICENSE
+└── README.md
+```
+
+## SKILL.md Format
+
+Each `SKILL.md` starts with a YAML frontmatter block:
+
+```yaml
+---
+name: cli-skill-generator
+description: "Use when ... (one sentence so the agent can route to it)."
+license: MIT
+metadata:
+  author: filipmares
+  version: '2.0.0'
+---
+```
+
+This matches the [Agent Skills format](https://skills.sh) used across the ecosystem (see [`vercel-labs/agent-skills`](https://github.com/vercel-labs/agent-skills) for additional examples).
+
+## Contributing
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md). To add a skill: copy `.templates/skill-template/` into `skills/<your-skill>/`, edit `SKILL.md`, validate with `bun run scripts/validate-skill.ts skills/<your-skill>`, and open a PR.
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
+[MIT](./LICENSE)

@@ -7,6 +7,14 @@ and plugin versioning follows [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## [Unreleased]
 
+### Changed — repository restructure
+- **BREAKING**: switched distribution from a Claude Code plugin marketplace (`marketplace.json`, `.claude-plugin/plugin.json`) to [skills.sh](https://skills.sh)-only. Install via `npx skills add filipmares/agent-plugins`.
+- Flattened `plugins/<plugin>/skills/<skill>/` to `skills/<skill>/` at the repo root.
+- Renamed each skill's frontmatter `name` to its globally unique form (`cli-skill-generator`, `plugin-analyzer`, `consensus-planner`) and added `license` / `metadata.author` / `metadata.version`.
+- Replaced `.templates/plugin-template/` with `.templates/skill-template/`.
+- Replaced `scripts/validate-plugin.ts` and `scripts/list-plugins.ts` with `validate-skill.ts` and `list-skills.ts`.
+- Rewrote `README.md`, `CONTRIBUTING.md`, `CLAUDE.md`, and `scripts/README.md` for the skills.sh workflow.
+
 ### Changed — consensus-planner v1.3.0
 - Multi-select model picker replaces iterative single-select loop in Step 2 ([#36](https://github.com/filipmares/agent-plugins/pull/36))
 

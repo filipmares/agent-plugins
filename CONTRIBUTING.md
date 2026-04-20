@@ -1,217 +1,107 @@
-# Contributing to Plugin Marketplace
+# Contributing
 
-Thank you for your interest in contributing to this plugin marketplace! This guide follows the [official Anthropic plugin marketplace guidelines](https://code.claude.com/docs/en/plugin-marketplaces).
+Thanks for your interest in contributing! This repo distributes skills via [skills.sh](https://skills.sh) — a flat collection of self-contained skills in `skills/` at the repo root.
 
-## Before You Start
+## Skill Format
 
-This marketplace follows Anthropic's official plugin structure. All plugins must:
-- Include a `.claude-plugin/plugin.json` manifest
-- Follow Claude Code plugin conventions
-- Be properly documented
-- Pass quality and security standards
+Every skill must:
 
-## Plugin Types
+- Live in its own directory under `skills/<skill-name>/`
+- Have a `SKILL.md` at the skill root with YAML frontmatter
+- Use a globally unique, lowercase, hyphenated `name` (skills install into a shared directory inside the user's project)
+- Have a clear `description` starting with **"Use when …"** so the agent can route to it
 
-Claude Code supports several plugin types:
+### Required `SKILL.md` frontmatter
 
-1. **Skills**: Task-based capabilities accessed via `/` commands
-2. **Commands**: Executable actions via `/run`
-3. **Agents**: Autonomous helpers that work in background
-4. **Hooks**: Event-triggered automations
-5. **MCP Servers**: Model Context Protocol integrations
-
-## Plugin Structure
-
-### Required Structure
-
-```
-your-plugin/
-├── .claude-plugin/
-│   └── plugin.json          # Required manifest
-├── skills/                   # For skills (optional)
-│   └── skill-name/
-│       └── SKILL.md
-├── commands/                 # For commands (optional)
-│   └── command-name/
-│       └── COMMAND.md
-├── mcp/                      # For MCP servers (optional)
-│   └── server.js
-└── README.md                 # Required documentation
+```yaml
+---
+name: my-skill
+description: "Use when <trigger condition>. Be specific so the agent can route precisely."
+---
 ```
 
-### Required: plugin.json Manifest
+### Recommended frontmatter
 
-Every plugin must have a `.claude-plugin/plugin.json` file:
-
-```json
-{
-  "name": "your-plugin",
-  "version": "1.0.0",
-  "description": "Brief description of what your plugin does",
-  "author": { "name": "Your Name" },
-  "homepage": "https://github.com/username/your-plugin",
-  "license": "MIT",
-  "skills": "./skills/",
-  "commands": "./commands/"
-}
+```yaml
+license: MIT
+metadata:
+  author: Your Name
+  version: '1.0.0'
 ```
 
-### Required Fields
+### Optional supporting files
 
-- `name`: Unique plugin identifier (lowercase, hyphens only)
-- `version`: Semantic version (e.g., "1.0.0")
-- `description`: Clear, concise description
-- `author`: Author object with `name` (required), `email` (optional), `url` (optional)
-
-### Optional Fields
-
-- `homepage`: Link to plugin repository or website
-- `repository`: Repository URL
-- `license`: License identifier (default: MIT)
-- `keywords`: Array of keyword strings
-- `skills`: Path to skills directory
-- `commands`: Path to commands directory
-- `agents`: Path to agents directory
-- `hooks`: Path to hooks directory
-- `mcpServers`: Path to MCP servers directory
-
-## Submission Process
-
-### 1. Fork and Clone
-
-```bash
-git clone https://github.com/your-username/marketplace.git
-cd marketplace
-git checkout -b add-my-plugin
+```
+skills/my-skill/
+├── SKILL.md              # Required
+├── references/           # Optional: prompts, templates, examples (linked with relative paths from SKILL.md)
+└── scripts/              # Optional: helper scripts the skill invokes
 ```
 
-### 2. Create Your Plugin
+A starter is provided in [`.templates/skill-template/`](./.templates/skill-template). Copy it to get going.
 
-Create your plugin in the `plugins/` directory:
+## Submission Workflow
 
-```bash
-mkdir -p plugins/my-plugin/.claude-plugin
-mkdir -p plugins/my-plugin/skills
-# or mkdir -p plugins/my-plugin/commands
-# or mkdir -p plugins/my-plugin/mcp
-```
+1. **Fork and branch**
 
-### 3. Add Required Files
+   ```bash
+   git checkout -b add-<your-skill>
+   ```
 
-- `.claude-plugin/plugin.json` - Plugin manifest (required)
-- `README.md` - Documentation (required)
-- Plugin implementation files (skills, commands, etc.)
+2. **Create your skill**
 
-### 4. Update Marketplace Catalog
+   ```bash
+   cp -r .templates/skill-template skills/<your-skill>
+   $EDITOR skills/<your-skill>/SKILL.md
+   ```
 
-Add your plugin to `.claude-plugin/marketplace.json`:
+3. **Validate**
 
-```json
-{
-  "plugins": [
-    {
-      "name": "my-plugin",
-      "source": "./plugins/my-plugin",
-      "description": "Brief description",
-      "author": { "name": "Your Name" }
-    }
-  ]
-}
-```
+   ```bash
+   bun run scripts/validate-skill.ts skills/<your-skill>
+   bun run scripts/list-skills.ts
+   ```
 
-### 5. Test Locally
+4. **Test locally**
 
-Test your plugin with Claude Code:
+   Install your branch with the skills CLI to confirm it loads correctly in your agent:
 
-```bash
-/plugin marketplace add /path/to/marketplace
-/plugin install my-plugin@agent-plugins
-```
+   ```bash
+   npx skills add <your-fork>/agent-plugins#<your-branch>
+   ```
 
-### 6. Submit Pull Request
+5. **Document & changelog**
 
-```bash
-git add .
-git commit -m "Add my-plugin"
-git push origin add-my-plugin
-```
+   Update [`CHANGELOG.md`](./CHANGELOG.md) under `## [Unreleased]` with a one-line entry for your skill.
 
-Open a pull request on GitHub with:
-- Clear description of what your plugin does
-- Screenshots or examples if applicable
-- Any special installation or usage notes
+6. **Open a PR**
 
-## Validation Tools
-
-This marketplace uses [Bun](https://bun.sh) for validation and listing scripts:
-
-```bash
-# Install Bun if not already installed
-curl -fsSL https://bun.sh/install | bash
-
-# Validate a plugin
-bun run scripts/validate-plugin.ts <plugin-path>
-
-# List all plugins
-bun run scripts/list-plugins.ts
-```
-
-See [scripts/README.md](./scripts/README.md) for more details.
+   Include in the description: what the skill does, when it triggers, and any external dependencies it expects (CLI tools, environment variables, etc.).
 
 ## Quality Standards
 
-### Documentation
+- **Single responsibility.** A skill should do one coherent thing well. Split unrelated workflows into separate skills.
+- **Self-contained.** All files a skill needs (templates, prompts, examples) live under that skill's directory. Do not cross-reference files in other skills.
+- **Globally unique name.** Since skills.sh installs into a shared directory, choose a descriptive name that is unlikely to collide with skills from other authors.
+- **Concise but complete instructions.** Aim for under ~500 lines per `SKILL.md`. Move long reference material into `references/`.
+- **Trigger-focused description.** The frontmatter `description` is what the agent uses to decide whether to load your skill — it should be specific and start with "Use when …".
+- **No secrets.** Do not commit credentials, tokens, or proprietary data.
 
-Your README.md must include:
-- Clear description and purpose
-- Installation instructions
-- Usage examples
-- Configuration options
-- Troubleshooting tips
+## Validation Tools
 
-### Code Quality
+This repo uses [Bun](https://bun.sh) for its TypeScript scripts. No build step is required.
 
-- Follow consistent coding style
-- Include error handling
-- Add comments for complex logic
-- Avoid hardcoded secrets or credentials
-- Use meaningful variable and function names
+```bash
+bun run scripts/validate-skill.ts skills/<name>   # Validate a single skill
+bun run scripts/list-skills.ts                    # List all skills + status
+```
 
-### Testing
-
-- Test your plugin locally before submitting
-- Document how to test the plugin
-- Include example usage scenarios
-- Verify all capabilities work as expected
+CI runs the same checks against every skill in `skills/`.
 
 ## Code of Conduct
 
-- Be respectful and constructive in all interactions
-- Help others and share knowledge
-- Follow the repository's guidelines
-- Report security issues responsibly
+Be respectful and constructive. Help others and share knowledge. Report security issues privately rather than in public issues.
 
-## Review Process
+## License
 
-1. Pull requests are reviewed by maintainers
-2. Feedback may be provided for improvements
-3. Security and quality checks are performed
-4. Once approved, your plugin will be merged
-5. Your contribution will be credited in the repository
-
-## Getting Help
-
-If you need assistance:
-- Open an issue for questions
-- Review existing plugins for examples
-- Check the [README](./README.md)
-- Refer to [Official Claude Code Docs](https://code.claude.com/docs)
-
-## Security
-
-If you discover a security vulnerability:
-- DO NOT open a public issue
-- Contact the maintainers privately
-- Provide detailed information about the vulnerability
-
-Thank you for contributing to make this marketplace better!
+By contributing, you agree your contribution is licensed under the [MIT License](./LICENSE).

@@ -1,6 +1,10 @@
 ---
-name: analyze
+name: plugin-analyzer
 description: "Use when analyzing a plugin with multiple AI models to find improvements. Launches parallel model agents, synthesizes consensus, detects duplicate issues, and optionally creates GitHub issues. Trigger on requests like 'analyze the <plugin> plugin' or 'review <plugin> for improvements'."
+license: MIT
+metadata:
+  author: filipmares
+  version: '1.0.0'
 ---
 
 # Multi-Model Plugin Analyzer

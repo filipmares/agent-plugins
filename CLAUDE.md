@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Claude Code plugin marketplace. Currently empty and accepting contributions.
+A collection of agent skills distributed via [skills.sh](https://skills.sh).
 
 ## Tech Stack
 
@@ -9,26 +9,30 @@ Claude Code plugin marketplace. Currently empty and accepting contributions.
 ## Key Commands
 
 ```bash
-bun run scripts/validate-plugin.ts <path-to-plugin>   # Validate a plugin
-bun run scripts/list-plugins.ts                        # List all plugins
+bun run scripts/validate-skill.ts <path-to-skill>   # Validate a single skill
+bun run scripts/list-skills.ts                      # List all skills with status
 ```
 
 ## Project Structure
 
 ```
-plugins/          # Plugin directories (each is plugins/<name>/)
-scripts/          # Validation and listing scripts (Bun + TS)
-.claude-plugin/   # Marketplace-level manifest (marketplace.json)
-.templates/       # Plugin scaffolding template
+skills/                # Each subdirectory is one skills.sh skill (skills/<name>/SKILL.md)
+scripts/               # Validation and listing scripts (Bun + TS)
+.templates/            # Starter template for new skills
 ```
 
-## Plugin Structure
+## Skill Structure
 
-Each plugin lives in `plugins/<name>/` and requires:
-- `.claude-plugin/plugin.json` — manifest with name, version, description, author (object), and component paths
-- `README.md` — documentation
+Each skill lives in `skills/<name>/` and requires:
+
+- `SKILL.md` — instructions with YAML frontmatter (`name`, `description`; recommended `license`, `metadata.author`, `metadata.version`)
+- Optional `references/` — supporting files linked from `SKILL.md` with relative paths
+- Optional `scripts/` — helper scripts the skill invokes
 
 ## Conventions
 
-- See [CONTRIBUTING.md](./CONTRIBUTING.md) for full contributor guidelines
-- Follows [Anthropic plugin marketplace guidelines](https://code.claude.com/docs/en/plugin-marketplaces)
+- Skill names must be globally unique (lowercase, hyphenated) — skills.sh installs into a shared directory
+- `description` should start with "Use when …" so the agent can route to the skill
+- Self-contained: a skill never references files outside its own directory
+- See [CONTRIBUTING.md](./CONTRIBUTING.md) for full guidelines
+- Format follows the [Agent Skills](https://skills.sh) ecosystem ([reference repo](https://github.com/vercel-labs/agent-skills))

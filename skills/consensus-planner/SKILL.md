@@ -1,6 +1,10 @@
 ---
-name: plan
+name: consensus-planner
 description: "Use when creating an implementation plan using multiple AI models that iterate toward consensus. Spawns parallel agents with user-selected models to independently plan, exchange feedback, and converge. Trigger on requests like 'consensus plan for <task>' or 'multi-model plan for <feature>'."
+license: MIT
+metadata:
+  author: filipmares
+  version: '1.3.0'
 ---
 
 # Multi-Model Consensus Planner
