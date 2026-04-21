@@ -1,5 +1,5 @@
 ---
-name: example-skill
+name: skill-template
 description: "Use when ... (replace with a one-sentence trigger description so agents can decide when to load this skill). Be specific about the task, not the implementation."
 license: MIT
 metadata:

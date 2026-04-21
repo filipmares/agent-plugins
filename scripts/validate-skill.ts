@@ -134,6 +134,10 @@ function validateSkill(skillPath: string): ValidationResults {
     results.errors.push(
       `Frontmatter "name" must be lowercase letters, digits, and hyphens only (got: "${fm.name}")`
     );
+  } else if (fm.name !== basename(skillPath)) {
+    results.warnings.push(
+      `Frontmatter "name" ("${fm.name}") does not match the skill directory name ("${basename(skillPath)}"); they should match so installs and listings stay consistent`
+    );
   }
 
   if (typeof fm.description !== 'string' || fm.description.length === 0) {
