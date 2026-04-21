@@ -37,6 +37,7 @@ All skills live under [`skills/`](./skills) at the repo root. Each is a self-con
 | [`cli-skill-generator`](./skills/cli-skill-generator) | Discover commands of any CLI tool and generate a complete skill bundle documenting it. |
 | [`plugin-analyzer`](./skills/plugin-analyzer) | Analyze a skill/plugin with multiple AI models in parallel, synthesize consensus findings, and optionally file GitHub issues. |
 | [`consensus-planner`](./skills/consensus-planner) | Multi-model iterative consensus planning — spawns parallel agents to create, critique, and converge on an implementation plan. |
+| [`review-loop`](./skills/review-loop) | Automated cross-vendor code review loop — implements a task, then runs Copilot CLI with a different-vendor model (e.g. Claude Code → GPT 5.4, or vice versa) to produce an independent review. Cross-platform (macOS, Linux, Windows). |
 
 After installing, your agent will load these skills automatically when their trigger conditions match (each `SKILL.md` declares a "Use when …" description). You can also invoke a skill by name in your agent's UI.
 
@@ -51,7 +52,10 @@ agent-plugins/
 │   ├── plugin-analyzer/
 │   │   ├── SKILL.md
 │   │   └── references/
-│   └── consensus-planner/
+│   ├── consensus-planner/
+│   │   ├── SKILL.md
+│   │   └── references/
+│   └── review-loop/
 │       ├── SKILL.md
 │       └── references/
 ├── .templates/skill-template/ # Starter for new skills
