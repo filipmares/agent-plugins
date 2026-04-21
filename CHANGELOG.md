@@ -7,6 +7,9 @@ and plugin versioning follows [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## [Unreleased]
 
+### Added — review-loop v1.0.0
+- New skill that re-implements [hamelsmu/claude-review-loop](https://github.com/hamelsmu/claude-review-loop) with a cross-vendor reviewer (Claude Code → Copilot CLI + `gpt-5.4`; Copilot CLI + Anthropic → Copilot CLI + `gpt-5.4`; Copilot CLI + non-Anthropic → Copilot CLI + Anthropic) and Windows support alongside macOS / Linux.
+
 ### Changed — repository restructure
 - **BREAKING**: switched distribution from a Claude Code plugin marketplace (`marketplace.json`, `.claude-plugin/plugin.json`) to [skills.sh](https://skills.sh)-only. Install via `npx skills add filipmares/agent-plugins`.
 - Flattened `plugins/<plugin>/skills/<skill>/` to `skills/<skill>/` at the repo root.
