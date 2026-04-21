@@ -1,87 +1,61 @@
-# Marketplace Scripts
+# Skill Scripts
 
-Utility scripts for managing and validating plugins, written in TypeScript and run with Bun.
+TypeScript utilities for validating and listing skills, run with [Bun](https://bun.sh).
 
 ## Prerequisites
 
-- [Bun](https://bun.sh) runtime installed
+- Bun runtime installed (`curl -fsSL https://bun.sh/install | bash`)
 
-## Available Scripts
+## Scripts
 
-### validate-plugin.ts
+### `validate-skill.ts`
 
-Validates that a plugin follows the official plugin structure and standards.
+Validates that a skill follows the [skills.sh](https://skills.sh) format.
 
-**Usage:**
 ```bash
-bun run scripts/validate-plugin.ts <plugin-path>
+bun run scripts/validate-skill.ts <path-to-skill>
 ```
 
-**Example:**
+Examples:
+
 ```bash
-bun run scripts/validate-plugin.ts .templates/plugin-template
-bun run scripts/validate-plugin.ts plugins/my-plugin
+bun run scripts/validate-skill.ts .templates/skill-template
+bun run scripts/validate-skill.ts skills/cli-skill-generator
 ```
 
-**What it checks:**
-- Required files (`.claude-plugin/plugin.json`, `README.md`)
-- Plugin manifest completeness and structure
-- Valid categories and capabilities
-- Documentation structure
-- Declared capabilities match implementation files
+Checks:
 
-### list-plugins.ts
+- `SKILL.md` exists at the skill root
+- YAML frontmatter is present
+- Required fields: `name` (lowercase + hyphens), `description`
+- Recommended fields: `license`, `metadata.author`, `metadata.version`
+- Body contains at least one Markdown heading
 
-Lists all plugins registered in the marketplace catalog.
+Exits non-zero on errors.
 
-**Usage:**
+### `list-skills.ts`
+
+Lists every skill under `skills/` with its name, version, author, license, supporting-file counts, and validation status.
+
 ```bash
-bun run scripts/list-plugins.ts
+bun run scripts/list-skills.ts
 ```
 
-**Or using npm scripts:**
+Equivalent npm scripts:
+
 ```bash
+bun run validate skills/<name>
 bun run list
 ```
 
-**Output:**
-- Shows all plugins from `.claude-plugin/marketplace.json`
-- Displays name, version, description
-- Shows categories and capabilities
-- Includes author and path information
-
 ## For Contributors
 
-Before submitting a plugin:
+Before submitting a skill:
 
-1. **Validate your plugin structure:**
-   ```bash
-   bun run scripts/validate-plugin.ts path/to/your/plugin
-   ```
-
-2. **Ensure it follows Claude Code conventions:**
-   - Has `.claude-plugin/plugin.json` manifest
-   - Includes proper README.md
-   - Implements declared capabilities
-
-
-3. **Add to marketplace catalog:**
-   Update `.claude-plugin/marketplace.json` with your plugin entry
-
-4. **Verify it appears in the list:**
-   ```bash
-   bun run scripts/list-plugins.ts
-   ```
-
-## For Maintainers
-
-These scripts help maintain consistency:
-
-- Use `validate-plugin.ts` during PR reviews
-- Run `list-plugins.ts` to verify marketplace catalog
-- Ensure all plugins meet marketplace standards
+1. Run `bun run scripts/validate-skill.ts skills/<your-skill>` and resolve any errors.
+2. Run `bun run scripts/list-skills.ts` to confirm it appears.
+3. See [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ## Development
 
-The scripts are written in TypeScript and use Bun's native TypeScript support. No compilation step is needed.
-
+Scripts use Bun's native TypeScript support — no compilation step.

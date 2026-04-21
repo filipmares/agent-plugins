@@ -1,6 +1,10 @@
 ---
-name: generate
+name: cli-skill-generator
 description: "Use when creating a new CLI tool documentation plugin. Guides discovery of CLI commands, grouping into skills, and generating all plugin files. Trigger on requests like 'create a plugin for <tool> CLI' or 'generate skills for <tool>'."
+license: MIT
+metadata:
+  author: filipmares
+  version: '2.0.0'
 ---
 
 # CLI Skill Generator

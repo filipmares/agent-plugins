@@ -1,9 +1,9 @@
 {
-  "name": "marketplace-scripts",
-  "version": "1.0.0",
+  "name": "agent-plugins-scripts",
+  "version": "2.0.0",
   "type": "module",
   "scripts": {
-    "validate": "bun run scripts/validate-plugin.ts",
-    "list": "bun run scripts/list-plugins.ts"
+    "validate": "bun run scripts/validate-skill.ts",
+    "list": "bun run scripts/list-skills.ts"
   }
 }
