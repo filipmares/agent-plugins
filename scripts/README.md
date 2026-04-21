@@ -1,4 +1,4 @@
-# Marketplace Scripts
+# Skill Scripts
 
 TypeScript utilities for validating and listing skills, run with [Bun](https://bun.sh).
 
