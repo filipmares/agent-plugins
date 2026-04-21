@@ -50,7 +50,6 @@ function parseFrontmatter(yaml: string): SkillFrontmatter {
   const result: SkillFrontmatter = {};
   const lines = yaml.split(/\r?\n/);
   let currentNested: Record<string, unknown> | null = null;
-  let nestedKey: keyof SkillFrontmatter | null = null;
 
   for (const rawLine of lines) {
     if (!rawLine.trim() || rawLine.trim().startsWith('#')) continue;
@@ -75,11 +74,9 @@ function parseFrontmatter(yaml: string): SkillFrontmatter {
       const nested: Record<string, unknown> = {};
       (result as Record<string, unknown>)[key] = nested;
       currentNested = nested;
-      nestedKey = key as keyof SkillFrontmatter;
     } else {
       (result as Record<string, unknown>)[key] = stripQuotes(value);
       currentNested = null;
-      nestedKey = null;
     }
   }
 
