@@ -7,6 +7,11 @@ and plugin versioning follows [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## [Unreleased]
 
+### Added — copilot-migrate v1.0.0
+- New skill: move a GitHub Copilot app installation between machines, including across operating systems.
+- `scripts/copilot_migrate.py` (Python 3.9+, stdlib only) exports settings, skills, MCP config, tool permissions, canvas extension artifacts and databases into one bundle, and rewrites the absolute filesystem paths Copilot stores in SQLite and `permissions-config.json` so projects still resolve after the move.
+- Migrated in from the standalone `filipmares/copilot-migrate` repository, which is now retired.
+
 ### Changed — repository restructure
 - **BREAKING**: switched distribution from a Claude Code plugin marketplace (`marketplace.json`, `.claude-plugin/plugin.json`) to [skills.sh](https://skills.sh)-only. Install via `npx skills add filipmares/agent-plugins`.
 - Flattened `plugins/<plugin>/skills/<skill>/` to `skills/<skill>/` at the repo root.
