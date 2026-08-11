@@ -6,7 +6,20 @@ Skills are packaged instructions (and optional supporting files) that extend an 
 
 ## Installation
 
-The only supported installation method is the [skills](https://skills.sh) CLI, which detects which agent you're using and installs each skill in the right place (e.g. `.claude/skills/`, `.cursor/skills/`, …).
+### GitHub Copilot CLI
+
+This repo is also a [Copilot CLI plugin marketplace](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/plugins-marketplace). Register it once, then install the bundled plugin (all four skills):
+
+```bash
+copilot plugin marketplace add filipmares/agent-plugins
+copilot plugin install agent-plugins@agent-plugins
+```
+
+Update later with `copilot plugin update agent-plugins`.
+
+### skills.sh CLI
+
+The [skills](https://skills.sh) CLI detects which agent you're using and installs each skill in the right place (e.g. `.claude/skills/`, `.cursor/skills/`, …).
 
 Install **all** skills in this repo:
 
@@ -25,8 +38,6 @@ Browse and search across the whole ecosystem:
 ```bash
 npx skills find
 ```
-
-> **Note:** This repo previously distributed three Claude Code plugins via a `marketplace.json` catalog. That distribution path has been removed. Reinstall via the `skills` CLI.
 
 ## Available Skills
 
@@ -59,6 +70,7 @@ agent-plugins/
 │       ├── SKILL.md
 │       └── scripts/
 ├── .templates/skill-template/ # Starter for new skills
+├── .github/plugin/            # Copilot CLI marketplace.json + plugin.json
 ├── scripts/                   # Validation + listing utilities (Bun + TS)
 ├── CONTRIBUTING.md
 ├── CHANGELOG.md

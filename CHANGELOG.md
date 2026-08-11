@@ -7,6 +7,9 @@ and plugin versioning follows [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## [Unreleased]
 
+### Added — Copilot CLI plugin marketplace
+- Added `.github/plugin/marketplace.json` and `.github/plugin/plugin.json` so `copilot plugin marketplace add filipmares/agent-plugins` works again. The repo root is the plugin source, and all four skills under `skills/` install as one `agent-plugins` plugin.
+
 ### Added — copilot-migrate v1.0.0
 - New skill: move a GitHub Copilot app installation between machines, including across operating systems.
 - `scripts/copilot_migrate.py` (Python 3.9+, stdlib only) exports settings, skills, MCP config, tool permissions, canvas extension artifacts and databases into one bundle, and rewrites the absolute filesystem paths Copilot stores in SQLite and `permissions-config.json` so projects still resolve after the move.
