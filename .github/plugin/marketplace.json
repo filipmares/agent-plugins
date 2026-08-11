@@ -1,0 +1,32 @@
+{
+  "name": "agent-plugins",
+  "owner": {
+    "name": "filipmares"
+  },
+  "metadata": {
+    "description": "Skills that boost productivity for developers and anyone working with AI agents",
+    "version": "2.0.0"
+  },
+  "plugins": [
+    {
+      "name": "agent-plugins",
+      "source": ".",
+      "description": "CLI skill generation, multi-model consensus planning, multi-model plugin analysis, and Copilot installation migration.",
+      "version": "2.0.0",
+      "category": "development-tools",
+      "author": {
+        "name": "filipmares"
+      },
+      "homepage": "https://github.com/filipmares/agent-plugins",
+      "repository": "https://github.com/filipmares/agent-plugins",
+      "license": "MIT",
+      "keywords": [
+        "skills",
+        "cli",
+        "planning",
+        "analysis",
+        "migration"
+      ]
+    }
+  ]
+}
