@@ -39,6 +39,14 @@ Review state is not an input to this test. A `CHANGES_REQUESTED` review does not
 suggestions in scope, and an approval does not make a defect skippable — a verdict is the
 reviewer's judgement of the PR as a whole, not of which comment belongs in it.
 
+The *form* of a suggestion is not an input either. A committable `suggestion` block — the
+kind GitHub renders with an Apply button — is a request like any other: one-click
+applicability changes what the fix costs, not whether it belongs here. Route it through
+the order above, and when the answer is out of scope, leave it unapplied and mark it
+`deferred` — declining a patch someone has already written feels wasteful in a way that
+declining prose does not, and that feeling is not evidence of scope. An in-scope one is
+still `fixed`, applied as written or replaced with a better fix.
+
 ## Change the code when
 
 - The feedback identifies a **defect this PR causes** — correctness, security,
