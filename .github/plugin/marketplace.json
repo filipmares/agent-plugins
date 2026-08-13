@@ -11,7 +11,7 @@
     {
       "name": "agent-plugins",
       "source": ".",
-      "description": "CLI skill generation, multi-model consensus planning, multi-model plugin analysis, and Copilot installation migration.",
+      "description": "CLI skill generation, multi-model consensus planning, multi-model plugin analysis, Copilot installation migration, and unattended PR-review scope discipline.",
       "version": "2.0.0",
       "category": "development-tools",
       "author": {
@@ -25,7 +25,8 @@
         "cli",
         "planning",
         "analysis",
-        "migration"
+        "migration",
+        "code-review"
       ]
     }
   ]

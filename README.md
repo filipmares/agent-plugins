@@ -8,7 +8,7 @@ Skills are packaged instructions (and optional supporting files) that extend an 
 
 ### GitHub Copilot CLI
 
-This repo is also a [Copilot CLI plugin marketplace](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/plugins-marketplace). Register it once, then install the bundled plugin (all four skills):
+This repo is also a [Copilot CLI plugin marketplace](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/plugins-marketplace). Register it once, then install the bundled plugin (all five skills):
 
 ```bash
 copilot plugin marketplace add filipmares/agent-plugins
@@ -49,6 +49,7 @@ All skills live under [`skills/`](./skills) at the repo root. Each is a self-con
 | [`plugin-analyzer`](./skills/plugin-analyzer) | Analyze a skill/plugin with multiple AI models in parallel, synthesize consensus findings, and optionally file GitHub issues. |
 | [`consensus-planner`](./skills/consensus-planner) | Multi-model iterative consensus planning — spawns parallel agents to create, critique, and converge on an implementation plan. |
 | [`copilot-migrate`](./skills/copilot-migrate) | Move a GitHub Copilot installation between machines, across operating systems, rewriting the absolute paths stored in its databases. |
+| [`agent-merge`](./skills/agent-merge) | Scope discipline for unattended PR-review rounds — decide which review comments to implement, record each decision as a hidden marker, and audit them later. |
 
 After installing, your agent will load these skills automatically when their trigger conditions match (each `SKILL.md` declares a "Use when …" description). You can also invoke a skill by name in your agent's UI.
 
@@ -66,7 +67,10 @@ agent-plugins/
 │   ├── consensus-planner/
 │   │   ├── SKILL.md
 │   │   └── references/
-│   └── copilot-migrate/
+│   ├── copilot-migrate/
+│   │   ├── SKILL.md
+│   │   └── scripts/
+│   └── agent-merge/
 │       ├── SKILL.md
 │       └── scripts/
 ├── .templates/skill-template/ # Starter for new skills

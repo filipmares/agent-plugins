@@ -7,6 +7,10 @@ and plugin versioning follows [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## [Unreleased]
 
+### Added — agent-merge v1.0.0
+- New skill: scope discipline for unattended pull-request review rounds. A review comment is an input, not a mandate — the skill gives an ordered test for deciding whether a suggestion belongs in the PR, and a closed four-token vocabulary (`fixed`, `deferred`, `tracked`, `inapplicable`) for recording each decision as a hidden HTML-comment marker on the thread reply.
+- `scripts/agent-merge-stats.mjs` (Node 18+, stdlib only, needs an authenticated `gh`) reads those markers back across every PR in a repo so the decisions can be audited on evidence: `--deferred` lists the suggestions the rule turned away with links for bulk triage, `--malformed` lists markers outside the vocabulary alongside the token each should have been. Read-only; with no `--repo` it censuses whichever repository the working directory belongs to.
+
 ### Added — Copilot CLI plugin marketplace
 - Added `.github/plugin/marketplace.json` and `.github/plugin/plugin.json` so `copilot plugin marketplace add filipmares/agent-plugins` works again. The repo root is the plugin source, and all four skills under `skills/` install as one `agent-plugins` plugin.
 
