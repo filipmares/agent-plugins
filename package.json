@@ -4,6 +4,8 @@
   "type": "module",
   "scripts": {
     "validate": "bun run scripts/validate-skill.ts",
-    "list": "bun run scripts/list-skills.ts"
+    "list": "bun run scripts/list-skills.ts",
+    "validate:copilot-plugin": "bun run scripts/validate-copilot-plugin.ts",
+    "test:canvas": "bun test plugins/hve-core-canvas/extensions/rpi-artifact-navigator/tests"
   }
 }
