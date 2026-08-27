@@ -8,7 +8,8 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, symlinkSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, symlinkSync, linkSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, relative, sep } from "node:path";
 import { realpath } from "node:fs/promises";
@@ -271,6 +272,93 @@ describe("artifact reads", () => {
         );
     });
 
+    test("rejects a FIFO named .md instead of blocking on the open", async () => {
+        // Without O_NONBLOCK the open of a writerless FIFO never returns, so
+        // the closed taxonomy's artifact_not_file is unreachable.
+        mkdirSync(join(workspace, ".copilot-tracking/plans/2026-08-27"), { recursive: true });
+        const fifoPath = join(workspace, ".copilot-tracking/plans/2026-08-27/pipe-plan.md");
+        execFileSync("mkfifo", [fifoPath]);
+
+        const watchdog = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error("readArtifactFile did not return")), 5000).unref?.();
+        });
+        await Promise.race([
+            expectCode(
+                readArtifactFile(workspace, ".copilot-tracking/plans/2026-08-27/pipe-plan.md"),
+                ERROR_CODES.artifactNotFile,
+            ),
+            watchdog,
+        ]);
+    });
+
+    test("rejects a hard link, which aliases an out-of-tree inode without a symlink", async () => {
+        const outside = mkdtempSync(join(tmpdir(), "rpi-outside-link-"));
+        writeFileSync(join(outside, "secret.md"), "# Secret");
+        mkdirSync(join(workspace, ".copilot-tracking/plans/2026-08-27"), { recursive: true });
+        try {
+            linkSync(join(outside, "secret.md"), join(workspace, ".copilot-tracking/plans/2026-08-27/hard-plan.md"));
+        } catch {
+            rmSync(outside, { recursive: true, force: true });
+            return; // Cross-device link; the alias is not constructible here.
+        }
+        await expectCode(
+            readArtifactFile(workspace, ".copilot-tracking/plans/2026-08-27/hard-plan.md"),
+            ERROR_CODES.artifactNotAllowed,
+        );
+        rmSync(outside, { recursive: true, force: true });
+    });
+
+    test("rejects an intermediate directory replaced by an escaping symlink after the segment walk", async () => {
+        // Models the substitution window the lexical walk cannot close: the
+        // walk sees a real directory, and the open resolves through a symlink.
+        const outside = mkdtempSync(join(tmpdir(), "rpi-outside-swap-"));
+        mkdirSync(join(outside, "2026-08-27"), { recursive: true });
+        writeFileSync(join(outside, "2026-08-27", "swap-plan.md"), "# Out of tree");
+
+        const datedDir = join(workspace, ".copilot-tracking/plans/2026-08-27");
+        write(".copilot-tracking/plans/2026-08-27/swap-plan.md", "# In tree");
+
+        rmSync(datedDir, { recursive: true, force: true });
+        symlinkSync(join(outside, "2026-08-27"), datedDir);
+
+        await expectCode(
+            readArtifactFile(workspace, ".copilot-tracking/plans/2026-08-27/swap-plan.md"),
+            ERROR_CODES.artifactNotAllowed,
+        );
+        rmSync(outside, { recursive: true, force: true });
+    });
+
+    test("never returns out-of-tree content while an intermediate directory is swapped under it", async () => {
+        // The lexical walk cannot close this window on its own, because `open`
+        // resolves the path again. Churn the substitution against concurrent
+        // reads and assert the out-of-tree body is never returned.
+        const outside = mkdtempSync(join(tmpdir(), "rpi-outside-churn-"));
+        mkdirSync(join(outside, "2026-08-27"), { recursive: true });
+        writeFileSync(join(outside, "2026-08-27", "churn-plan.md"), "# OUT OF TREE");
+
+        const id = ".copilot-tracking/plans/2026-08-27/churn-plan.md";
+        const datedDir = join(workspace, ".copilot-tracking/plans/2026-08-27");
+        write(id, "# IN TREE");
+
+        for (let round = 0; round < 40; round++) {
+            const swap = (async () => {
+                rmSync(datedDir, { recursive: true, force: true });
+                symlinkSync(join(outside, "2026-08-27"), datedDir);
+                rmSync(datedDir, { recursive: true, force: true });
+                mkdirSync(datedDir, { recursive: true });
+                writeFileSync(join(datedDir, "churn-plan.md"), "# IN TREE");
+            })();
+            const read = readArtifactFile(workspace, id).catch((err) => err);
+            const [result] = await Promise.all([read, swap]);
+            if (!(result instanceof Error)) {
+                expect(result.source).toBe("# IN TREE");
+            } else {
+                expect(result).toBeInstanceOf(ArtifactError);
+            }
+        }
+        rmSync(outside, { recursive: true, force: true });
+    });
+
     test("never returns a mix of a replaced file's bytes", async () => {
         const id = ".copilot-tracking/plans/2026-08-27/race-plan.md";
         const path = write(id, "# Original");
@@ -374,17 +462,76 @@ describe("metadata parsing", () => {
     test("extracts a nested heading outline with document-order ordinals", () => {
         const headings = extractHeadings("# One\n\n## Two\n\n### Three\n\n## Four\n");
         expect(headings).toEqual([
-            { ordinal: 1, level: 1, text: "One" },
-            { ordinal: 2, level: 2, text: "Two" },
-            { ordinal: 3, level: 3, text: "Three" },
-            { ordinal: 4, level: 2, text: "Four" },
+            { ordinal: 1, level: 1, text: "One", line: 0 },
+            { ordinal: 2, level: 2, text: "Two", line: 2 },
+            { ordinal: 3, level: 3, text: "Three", line: 4 },
+            { ordinal: 4, level: 2, text: "Four", line: 6 },
         ]);
         expect(extractTitle(headings)).toBe("One");
+    });
+
+    test("reports the exact source line for every heading, including after fences", () => {
+        const source = "intro\n# One\n\n```\n# hidden\n```\n\n## Two\n";
+        const headings = extractHeadings(source);
+        const lines = source.split("\n");
+        expect(headings.map((h) => h.text)).toEqual(["One", "Two"]);
+        for (const heading of headings) {
+            expect(lines[heading.line]).toContain(heading.text);
+        }
     });
 
     test("ignores headings inside fenced code blocks", () => {
         const headings = extractHeadings("# Real\n\n```\n# Not a heading\n```\n\n## Also real\n");
         expect(headings.map((h) => h.text)).toEqual(["Real", "Also real"]);
+    });
+
+    test("does not let a shorter fence close a longer one", () => {
+        // A three-backtick line inside a four-backtick block is content, not a
+        // close, so nothing inside may leak out and nothing after may be lost.
+        const source = ["# Real", "", "````", "```", "# Leaked heading", "````", "", "## Real Two", ""].join("\n");
+        expect(extractHeadings(source).map((h) => h.text)).toEqual(["Real", "Real Two"]);
+    });
+
+    test("closes a fence on a longer run of the same character", () => {
+        const source = ["```", "# hidden", "`````", "# Visible", ""].join("\n");
+        expect(extractHeadings(source).map((h) => h.text)).toEqual(["Visible"]);
+    });
+
+    test("does not let a tilde fence close a backtick fence", () => {
+        const source = ["```", "~~~", "# hidden", "```", "# Visible", ""].join("\n");
+        expect(extractHeadings(source).map((h) => h.text)).toEqual(["Visible"]);
+    });
+
+    test("keeps an info string out of the closing rule", () => {
+        const source = ["```markdown", "# hidden", "```", "# Visible", ""].join("\n");
+        expect(extractHeadings(source).map((h) => h.text)).toEqual(["Visible"]);
+    });
+
+    test("rejects a closing fence that carries trailing content", () => {
+        const source = ["```", "# hidden", "``` not a close", "# still hidden", "```", "# Visible", ""].join("\n");
+        expect(extractHeadings(source).map((h) => h.text)).toEqual(["Visible"]);
+    });
+
+    test("treats a backtick fence whose info string holds a backtick as ordinary text", () => {
+        // CommonMark forbids a backtick in the info string of a backtick fence,
+        // so the line opens nothing and the heading after it stays visible.
+        const source = ["``` a`b", "# Visible", ""].join("\n");
+        expect(extractHeadings(source).map((h) => h.text)).toEqual(["Visible"]);
+    });
+
+    test("keeps every current tracking artifact's outline stable", async () => {
+        // Guards the parser against regressions on the shapes this repository
+        // actually produces, independent of the synthetic cases above.
+        const root = await realpath(process.cwd());
+        const ids = await discoverArtifactPaths(root);
+        for (const id of ids) {
+            const file = await readArtifactFile(root, id);
+            const headings = extractHeadings(file.source);
+            const lines = file.source.split(/\r?\n/);
+            for (const heading of headings) {
+                expect(lines[heading.line]).toMatch(/^#{1,6}\s/);
+            }
+        }
     });
 
     test("extracts status from common metadata shapes and returns null when absent", () => {

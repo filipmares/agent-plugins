@@ -9,6 +9,14 @@
  * are not sufficient, so every traversed path segment is `lstat`-checked and
  * symlinks are rejected, and every read is bound to a verified open file
  * descriptor whose identity is rechecked before and after the read.
+ *
+ * A pre-open lexical walk alone cannot close a race, because `open` resolves
+ * the path string again from scratch and `O_NOFOLLOW` constrains only the final
+ * component. Containment is therefore re-established *after* the open, against
+ * the fully resolved real path, and tied back to the descriptor that was
+ * actually read. An intermediate directory swapped for a symlink is rejected
+ * either because the resolved path leaves the approved roots or because it no
+ * longer denotes the inode held by the descriptor.
  */
 
 import { createHash } from "node:crypto";
@@ -156,6 +164,50 @@ function identityOf(stats) {
 }
 
 /**
+ * Re-establish containment after the file is already open.
+ *
+ * The pre-open segment walk is advisory: `open` resolves the path string again,
+ * and `O_NOFOLLOW` protects only the final component, so an intermediate
+ * directory replaced by a symlink between the walk and the open is followed by
+ * the kernel. This check closes that window without needing descriptor-relative
+ * syscalls, which Node does not expose:
+ *
+ * - `realpath` resolves every intermediate symlink, so an escaping substitution
+ *   yields a path outside the approved roots and is rejected outright.
+ * - the resolved path must still denote the exact inode the descriptor holds,
+ *   so restoring the original directory afterwards is caught as a change rather
+ *   than silently accepted.
+ *
+ * Comparing identity instead of the path string keeps case-insensitive volumes
+ * working, where the canonical spelling may differ from the requested id.
+ */
+async function assertResolvedIdentity(workspaceRoot, absolutePath, descriptorStats) {
+    let resolvedPath;
+    try {
+        resolvedPath = await realpath(absolutePath);
+    } catch {
+        throw new ArtifactError(ERROR_CODES.artifactChanged, "The artifact changed while it was being read");
+    }
+
+    if (!isContained(workspaceRoot, resolvedPath) || resolvedPath === workspaceRoot) {
+        throw new ArtifactError(ERROR_CODES.artifactNotAllowed, "The requested artifact escapes the workspace");
+    }
+    // Throws when the resolved location left the approved roots or stopped
+    // being Markdown, which is what an intermediate symlink substitution does.
+    normalizeArtifactId(toArtifactId(workspaceRoot, resolvedPath));
+
+    let resolvedStats;
+    try {
+        resolvedStats = await lstat(resolvedPath);
+    } catch {
+        throw new ArtifactError(ERROR_CODES.artifactChanged, "The artifact changed while it was being read");
+    }
+    if (resolvedStats.dev !== descriptorStats.dev || resolvedStats.ino !== descriptorStats.ino) {
+        throw new ArtifactError(ERROR_CODES.artifactChanged, "The artifact changed while it was being read");
+    }
+}
+
+/**
  * Read one allowed artifact.
  *
  * The file is opened read-only, verified through `fstat` on the open
@@ -174,7 +226,9 @@ export async function readArtifactFile(workspaceRoot, artifactId) {
 
     let handle;
     try {
-        handle = await open(absolutePath, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
+        // O_NONBLOCK keeps a FIFO or device node from blocking the open
+        // indefinitely, so the `fstat` type check below can reject it.
+        handle = await open(absolutePath, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW | fsConstants.O_NONBLOCK);
     } catch (err) {
         if (err && (err.code === "ELOOP" || err.code === "EMLINK")) {
             throw new ArtifactError(ERROR_CODES.artifactNotAllowed, "Symlinked artifacts are not readable");
@@ -190,9 +244,16 @@ export async function readArtifactFile(workspaceRoot, artifactId) {
         if (!before.isFile()) {
             throw new ArtifactError(ERROR_CODES.artifactNotFile, "The requested artifact is not a regular file");
         }
+        // A hard link inside an approved root aliases an out-of-tree inode
+        // without any symlink, and no path-based check can detect it.
+        if (before.nlink > 1) {
+            throw new ArtifactError(ERROR_CODES.artifactNotAllowed, "Multiply-linked artifacts are not readable");
+        }
         if (before.size > LIMITS.maxFileBytes) {
             throw new ArtifactError(ERROR_CODES.artifactTooLarge, "The requested artifact exceeds the size limit");
         }
+
+        await assertResolvedIdentity(workspaceRoot, absolutePath, before);
 
         const buffer = Buffer.alloc(before.size);
         let offset = 0;
@@ -210,17 +271,7 @@ export async function readArtifactFile(workspaceRoot, artifactId) {
             throw new ArtifactError(ERROR_CODES.artifactChanged, "The artifact changed while it was being read");
         }
 
-        // A replaced file keeps its path but not its inode. Compare the current
-        // path identity against the descriptor we actually read from.
-        let currentStats;
-        try {
-            currentStats = await lstat(absolutePath);
-        } catch {
-            throw new ArtifactError(ERROR_CODES.artifactChanged, "The artifact changed while it was being read");
-        }
-        if (currentStats.isSymbolicLink() || currentStats.dev !== after.dev || currentStats.ino !== after.ino) {
-            throw new ArtifactError(ERROR_CODES.artifactChanged, "The artifact changed while it was being read");
-        }
+        await assertResolvedIdentity(workspaceRoot, absolutePath, after);
 
         const source = buffer.toString("utf8");
         return {

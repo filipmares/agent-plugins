@@ -46,6 +46,18 @@ const ARTIFACT_INPUT_SCHEMA = Object.freeze({
 /** Live per-instance servers, keyed by canvas instance id. */
 const instances = new Map();
 
+/**
+ * In-flight server creations, keyed by canvas instance id.
+ *
+ * `openNavigator` awaits between checking the registry and writing to it, so
+ * two concurrent opens for one instance would each observe an empty slot and
+ * each bind a server, and the loser would be overwritten while still listening.
+ * Publishing the creation promise before the first await makes the second
+ * caller join the same creation instead of starting a rival one, so exactly one
+ * server ever exists per instance and `onClose` can always release it.
+ */
+const pendingInstances = new Map();
+
 let session;
 
 function log(message, options) {
@@ -145,15 +157,34 @@ export async function refreshRpiArtifacts(ctx) {
 export async function openNavigator(ctx) {
     try {
         assertCanvasSupported(ctx);
-        const workspaceRoot = await resolveWorkspace(ctx);
+        const instanceId = ctx.instanceId;
 
-        const existing = instances.get(ctx.instanceId);
+        const existing = instances.get(instanceId);
         if (existing !== undefined && !existing.closed) {
             return { url: existing.url, title: CANVAS_TITLE, status: "Reusing the open navigator instance" };
         }
 
-        const server = await createNavigatorServer({ workspaceRoot, title: CANVAS_TITLE, log });
-        instances.set(ctx.instanceId, server);
+        const inFlight = pendingInstances.get(instanceId);
+        if (inFlight !== undefined) {
+            const joined = await inFlight;
+            return { url: joined.url, title: CANVAS_TITLE, status: "Reusing the open navigator instance" };
+        }
+
+        const creation = (async () => {
+            const workspaceRoot = await resolveWorkspace(ctx);
+            const server = await createNavigatorServer({ workspaceRoot, title: CANVAS_TITLE, log });
+            instances.set(instanceId, server);
+            return server;
+        })();
+        pendingInstances.set(instanceId, creation);
+
+        let server;
+        try {
+            server = await creation;
+        } finally {
+            pendingInstances.delete(instanceId);
+        }
+
         log("Opened a navigator instance");
         return { url: server.url, title: CANVAS_TITLE, status: "Reading tracking artifacts from disk" };
     } catch (err) {
@@ -163,6 +194,12 @@ export async function openNavigator(ctx) {
 
 /** Release exactly the server bound to the closing instance. */
 export async function closeNavigator(ctx) {
+    // A close racing an open must still release the server that open produces,
+    // otherwise the orphan keeps serving with a valid capability.
+    const inFlight = pendingInstances.get(ctx.instanceId);
+    if (inFlight !== undefined) {
+        await inFlight.catch(() => undefined);
+    }
     const server = instances.get(ctx.instanceId);
     if (server === undefined) return;
     instances.delete(ctx.instanceId);
@@ -201,6 +238,9 @@ export const canvasDeclaration = createCanvas({
 
 /** Release every instance when the extension process is shut down or reloaded. */
 async function releaseAllInstances() {
+    const pending = [...pendingInstances.values()];
+    pendingInstances.clear();
+    await Promise.allSettled(pending);
     const servers = [...instances.values()];
     instances.clear();
     await Promise.allSettled(servers.map((server) => server.close()));

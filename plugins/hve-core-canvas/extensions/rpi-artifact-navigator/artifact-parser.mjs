@@ -66,19 +66,42 @@ export function extractTaskSlug(artifactId) {
 /**
  * Split a Markdown source into lines while tracking fenced code blocks, so
  * `#` characters inside fences are not mistaken for headings.
+ *
+ * Fence handling follows CommonMark: a fence opens with at least three
+ * backticks or tildes indented no more than three spaces, and closes only on a
+ * line using the same character, at least as long as the opener, with nothing
+ * but whitespace after it. Tracking only the character would let a shorter
+ * closing run terminate a longer block, which both leaks headings out of code
+ * and swallows real headings after it. An info string may follow an opening
+ * backtick fence but may never contain a backtick.
  */
 function* codeAwareLines(source) {
-    let fence = null;
+    let fenceChar = null;
+    let fenceLength = 0;
+    let index = 0;
     for (const line of source.split(/\r?\n/)) {
-        const fenceMatch = line.match(/^\s{0,3}(`{3,}|~{3,})/);
-        if (fenceMatch) {
-            const marker = fenceMatch[1][0];
-            if (fence === null) fence = marker;
-            else if (fence === marker) fence = null;
-            yield { line, inCode: true };
-            continue;
+        const fenceMatch = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+        if (fenceMatch !== null) {
+            const marker = fenceMatch[1];
+            const trailing = fenceMatch[2];
+            if (fenceChar === null) {
+                if (!(marker[0] === "`" && trailing.includes("`"))) {
+                    fenceChar = marker[0];
+                    fenceLength = marker.length;
+                    yield { line, index, inCode: true };
+                    index += 1;
+                    continue;
+                }
+            } else if (marker[0] === fenceChar && marker.length >= fenceLength && trailing.trim() === "") {
+                fenceChar = null;
+                fenceLength = 0;
+                yield { line, index, inCode: true };
+                index += 1;
+                continue;
+            }
         }
-        yield { line, inCode: fence !== null };
+        yield { line, index, inCode: fenceChar !== null };
+        index += 1;
     }
 }
 
@@ -86,12 +109,14 @@ function* codeAwareLines(source) {
  * Extract the ATX heading outline.
  *
  * Ordinals are assigned in document order so the renderer can address a
- * heading without relying on its text being unique.
+ * heading without relying on its text being unique. `line` is the zero-based
+ * source line index, so the renderer can reveal the exact heading instead of
+ * recounting headings with a second, divergent algorithm.
  */
 export function extractHeadings(source) {
     const headings = [];
     let ordinal = 0;
-    for (const { line, inCode } of codeAwareLines(source)) {
+    for (const { line, index, inCode } of codeAwareLines(source)) {
         if (inCode) continue;
         const match = line.match(/^(#{1,6})\s+(.*?)\s*#*\s*$/);
         if (match === null) continue;
@@ -102,7 +127,7 @@ export function extractHeadings(source) {
                 `The artifact contains more than ${LIMITS.maxHeadings} headings`,
             );
         }
-        headings.push({ ordinal, level: match[1].length, text: match[2].trim() });
+        headings.push({ ordinal, level: match[1].length, text: match[2].trim(), line: index });
     }
     return headings;
 }

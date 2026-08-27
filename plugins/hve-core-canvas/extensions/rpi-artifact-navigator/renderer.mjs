@@ -283,21 +283,53 @@ export const NAVIGATOR_SCRIPT = String.raw`
   }
 
   function revealHeading(heading) {
-    var lines = state.document.source.split("\n");
-    var seen = 0;
-    for (var i = 0; i < lines.length; i++) {
-      if (/^#{1,6}\s+/.test(lines[i])) {
-        seen++;
-        if (seen === heading.ordinal) {
-          var ratio = i / Math.max(lines.length, 1);
-          sourceEl.scrollTop = Math.floor(sourceEl.scrollHeight * ratio);
-          sourceEl.focus();
-          setStatus("Moved to heading: " + heading.text, "info");
-          return;
-        }
+    // The parser owns heading identification and reports the source line, so
+    // the client never runs a second, fence-unaware counting pass. The target
+    // is located by its rendered geometry rather than a line-index ratio, which
+    // is wrong whenever line lengths are uneven.
+    var src = state.document.source;
+    var totalLines = src.split(/\r?\n/).length;
+    if (typeof heading.line !== "number" || heading.line < 0 || heading.line >= totalLines) {
+      setStatus("Heading not found in source: " + heading.text, "error");
+      return;
+    }
+
+    // Scan for real line breaks so the offset stays exact for CRLF sources.
+    var start = 0;
+    for (var i = 0; i < heading.line; i++) {
+      var nl = src.indexOf("\n", start);
+      if (nl === -1) { start = -1; break; }
+      start = nl + 1;
+    }
+    if (start === -1) {
+      setStatus("Heading not found in source: " + heading.text, "error");
+      return;
+    }
+    var lineEnd = src.indexOf("\n", start);
+    var end = lineEnd === -1 ? src.length : lineEnd;
+    if (end > start && src.charAt(end - 1) === "\r") end -= 1;
+
+    var textNode = sourceEl.firstChild;
+    var moved = false;
+    if (textNode && textNode.nodeType === 3 && end <= textNode.length) {
+      try {
+        var range = document.createRange();
+        range.setStart(textNode, start);
+        range.setEnd(textNode, end);
+        var rect = range.getBoundingClientRect();
+        var box = sourceEl.getBoundingClientRect();
+        sourceEl.scrollTop = Math.max(0, sourceEl.scrollTop + (rect.top - box.top));
+        moved = true;
+      } catch (err) {
+        moved = false;
       }
     }
-    setStatus("Heading not found in source: " + heading.text, "error");
+    if (!moved) {
+      sourceEl.scrollTop = Math.floor(sourceEl.scrollHeight * (heading.line / Math.max(totalLines, 1)));
+    }
+
+    sourceEl.focus();
+    setStatus("Moved to heading: " + heading.text, "info");
   }
 
   function select(artifactId) {

@@ -24,13 +24,13 @@ Files on disk remain the only authoritative state. The canvas is a projection; i
   - `.copilot-tracking/changes`
   - `.copilot-tracking/reviews/plans`
   - `.copilot-tracking/reviews/logs`
-- **No escape.** Absolute paths, `..` traversal, sibling-prefix confusion, and symlinked path segments are rejected. Reads are bound to a verified file descriptor with pre-open and post-open identity checks.
+- **No escape.** Absolute paths, `..` traversal, sibling-prefix confusion, symlinked path segments, and multiply-linked files are rejected. Reads are bound to a verified file descriptor, and containment is re-established after the file is open against its fully resolved real path, so an intermediate directory swapped for a symlink mid-read is rejected rather than followed. Non-regular files such as FIFOs are refused without blocking.
 - **Loopback only.** The renderer is served from `127.0.0.1` on an ephemeral port behind an unguessable 256-bit per-instance path capability, with `Host`/`Origin` enforcement, CORS denial, a restrictive CSP, and `Cache-Control: no-store`. The capability is invalidated when the canvas closes.
 - **No network, no commands, no dependencies.** The extension uses only the Node standard library and the Copilot SDK. It makes no outbound network calls, runs no commands, and emits no telemetry.
 
 ## Resource limits
 
-Limits fail explicitly rather than silently truncating content.
+Limits fail explicitly rather than silently truncating content. An artifact that exceeds a limit makes the whole listing fail with that limit's error code, so the index is never presented as complete while quietly omitting something.
 
 | Limit | Value |
 |-------|-------|
@@ -124,9 +124,10 @@ If the host does not report canvas capability, or no workspace path is available
 | `canvas_unsupported` | Host does not expose canvas rendering | Use a supported GitHub Copilot version, or work with the Markdown files directly |
 | `workspace_unavailable` | No workspace path reported by the session | Open Copilot from inside your repository |
 | Empty artifact list | No `.copilot-tracking` Markdown in the workspace | Expected; the index is empty rather than an error |
-| `artifact_not_allowed` | Path outside the approved roots | Only the roots listed above are readable |
+| `artifact_not_allowed` | Path outside the approved roots, a symlinked segment, or a multiply-linked file | Only ordinary, single-linked files under the roots listed above are readable |
 | `artifact_changed` | File was replaced between check and read | Refresh and retry |
-| `artifact_too_large` / `artifact_limit_exceeded` | Content exceeds a documented limit | Split the artifact or read it directly |
+| `artifact_not_file` | The path is a directory, FIFO, or other non-regular file | Only regular Markdown files are readable |
+| `artifact_too_large` / `artifact_limit_exceeded` / `heading_limit_exceeded` | Content exceeds a documented limit | Split the artifact or read it directly; the listing fails rather than hiding it |
 
 ## Promotion criteria
 

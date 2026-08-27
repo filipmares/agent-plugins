@@ -63,10 +63,15 @@ const STATUS_BY_CODE = Object.freeze({
 /**
  * Build the summary list for the approved roots.
  *
- * Artifacts that disappear or become unreadable between discovery and read are
- * skipped rather than failing the whole listing, because the index is a
- * best-effort projection of files that may change at any time.
+ * Artifacts that disappear or are replaced between discovery and read are
+ * skipped, because the index is a best-effort projection of files that may
+ * change at any time. Every other failure propagates. A resource ceiling in
+ * particular must fail explicitly rather than truncate, so an artifact the
+ * navigator cannot process is never quietly absent from a list that presents
+ * itself as complete.
  */
+const TRANSIENT_LIST_ERRORS = new Set([ERROR_CODES.artifactNotFound, ERROR_CODES.artifactChanged]);
+
 export async function buildArtifactList(workspaceRoot) {
     const ids = await discoverArtifactPaths(workspaceRoot);
     const artifacts = [];
@@ -74,7 +79,7 @@ export async function buildArtifactList(workspaceRoot) {
         try {
             artifacts.push(buildArtifactSummary(await readArtifactFile(workspaceRoot, id)));
         } catch (err) {
-            if (err instanceof ArtifactError) continue;
+            if (err instanceof ArtifactError && TRANSIENT_LIST_ERRORS.has(err.code)) continue;
             throw err;
         }
     }

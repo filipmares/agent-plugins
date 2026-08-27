@@ -8,9 +8,10 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 
 const repoRoot = resolve(dirname(new URL(import.meta.url).pathname), "../../../../..");
 const pluginDir = join(repoRoot, "plugins", "hve-core-canvas");
@@ -312,21 +313,81 @@ describe("static canvas extraction", () => {
         const declarations = extractCanvasDeclarations(
             'import { createCanvas } from "x";\ncreateCanvas({ id: "outer", inputSchema: { properties: { id: { type: "string" } } }, actions: [{ name: "act", inputSchema: { properties: { name: { type: "string" } } } }] });\n',
         );
-        expect(declarations).toEqual([{ id: "outer", actionNames: ["act"] }]);
+        expect(declarations).toEqual([{ id: "outer", actionNames: ["act"], unresolvedActions: 0 }]);
     });
 
     test("resolves a canvas id supplied through a module-level string constant", () => {
         const declarations = extractCanvasDeclarations(
             'import { createCanvas } from "x";\nconst CANVAS_ID = "from-constant";\ncreateCanvas({ id: CANVAS_ID, actions: [{ name: "act" }] });\n',
         );
-        expect(declarations).toEqual([{ id: "from-constant", actionNames: ["act"] }]);
+        expect(declarations).toEqual([{ id: "from-constant", actionNames: ["act"], unresolvedActions: 0 }]);
     });
 
     test("does not resolve a constant that is only assigned a computed value", () => {
         const declarations = extractCanvasDeclarations(
             'import { createCanvas } from "x";\nconst CANVAS_ID = buildId();\ncreateCanvas({ id: CANVAS_ID });\n',
         );
-        expect(declarations).toEqual([{ id: "", actionNames: [] }]);
+        expect(declarations).toEqual([{ id: "", actionNames: [], unresolvedActions: 0 }]);
+    });
+
+    test("does not fabricate a declaration from a regular-expression literal", () => {
+        const declarations = extractCanvasDeclarations(
+            ['import { createCanvas } from "x";', 'const pattern = /createCanvas\\({ id: "phantom" }\\)/;', 'createCanvas({ id: "real" });'].join("\n"),
+        );
+        expect(declarations.map((d) => d.id)).toEqual(["real"]);
+    });
+
+    test("does not treat a division as the start of a regular expression", () => {
+        const declarations = extractCanvasDeclarations(
+            ['import { createCanvas } from "x";', "const ratio = total / count / 2;", 'createCanvas({ id: "real", actions: [{ name: "act" }] });'].join("\n"),
+        );
+        expect(declarations).toEqual([{ id: "real", actionNames: ["act"], unresolvedActions: 0 }]);
+    });
+
+    test("sees a declaration written inside a template-literal expression", () => {
+        const declarations = extractCanvasDeclarations(
+            ["import { createCanvas } from \"x\";", "const rendered = `prefix ${describe(createCanvas({ id: \"interpolated\" }))} suffix`;"].join("\n"),
+        );
+        expect(declarations.map((d) => d.id)).toEqual(["interpolated"]);
+    });
+
+    test("ignores literal template text that merely looks like a declaration", () => {
+        const declarations = extractCanvasDeclarations(
+            ["import { createCanvas } from \"x\";", "const doc = `createCanvas({ id: \"documented\" })`;", 'createCanvas({ id: "real" });'].join("\n"),
+        );
+        expect(declarations.map((d) => d.id)).toEqual(["real"]);
+    });
+
+    test("refuses to resolve a mutable or nested binding as a constant", () => {
+        const mutable = extractCanvasDeclarations(
+            'import { createCanvas } from "x";\nlet CANVAS_ID = "mutable";\ncreateCanvas({ id: CANVAS_ID });\n',
+        );
+        expect(mutable.map((d) => d.id)).toEqual([""]);
+
+        const nested = extractCanvasDeclarations(
+            'import { createCanvas } from "x";\nfunction make() { const CANVAS_ID = "nested"; }\ncreateCanvas({ id: CANVAS_ID });\n',
+        );
+        expect(nested.map((d) => d.id)).toEqual([""]);
+    });
+
+    test("refuses a module-level constant that is shadowed elsewhere", () => {
+        const declarations = extractCanvasDeclarations(
+            [
+                'import { createCanvas } from "x";',
+                'const CANVAS_ID = "outer";',
+                'function other() { const CANVAS_ID = "inner"; return CANVAS_ID; }',
+                "createCanvas({ id: CANVAS_ID });",
+            ].join("\n"),
+        );
+        expect(declarations.map((d) => d.id)).toEqual([""]);
+    });
+
+    test("reports an action name it cannot statically prove instead of dropping it", () => {
+        const declarations = extractCanvasDeclarations(
+            'import { createCanvas } from "x";\ncreateCanvas({ id: "real", actions: [{ name: computeName(), handler: h }, { name: "known" }] });\n',
+        );
+        expect(declarations[0].actionNames).toEqual(["known"]);
+        expect(declarations[0].unresolvedActions).toBe(1);
     });
 });
 
@@ -334,8 +395,57 @@ describe("existing distribution boundary", () => {
     test("the root skills directory and its skills.sh layout are untouched", () => {
         const skillsDir = join(repoRoot, "skills");
         expect(existsSync(skillsDir)).toBe(true);
-        for (const skill of ["cli-skill-generator", "plugin-analyzer", "consensus-planner"]) {
+
+        // Assert the whole tree, not a sample: every skill directory must carry
+        // a SKILL.md, and nothing under skills/ may reference the pilot plugin.
+        const skillDirs = readdirSync(skillsDir, { withFileTypes: true })
+            .filter((entry) => entry.isDirectory())
+            .map((entry) => entry.name)
+            .sort();
+        expect(skillDirs.length).toBeGreaterThan(0);
+
+        const files = [];
+        const walk = (current) => {
+            for (const entry of readdirSync(current, { withFileTypes: true })) {
+                const childPath = join(current, entry.name);
+                if (entry.isDirectory()) walk(childPath);
+                else if (entry.isFile()) files.push(childPath);
+            }
+        };
+        walk(skillsDir);
+
+        for (const skill of skillDirs) {
             expect(existsSync(join(skillsDir, skill, "SKILL.md"))).toBe(true);
+        }
+        for (const file of files) {
+            const relativePath = relative(repoRoot, file).split(sep).join("/");
+            expect(relativePath.startsWith("skills/")).toBe(true);
+            if (/\.(md|json|ts|js|mjs|ya?ml)$/.test(relativePath)) {
+                expect(readFileSync(file, "utf8")).not.toContain("hve-core-canvas");
+            }
+        }
+    });
+
+    test("no commit that touches the companion plugin also touches root skills", () => {
+        // The mechanical proof that adopting the pilot left the skills.sh
+        // distribution alone, rather than a sample of names still existing.
+        let commits;
+        try {
+            commits = execFileSync("git", ["log", "--format=%H", "--", "plugins/hve-core-canvas"], {
+                cwd: repoRoot,
+                encoding: "utf8",
+            })
+                .split("\n")
+                .filter((line) => line !== "");
+        } catch {
+            return; // Not a git checkout; the listing test above still applies.
+        }
+        for (const commit of commits) {
+            const touched = execFileSync("git", ["show", "--name-only", "--format=", commit, "--", "skills"], {
+                cwd: repoRoot,
+                encoding: "utf8",
+            }).trim();
+            expect(touched).toBe("");
         }
     });
 

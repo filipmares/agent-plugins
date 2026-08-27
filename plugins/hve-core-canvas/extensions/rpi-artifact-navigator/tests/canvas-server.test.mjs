@@ -39,7 +39,7 @@ mock.module("@github/copilot-sdk/extension", () => ({
     }),
 }));
 
-const { ERROR_CODES, LIMITS } = await import("../artifact-index.mjs");
+const { ArtifactError, ERROR_CODES, LIMITS } = await import("../artifact-index.mjs");
 const { createNavigatorServer, buildArtifactList } = await import("../server.mjs");
 const { escapeHtml, renderNavigatorHtml, NAVIGATOR_SCRIPT, NAVIGATOR_STYLES } = await import("../renderer.mjs");
 const provider = await import("../extension.mjs");
@@ -78,7 +78,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
     while (openServers.length > 0) await openServers.pop().close();
-    for (const instanceId of ["instance-a", "instance-b", "instance-c"]) {
+    for (const instanceId of ["instance-a", "instance-b", "instance-c", "instance-dup"]) {
         await provider.closeNavigator({ instanceId });
     }
     rmSync(workspace, { recursive: true, force: true });
@@ -304,6 +304,49 @@ describe("refresh and cleanup", () => {
         expect(server.notifyRefresh()).toBe(0);
     });
 
+    test("delivers a refresh event to a connected stream and drops it on disconnect", async () => {
+        const server = await startServer();
+        const controller = new AbortController();
+        const response = await call(server, `${server.basePath}/api/events`, { signal: controller.signal });
+        expect(response.status).toBe(200);
+        expect(response.headers.get("content-type")).toContain("text/event-stream");
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        const firstChunk = decoder.decode((await reader.read()).value);
+        expect(firstChunk).toContain(": connected");
+
+        expect(server.notifyRefresh()).toBe(1);
+        const eventChunk = decoder.decode((await reader.read()).value);
+        expect(eventChunk).toContain("event: refresh");
+
+        controller.abort();
+        // The server drops the stream on close; poll briefly so the disconnect
+        // is observed rather than assumed.
+        for (let attempt = 0; attempt < 50 && server.notifyRefresh() !== 0; attempt++) {
+            await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        expect(server.notifyRefresh()).toBe(0);
+    });
+
+    test("close ends a live stream and stops notifying it", async () => {
+        const server = await startServer();
+        const response = await call(server, `${server.basePath}/api/events`);
+        const reader = response.body.getReader();
+        await reader.read();
+        expect(server.notifyRefresh()).toBe(1);
+
+        await server.close();
+        expect(server.notifyRefresh()).toBe(0);
+        // The stream terminates rather than hanging open after close.
+        let done = false;
+        for (let attempt = 0; attempt < 50 && !done; attempt++) {
+            const chunk = await reader.read().catch(() => ({ done: true }));
+            done = chunk.done === true;
+        }
+        expect(done).toBe(true);
+    });
+
     test("close invalidates the capability and refuses later requests", async () => {
         const server = await startServer();
         const path = `${server.basePath}/api/artifacts`;
@@ -346,12 +389,56 @@ describe("artifact listing", () => {
         expect(payload.artifacts[1]).toMatchObject({ type: "plan", status: "Ready", taskSlug: "a" });
     });
 
-    test("skips an artifact that exceeds the file limit rather than failing the list", async () => {
+    test("fails explicitly when an artifact exceeds the file limit instead of truncating the list", async () => {
         write(".copilot-tracking/plans/2026-08-27/ok-plan.md", "# Ok");
         write(".copilot-tracking/plans/2026-08-27/huge-plan.md", "a".repeat(LIMITS.maxFileBytes + 1));
 
-        const payload = await buildArtifactList(workspace);
-        expect(payload.artifacts.map((a) => a.id)).toEqual([".copilot-tracking/plans/2026-08-27/ok-plan.md"]);
+        let thrown;
+        try {
+            await buildArtifactList(workspace);
+        } catch (err) {
+            thrown = err;
+        }
+        expect(thrown).toBeInstanceOf(ArtifactError);
+        expect(thrown.code).toBe(ERROR_CODES.artifactTooLarge);
+    });
+
+    test("fails explicitly when an artifact exceeds the heading limit", async () => {
+        write(".copilot-tracking/plans/2026-08-27/ok-plan.md", "# Ok");
+        write(
+            ".copilot-tracking/plans/2026-08-27/many-plan.md",
+            Array.from({ length: LIMITS.maxHeadings + 1 }, (_, i) => `# H${i}`).join("\n"),
+        );
+
+        let thrown;
+        try {
+            await buildArtifactList(workspace);
+        } catch (err) {
+            thrown = err;
+        }
+        expect(thrown).toBeInstanceOf(ArtifactError);
+        expect(thrown.code).toBe(ERROR_CODES.headingLimitExceeded);
+    });
+
+    test("still skips an artifact that disappears between discovery and read", async () => {
+        // Deletion is the transient case the list must tolerate, so racing a
+        // delete against the listing may never reject.
+        write(".copilot-tracking/plans/2026-08-27/ok-plan.md", "# Ok");
+        for (let round = 0; round < 20; round++) {
+            const doomed = write(".copilot-tracking/plans/2026-08-27/gone-plan.md", "# Gone");
+            const listing = buildArtifactList(workspace);
+            rmSync(doomed, { force: true });
+            const payload = await listing;
+            expect(payload.artifacts.some((a) => a.id.endsWith("ok-plan.md"))).toBe(true);
+        }
+    });
+
+    test("the over-limit failure surfaces on the HTTP list route as 413", async () => {
+        write(".copilot-tracking/plans/2026-08-27/huge-plan.md", "a".repeat(LIMITS.maxFileBytes + 1));
+        const server = await startServer();
+        const response = await call(server, `${server.basePath}/api/artifacts`);
+        expect(response.status).toBe(413);
+        expect((await response.json()).error).toBe(ERROR_CODES.artifactTooLarge);
     });
 });
 
@@ -397,8 +484,8 @@ describe("canvas provider contract", () => {
         expect(Object.keys(result)).toEqual(["artifact"]);
         expect(result.artifact.source).toBe(source);
         expect(result.artifact.headings).toEqual([
-            { ordinal: 1, level: 1, text: "Example" },
-            { ordinal: 2, level: 2, text: "Section" },
+            { ordinal: 1, level: 1, text: "Example", line: 0 },
+            { ordinal: 2, level: 2, text: "Section", line: 2 },
         ]);
         expect(result.artifact.sha256).toMatch(/^[0-9a-f]{64}$/);
     });
@@ -458,6 +545,28 @@ describe("canvas provider contract", () => {
         expect(again.url).toBe(first.url);
         expect(other.url).not.toBe(first.url);
         expect(first.title).toBe("RPI Artifact Navigator");
+    });
+
+    test("concurrent opens for one instance share a single server that close fully releases", async () => {
+        // Two opens interleaved in the await gap must not each bind a server;
+        // the loser would otherwise outlive onClose with a valid capability.
+        const ctx = { instanceId: "instance-dup", session: { workingDirectory: workspace } };
+        const [first, second] = await Promise.all([provider.openNavigator(ctx), provider.openNavigator(ctx)]);
+        expect(second.url).toBe(first.url);
+
+        await provider.closeNavigator({ instanceId: "instance-dup" });
+
+        for (const url of new Set([first.url, second.url])) {
+            const authority = new URL(url).host;
+            let reachable = true;
+            try {
+                const response = await fetch(`${url}api/artifacts`, { headers: { Host: authority } });
+                reachable = response.status < 500;
+            } catch {
+                reachable = false;
+            }
+            expect(reachable).toBe(false);
+        }
     });
 
     test("a fresh instance resolves the same artifact content because files own identity", async () => {
