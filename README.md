@@ -17,6 +17,16 @@ copilot plugin install agent-plugins@agent-plugins
 
 Update later with `copilot plugin update agent-plugins`.
 
+### Experimental canvas companion
+
+An optional, separately installed companion plugin adds one read-only canvas — the **RPI Artifact Navigator** — for browsing HVE-Core RPI tracking artifacts. It is opt-in and does not change the skills above:
+
+```bash
+copilot plugin install hve-core-canvas@agent-plugins
+```
+
+See [`plugins/hve-core-canvas/README.md`](./plugins/hve-core-canvas/README.md) for its trust boundary, supported configurations, limitations, and removal steps. Canvas support is experimental and verified only on macOS with GitHub Copilot CLI 1.0.80.
+
 ### skills.sh CLI
 
 The [skills](https://skills.sh) CLI detects which agent you're using and installs each skill in the right place (e.g. `.claude/skills/`, `.cursor/skills/`, …).
@@ -75,6 +85,7 @@ agent-plugins/
 │       └── scripts/
 ├── .templates/skill-template/ # Starter for new skills
 ├── .github/plugin/            # Copilot CLI marketplace.json + plugin.json
+├── plugins/hve-core-canvas/   # Opt-in experimental Copilot canvas companion plugin
 ├── scripts/                   # Validation + listing utilities (Bun + TS)
 ├── CONTRIBUTING.md
 ├── CHANGELOG.md

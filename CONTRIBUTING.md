@@ -94,9 +94,26 @@ This repo uses [Bun](https://bun.sh) for its TypeScript scripts. No build step i
 ```bash
 bun run scripts/validate-skill.ts skills/<name>   # Validate a single skill
 bun run scripts/list-skills.ts                    # List all skills + status
+bun run validate:copilot-plugin                   # Validate the Copilot marketplace + plugin packages
+bun run test:canvas                               # Run the canvas companion's test suite
 ```
 
 CI runs the same checks against every skill in `skills/`.
+
+## Copilot Canvas Companion Plugin
+
+`plugins/hve-core-canvas/` is a separate, opt-in GitHub Copilot plugin. It is deliberately outside the skills.sh distribution: root `skills/` and the `agent-plugins` marketplace entry are unaffected by it, and it declares no skills of its own.
+
+Working rules for that directory:
+
+- The canvas is **read-only**. Do not add a write, edit, delete, rename, or move path.
+- Reads stay inside the approved `.copilot-tracking` roots enforced in `artifact-index.mjs`. Widening that allowlist is a security change, not a convenience change.
+- Extension modules depend only on the Node standard library and `@github/copilot-sdk`. Do not introduce a package manifest, lockfile, or third-party dependency inside the plugin.
+- The per-instance HTTP server binds to `127.0.0.1` behind an unguessable path capability. Do not relax the `Host`, `Origin`, CORS, or Content-Security-Policy handling in `server.mjs`.
+- The plugin's `version` in `plugins/hve-core-canvas/plugin.json` must match its `.github/plugin/marketplace.json` entry; `bun run validate:copilot-plugin` enforces this.
+- Support claims in `plugins/hve-core-canvas/README.md` must name only configurations that were actually verified. Do not broaden them without new evidence.
+
+Run `bun run test:canvas` and `bun run validate:copilot-plugin` before opening a PR that touches the plugin.
 
 ## Code of Conduct
 
