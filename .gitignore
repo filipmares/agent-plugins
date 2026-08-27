@@ -142,3 +142,6 @@ vite.config.ts.timestamp-*
 .bun
 bun.lockb
 .claude/settings.local.json
+
+# HVE-Core RPI working documents (research, plans, details, changes, reviews)
+.copilot-tracking/
