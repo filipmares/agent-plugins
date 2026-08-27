@@ -7,6 +7,9 @@ and plugin versioning follows [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## [Unreleased]
 
+### Added — Copilot Code Review agent
+- Added the user-invocable, evidence-based `Copilot Code Review` agent and its Copilot plugin manifest and documentation wiring; it reviews supplied changes without implementing fixes.
+
 ### Added — hve-core-canvas v0.1.0 (experimental, opt-in)
 - New companion plugin under `plugins/hve-core-canvas/`, installed separately with `copilot plugin install hve-core-canvas@agent-plugins`. It is **not** part of the `agent-plugins` skills plugin and does not change the skills.sh distribution.
 - Adds one read-only Copilot canvas, **RPI Artifact Navigator**, that browses HVE-Core RPI tracking Markdown: an artifact index with type/date/task/status, a heading outline, and the artifact's exact source rendered as inert text. Files on disk stay authoritative; panel state is transient.

@@ -11,7 +11,7 @@
     {
       "name": "agent-plugins",
       "source": ".",
-      "description": "CLI skill generation, multi-model consensus planning, multi-model plugin analysis, Copilot installation migration, and unattended PR-review scope discipline.",
+      "description": "Developer skills plus an evidence-based Copilot code review agent for reviewing supplied changes without implementing fixes.",
       "version": "2.0.0",
       "category": "development-tools",
       "author": {
