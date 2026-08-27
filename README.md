@@ -8,7 +8,7 @@ Skills are packaged instructions (and optional supporting files) that extend an 
 
 ### GitHub Copilot CLI
 
-This repo is also a [Copilot CLI plugin marketplace](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/plugins-marketplace). Register it once, then install the bundled plugin (all five skills):
+This repo is also a [Copilot CLI plugin marketplace](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/plugins-marketplace). Register it once, then install the bundled plugin (five skills and the **Copilot Code Review** agent):
 
 ```bash
 copilot plugin marketplace add filipmares/agent-plugins
@@ -49,7 +49,13 @@ Browse and search across the whole ecosystem:
 npx skills find
 ```
 
-## Available Skills
+## Available Content
+
+### Copilot Code Review agent
+
+The plugin includes the user-invocable **Copilot Code Review** agent. Use it to review a supplied PR, diff, commit, range, or path scope for evidence-based regressions; it reports findings but does not implement fixes or alter repository state.
+
+### Skills
 
 All skills live under [`skills/`](./skills) at the repo root. Each is a self-contained `SKILL.md` (with optional `references/`).
 
@@ -61,7 +67,7 @@ All skills live under [`skills/`](./skills) at the repo root. Each is a self-con
 | [`copilot-migrate`](./skills/copilot-migrate) | Move a GitHub Copilot installation between machines, across operating systems, rewriting the absolute paths stored in its databases. |
 | [`agent-merge`](./skills/agent-merge) | Scope discipline for unattended PR-review rounds — decide which review comments to implement, record each decision as a hidden marker, and audit them later. |
 
-After installing, your agent will load these skills automatically when their trigger conditions match (each `SKILL.md` declares a "Use when …" description). You can also invoke a skill by name in your agent's UI.
+After installing through Copilot CLI, skills load automatically when their trigger conditions match (each `SKILL.md` declares a "Use when …" description), and the code review agent is available by name. The skills.sh installation remains skill-only: it installs the skills listed above, not Copilot plugin agents.
 
 ## Repository Layout
 
@@ -84,7 +90,10 @@ agent-plugins/
 │       ├── SKILL.md
 │       └── scripts/
 ├── .templates/skill-template/ # Starter for new skills
-├── .github/plugin/            # Copilot CLI marketplace.json + plugin.json
+├── .github/
+│   ├── agents/                # Copilot CLI agent definitions
+│   │   └── copilot-code-review.agent.md
+│   └── plugin/                # Copilot CLI marketplace.json + plugin.json
 ├── plugins/hve-core-canvas/   # Opt-in experimental Copilot canvas companion plugin
 ├── scripts/                   # Validation + listing utilities (Bun + TS)
 ├── CONTRIBUTING.md
