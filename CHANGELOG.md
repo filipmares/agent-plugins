@@ -10,20 +10,12 @@ and plugin versioning follows [Semantic Versioning](https://semver.org/spec/v2.0
 ### Added — Copilot Code Review agent
 - Added the user-invocable, evidence-based `Copilot Code Review` agent and its Copilot plugin manifest and documentation wiring; it reviews supplied changes without implementing fixes.
 
-### Added — hve-core-canvas v0.1.0 (experimental, opt-in)
-- New companion plugin under `plugins/hve-core-canvas/`, installed separately with `copilot plugin install hve-core-canvas@agent-plugins`. It is **not** part of the `agent-plugins` skills plugin and does not change the skills.sh distribution.
-- Adds one read-only Copilot canvas, **RPI Artifact Navigator**, that browses HVE-Core RPI tracking Markdown: an artifact index with type/date/task/status, a heading outline, and the artifact's exact source rendered as inert text. Files on disk stay authoritative; panel state is transient.
-- Exposes exactly three read-only agent actions returning raw JSON values: `list_rpi_artifacts` → `{ artifacts, count }`, `get_rpi_artifact` → `{ artifact }`, and `refresh_rpi_artifacts` → `{ artifacts, count, refreshedInstances }`.
-- Reads are restricted to `.copilot-tracking/{research,plans,details,changes,reviews/plans,reviews/logs}`. Absolute paths, `..` traversal, sibling-prefix confusion, symlinked path segments, multiply-linked files, and non-regular files such as FIFOs are rejected. Each read is bound to a verified file descriptor, and containment is re-established after the open against the fully resolved real path, so an intermediate directory substituted mid-read is rejected rather than followed.
-- The renderer is served per instance from `127.0.0.1` behind an unguessable 256-bit path capability, with `Host`/`Origin` enforcement, CORS denial, a `default-src 'none'` Content-Security-Policy that forbids inline script and style, `no-store` caching, and capability invalidation on close. No outbound network calls, no command execution, no dependencies, and no telemetry.
-- Explicit limits: 200 artifacts, 1 MiB per file, 500 headings per file, and 1.5 MiB per serialized response. An artifact that exceeds a limit fails the listing with a closed error code rather than being silently omitted from an index that presents itself as complete.
-- The heading outline follows CommonMark fence rules, tracking fence character and length so a shorter run cannot close a longer block. Outline navigation uses the parser's own heading source offsets and scrolls to the heading's rendered position, so the panel and the agent always agree on what a document contains.
-- Supported configuration for this pilot is macOS with GitHub Copilot CLI 1.0.80 and VoiceOver, in light and dark themes. All other operating systems, hosts, versions, browsers, and assistive technologies are untested and unsupported.
-- Promotion into the main HVE-Core plugin is explicitly out of scope until separate success and stability gates are agreed.
+### Removed — hve-core-canvas CLI plugin
+- Removed the redundant CLI plugin package and marketplace entry. The RPI Artifact Navigator is distributed only as a standalone GitHub Copilot app canvas extension under `extensions/rpi-artifact-navigator/`.
 
 ### Added — Copilot plugin validation
 - `scripts/validate-copilot-plugin.ts` plus `bun run validate:copilot-plugin` validate marketplace and plugin manifest parity, source and extension path containment, required `extension.mjs` entry points, canvas id and action name uniqueness, and the reserved `canvas.` action prefix. Canvas extraction is limited to a documented, statically provable syntactic subset — string literals or module-level immutable string constants — and reports anything it cannot prove as an error instead of skipping it.
-- `bun run test:canvas` runs the companion plugin's test suite. Existing `bun run validate` and `bun run list` are unchanged.
+- `bun run test:canvas` runs the standalone canvas extension's test suite. Existing `bun run validate` and `bun run list` are unchanged.
 
 ### Added — agent-merge v1.0.0
 - New skill: scope discipline for unattended pull-request review rounds. A review comment is an input, not a mandate — the skill gives an ordered test for deciding whether a suggestion belongs in the PR, and a closed four-token vocabulary (`fixed`, `deferred`, `tracked`, `inapplicable`) for recording each decision as a hidden HTML-comment marker on the thread reply.

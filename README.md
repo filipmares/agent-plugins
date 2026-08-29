@@ -25,11 +25,11 @@ It is not project-scoped and is not activated just by opening this repository.
 
 In the GitHub Copilot app, open **Customize → Extensions → Import canvas from
 repo**, choose `filipmares/agent-plugins`, and select
-`extensions/rpi-artifact-navigator/` when prompted. Canvas support is
-experimental and verified only on macOS with GitHub Copilot CLI 1.0.80.
+`extensions/rpi-artifact-navigator/` when prompted. Canvas support is experimental and verified only on macOS with the GitHub
+Copilot app.
 
-See [`plugins/hve-core-canvas/README.md`](./plugins/hve-core-canvas/README.md)
-for the legacy CLI plugin packaging, trust boundary, and limitations.
+See [`extensions/rpi-artifact-navigator/`](./extensions/rpi-artifact-navigator)
+for the extension implementation and tests.
 
 ### skills.sh CLI
 
@@ -99,7 +99,6 @@ agent-plugins/
 │   │   └── copilot-code-review.agent.md
 │   └── plugin/                # Copilot CLI marketplace.json + plugin.json
 ├── extensions/rpi-artifact-navigator/ # Standalone Copilot canvas extension
-├── plugins/hve-core-canvas/   # Opt-in experimental Copilot canvas companion plugin
 ├── scripts/                   # Validation + listing utilities (Bun + TS)
 ├── CONTRIBUTING.md
 ├── CHANGELOG.md
