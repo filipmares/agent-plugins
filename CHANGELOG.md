@@ -21,9 +21,12 @@ and plugin versioning follows [Semantic Versioning](https://semver.org/spec/v2.0
 - Supported configuration for this pilot is macOS with GitHub Copilot CLI 1.0.80 and VoiceOver, in light and dark themes. All other operating systems, hosts, versions, browsers, and assistive technologies are untested and unsupported.
 - Promotion into the main HVE-Core plugin is explicitly out of scope until separate success and stability gates are agreed.
 
+### Removed — hve-core-canvas CLI plugin
+- Removed the redundant CLI plugin package and marketplace entry. The RPI Artifact Navigator is distributed only as a standalone GitHub Copilot app canvas extension under `extensions/rpi-artifact-navigator/`.
+
 ### Added — Copilot plugin validation
 - `scripts/validate-copilot-plugin.ts` plus `bun run validate:copilot-plugin` validate marketplace and plugin manifest parity, source and extension path containment, required `extension.mjs` entry points, canvas id and action name uniqueness, and the reserved `canvas.` action prefix. Canvas extraction is limited to a documented, statically provable syntactic subset — string literals or module-level immutable string constants — and reports anything it cannot prove as an error instead of skipping it.
-- `bun run test:canvas` runs the companion plugin's test suite. Existing `bun run validate` and `bun run list` are unchanged.
+- `bun run test:canvas` runs the standalone canvas extension's test suite. Existing `bun run validate` and `bun run list` are unchanged.
 
 ### Added — agent-merge v1.0.0
 - New skill: scope discipline for unattended pull-request review rounds. A review comment is an input, not a mandate — the skill gives an ordered test for deciding whether a suggestion belongs in the PR, and a closed four-token vocabulary (`fixed`, `deferred`, `tracked`, `inapplicable`) for recording each decision as a hidden HTML-comment marker on the thread reply.

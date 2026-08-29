@@ -28,26 +28,6 @@
         "migration",
         "code-review"
       ]
-    },
-    {
-      "name": "hve-core-canvas",
-      "source": "./plugins/hve-core-canvas",
-      "description": "Experimental, opt-in read-only RPI Artifact Navigator canvas for HVE-Core tracking artifacts.",
-      "version": "0.1.0",
-      "category": "development-tools",
-      "author": {
-        "name": "filipmares"
-      },
-      "homepage": "https://github.com/filipmares/agent-plugins",
-      "repository": "https://github.com/filipmares/agent-plugins",
-      "license": "MIT",
-      "keywords": [
-        "canvas",
-        "hve-core",
-        "rpi",
-        "read-only",
-        "experimental"
-      ]
     }
   ]
 }

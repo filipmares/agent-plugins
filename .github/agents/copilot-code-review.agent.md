@@ -27,7 +27,7 @@ Stop and report the exact blocker when the requested diff or scope cannot be obt
 5. Apply these conditional checks when their paths are changed:
    - `skills/**`: self-contained layout, `SKILL.md`, lowercase-hyphenated globally unique name, a description beginning `Use when`, and linked supporting files that remain inside that skill directory.
    - Root Copilot plugin metadata: plugin and marketplace name-version parity, declared agent and skill paths resolving inside plugin source, and truthful installation and content documentation.
-   - `plugins/hve-core-canvas/**`: documented read-only boundary, tracking-root containment, localhost/capability/security headers, no new package or dependency surface, manifest version parity, and evidence for both `bun run test:canvas` and `bun run validate:copilot-plugin`.
+   - `extensions/rpi-artifact-navigator/**`: documented read-only boundary, tracking-root containment, localhost/capability/security headers, no new package or dependency surface, and evidence for `bun run test:canvas`.
 
 ## Finding standard
 
