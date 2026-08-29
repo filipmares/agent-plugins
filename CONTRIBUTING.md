@@ -102,7 +102,10 @@ CI runs the same checks against every skill in `skills/`.
 
 ## Copilot Canvas Companion Plugin
 
-`plugins/hve-core-canvas/` is a separate, opt-in GitHub Copilot plugin. It is deliberately outside the skills.sh distribution: root `skills/` and the `agent-plugins` marketplace entry are unaffected by it, and it declares no skills of its own.
+`extensions/rpi-artifact-navigator/` is a separate, opt-in GitHub Copilot
+canvas extension. It is deliberately outside the skills.sh distribution: root
+`skills/` and the `agent-plugins` marketplace entry are unaffected by it.
+`plugins/hve-core-canvas/` is retained only as legacy CLI plugin packaging.
 
 Working rules for that directory:
 
@@ -112,6 +115,9 @@ Working rules for that directory:
 - The per-instance HTTP server binds to `127.0.0.1` behind an unguessable path capability. Do not relax the `Host`, `Origin`, CORS, or Content-Security-Policy handling in `server.mjs`.
 - The plugin's `version` in `plugins/hve-core-canvas/plugin.json` must match its `.github/plugin/marketplace.json` entry; `bun run validate:copilot-plugin` enforces this.
 - Support claims in `plugins/hve-core-canvas/README.md` must name only configurations that were actually verified. Do not broaden them without new evidence.
+- Keep `plugins/hve-core-canvas/extensions/` linked to the canonical
+  `extensions/rpi-artifact-navigator/` source so the legacy package cannot
+  drift from the standalone extension.
 
 Run `bun run test:canvas` and `bun run validate:copilot-plugin` before opening a PR that touches the plugin.
 

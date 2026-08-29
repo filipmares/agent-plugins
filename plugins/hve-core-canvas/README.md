@@ -79,6 +79,9 @@ VoiceOver announcement verification on the host's embedded browser is a manual s
 
 ## Install
 
+Install the standalone plugin from the GitHub Copilot app's **Customize >
+Plugins** view, or install it from the marketplace with:
+
 ```bash
 copilot plugin marketplace add filipmares/agent-plugins
 copilot plugin install hve-core-canvas@agent-plugins
