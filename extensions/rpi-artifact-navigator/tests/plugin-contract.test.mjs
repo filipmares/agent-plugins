@@ -13,9 +13,10 @@ import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
 
-const repoRoot = resolve(dirname(new URL(import.meta.url).pathname), "../../../../..");
+const repoRoot = resolve(dirname(new URL(import.meta.url).pathname), "../../..");
 const pluginDir = join(repoRoot, "plugins", "hve-core-canvas");
-const extensionDir = join(pluginDir, "extensions", "rpi-artifact-navigator");
+const extensionDir = join(repoRoot, "extensions", "rpi-artifact-navigator");
+const pluginExtensionDir = join(pluginDir, "extensions", "rpi-artifact-navigator");
 
 const { validateCopilotPlugin, extractCanvasDeclarations } = await import(
     join(repoRoot, "scripts", "validate-copilot-plugin.ts")
@@ -84,10 +85,18 @@ describe("repository marketplace and plugin manifests", () => {
     });
 
     test("the plugin package ships its entry point, license, and documentation", () => {
-        expect(existsSync(join(extensionDir, "extension.mjs"))).toBe(true);
+        expect(existsSync(join(pluginExtensionDir, "extension.mjs"))).toBe(true);
+        expect(JSON.parse(readFileSync(join(extensionDir, "copilot-extension.json"), "utf8"))).toEqual({
+            name: "rpi-artifact-navigator",
+            version: 1,
+        });
+        expect(readFileSync(join(pluginExtensionDir, "extension.mjs"), "utf8")).toBe(
+            readFileSync(join(extensionDir, "extension.mjs"), "utf8"),
+        );
         expect(existsSync(join(pluginDir, "LICENSE"))).toBe(true);
         expect(existsSync(join(pluginDir, "README.md"))).toBe(true);
     });
+
 });
 
 describe("declared canvas surface", () => {
@@ -463,6 +472,6 @@ describe("existing distribution boundary", () => {
         expect(packageJson.scripts.validate).toBe("bun run scripts/validate-skill.ts");
         expect(packageJson.scripts.list).toBe("bun run scripts/list-skills.ts");
         expect(packageJson.scripts["validate:copilot-plugin"]).toBe("bun run scripts/validate-copilot-plugin.ts");
-        expect(packageJson.scripts["test:canvas"]).toContain("bun test plugins/hve-core-canvas");
+        expect(packageJson.scripts["test:canvas"]).toBe("bun test extensions/rpi-artifact-navigator/tests/*.test.mjs");
     });
 });
