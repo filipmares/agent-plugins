@@ -31,10 +31,11 @@ Copilot app.
 See [`extensions/rpi-artifact-navigator/`](./extensions/rpi-artifact-navigator)
 for the extension implementation and tests.
 
-When the extension is installed alongside a compatible HVE Core RPI workflow,
-each phase can open the task's current artifact and refresh that same panel
-after material findings or decisions change. Phase-boundary opens focus the
-panel; in-phase refreshes update it without taking focus.
+The extension detects approved RPI artifacts created or edited by successful
+agent tool calls. It opens a task-scoped panel for a new artifact and refreshes
+that panel without taking focus on later edits. Closing a panel suppresses
+edit-driven reopening until another artifact for that task is created. No
+changes to HVE Core are required.
 
 ### skills.sh CLI
 

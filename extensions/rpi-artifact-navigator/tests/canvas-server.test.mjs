@@ -25,21 +25,46 @@ class StubCanvasError extends Error {
 
 const stubLog = [];
 let stubWorkspacePath;
+let joinedOptions;
+const stubCanvasOpens = [];
+const stubCanvasOpenResults = [];
+const stubFailingInstances = new Set();
+const stubSession = {
+    capabilities: { ui: { canvases: true } },
+    get workspacePath() {
+        return stubWorkspacePath;
+    },
+    log: async (message, options) => {
+        stubLog.push({ message, options });
+    },
+    rpc: {
+        canvas: {
+            open: async (params) => {
+                if (stubFailingInstances.has(params.instanceId)) throw new Error("simulated open failure");
+                stubCanvasOpens.push(params);
+                const result = await joinedOptions.canvases[0].open({
+                    ...params,
+                    host: { capabilities: { canvases: true } },
+                    session: { workingDirectory: stubWorkspacePath },
+                });
+                stubCanvasOpenResults.push(result);
+                return result;
+            },
+        },
+    },
+};
 
 mock.module("@github/copilot-sdk/extension", () => ({
     CanvasError: StubCanvasError,
     createCanvas: (options) => options,
-    joinSession: async () => ({
-        get workspacePath() {
-            return stubWorkspacePath;
-        },
-        log: async (message, options) => {
-            stubLog.push({ message, options });
-        },
-    }),
+    joinSession: async (options) => {
+        joinedOptions = options;
+        return stubSession;
+    },
 }));
 
 const { ArtifactError, ERROR_CODES, LIMITS } = await import("../artifact-index.mjs");
+const { selectTaskChanges } = await import("../artifact-monitor.mjs");
 const { createNavigatorServer, buildArtifactList } = await import("../server.mjs");
 const { escapeHtml, renderNavigatorHtml, NAVIGATOR_SCRIPT, NAVIGATOR_STYLES } = await import("../renderer.mjs");
 const provider = await import("../extension.mjs");
@@ -78,11 +103,21 @@ beforeEach(async () => {
     workspace = await realpath(mkdtempSync(join(tmpdir(), "rpi-canvas-server-")));
     stubWorkspacePath = workspace;
     stubLog.length = 0;
+    stubCanvasOpens.length = 0;
+    stubCanvasOpenResults.length = 0;
+    stubFailingInstances.clear();
 });
 
 afterEach(async () => {
     while (openServers.length > 0) await openServers.pop().close();
-    for (const instanceId of ["instance-a", "instance-b", "instance-c", "instance-dup"]) {
+    for (const instanceId of [
+        "instance-a",
+        "instance-b",
+        "instance-c",
+        "instance-dup",
+        "rpi-artifact-navigator-auto-open",
+        "rpi-artifact-navigator-b-opened",
+    ]) {
         await provider.closeNavigator({ instanceId });
     }
     rmSync(workspace, { recursive: true, force: true });
@@ -473,6 +508,107 @@ describe("artifact listing", () => {
 });
 
 describe("canvas provider contract", () => {
+    test("selects one primary artifact when a tool changes multiple files for a task", () => {
+        const common = { taskSlug: "example", modifiedAt: "2026-08-30T10:00:00.000Z", sha256: "x" };
+        expect(
+            selectTaskChanges([
+                {
+                    ...common,
+                    id: ".copilot-tracking/details/2026-08-30/example-phase-details.md",
+                    type: "phase-details",
+                    operation: "create",
+                },
+                {
+                    ...common,
+                    id: ".copilot-tracking/plans/2026-08-30/example-plan.md",
+                    type: "plan",
+                    operation: "create",
+                },
+            ]),
+        ).toEqual([
+            {
+                ...common,
+                id: ".copilot-tracking/plans/2026-08-30/example-plan.md",
+                type: "plan",
+                operation: "create",
+            },
+        ]);
+    });
+
+    test("registers self-contained artifact change hooks", () => {
+        expect(typeof joinedOptions.hooks.onPreToolUse).toBe("function");
+        expect(typeof joinedOptions.hooks.onPostToolUse).toBe("function");
+    });
+
+    test("opens on artifact creation and refreshes an existing instance on edits", async () => {
+        const artifactId = ".copilot-tracking/research/2026-08-27/auto-open-research.md";
+        const input = { workingDirectory: workspace };
+
+        await joinedOptions.hooks.onPreToolUse(input);
+        write(artifactId, "# Initial");
+        await joinedOptions.hooks.onPostToolUse(input);
+
+        expect(stubCanvasOpens).toEqual([
+            {
+                canvasId: "rpi-artifact-navigator",
+                instanceId: "rpi-artifact-navigator-auto-open",
+                input: { artifactId },
+            },
+        ]);
+
+        await joinedOptions.hooks.onPreToolUse(input);
+        write(artifactId, "# Updated");
+        await joinedOptions.hooks.onPostToolUse(input);
+
+        expect(stubCanvasOpens).toHaveLength(1);
+        const opened = stubCanvasOpenResults[0];
+        const body = await (await callOpened(opened)).json();
+        expect(body).toMatchObject({ selectedArtifactId: artifactId, targetRevision: 2 });
+    });
+
+    test("respects user close on edits and reopens for a new artifact", async () => {
+        const researchId = ".copilot-tracking/research/2026-08-27/auto-open-research.md";
+        const planId = ".copilot-tracking/plans/2026-08-27/auto-open-plan.md";
+        const input = { workingDirectory: workspace };
+
+        await joinedOptions.hooks.onPreToolUse(input);
+        write(researchId, "# Research");
+        await joinedOptions.hooks.onPostToolUse(input);
+        await provider.closeNavigator({ instanceId: "rpi-artifact-navigator-auto-open" });
+
+        await joinedOptions.hooks.onPreToolUse(input);
+        write(researchId, "# Research update");
+        await joinedOptions.hooks.onPostToolUse(input);
+        expect(stubCanvasOpens).toHaveLength(1);
+
+        await joinedOptions.hooks.onPreToolUse(input);
+        write(planId, "# Plan");
+        await joinedOptions.hooks.onPostToolUse(input);
+        expect(stubCanvasOpens).toHaveLength(2);
+        expect(stubCanvasOpens[1].input).toEqual({ artifactId: planId });
+    });
+
+    test("isolates automatic navigation failures between changed tasks", async () => {
+        const failedId = ".copilot-tracking/research/2026-08-27/a-failed-research.md";
+        const openedId = ".copilot-tracking/research/2026-08-27/b-opened-research.md";
+        const input = { workingDirectory: workspace };
+        stubFailingInstances.add("rpi-artifact-navigator-a-failed");
+
+        await joinedOptions.hooks.onPreToolUse(input);
+        write(failedId, "# Failed");
+        write(openedId, "# Opened");
+        await joinedOptions.hooks.onPostToolUse(input);
+
+        expect(stubCanvasOpens).toEqual([
+            {
+                canvasId: "rpi-artifact-navigator",
+                instanceId: "rpi-artifact-navigator-b-opened",
+                input: { artifactId: openedId },
+            },
+        ]);
+        expect(stubLog.some((entry) => entry.message.includes("a-failed"))).toBe(true);
+    });
+
     test("declares one canvas with the exact id, schema, and three actions", () => {
         const declaration = provider.canvasDeclaration;
         expect(declaration.id).toBe("rpi-artifact-navigator");

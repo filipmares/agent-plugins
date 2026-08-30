@@ -4,6 +4,8 @@
  * Declares one read-only canvas and exactly three agent-callable actions.
  * Files on disk stay authoritative; a canvas instance holds only transient
  * rendering state, so reopening or reloading always rehydrates from disk.
+ * Tool hooks compare approved artifacts before and after successful tool calls
+ * so RPI artifacts can open or refresh without changes to the RPI workflow.
  *
  * Provider/server interface consumed here and implemented by `server.mjs`:
  *
@@ -24,6 +26,7 @@
 import { CanvasError, createCanvas, joinSession } from "@github/copilot-sdk/extension";
 
 import { ArtifactError, ERROR_CODES, resolveWorkspaceRoot } from "./artifact-index.mjs";
+import { createArtifactChangeTracker } from "./artifact-monitor.mjs";
 import { buildArtifactList, buildArtifactPayload, createNavigatorServer } from "./server.mjs";
 
 const CANVAS_ID = "rpi-artifact-navigator";
@@ -68,11 +71,41 @@ const instances = new Map();
  * server ever exists per instance and `onClose` can always release it.
  */
 const pendingInstances = new Map();
+const suppressedInstances = new Set();
 
 let session;
 
 function log(message, options) {
     void session?.log(`[${CANVAS_ID}] ${message}`, options)?.catch?.(() => {});
+}
+
+function instanceIdForTask(taskSlug) {
+    return `${CANVAS_ID}-${taskSlug}`;
+}
+
+export async function handleArtifactChanges(changes) {
+    if (session?.capabilities?.ui?.canvases !== true) return;
+
+    for (const change of changes) {
+        try {
+            const instanceId = instanceIdForTask(change.taskSlug);
+            const server = instances.get(instanceId);
+            if (server !== undefined && !server.closed) {
+                await server.setTarget(change.id);
+                continue;
+            }
+            if (change.operation === "update" && suppressedInstances.has(instanceId)) continue;
+
+            suppressedInstances.delete(instanceId);
+            await session.rpc.canvas.open({
+                canvasId: CANVAS_ID,
+                instanceId,
+                input: { artifactId: change.id },
+            });
+        } catch {
+            log(`Could not automatically navigate task ${change.taskSlug}`, { level: "warning" });
+        }
+    }
 }
 
 /** Convert any thrown value into a closed-taxonomy `CanvasError`. */
@@ -192,6 +225,7 @@ export async function openNavigator(ctx) {
         assertCanvasSupported(ctx);
         const artifactId = requireOptionalArtifactInput(ctx?.input);
         const instanceId = ctx.instanceId;
+        suppressedInstances.delete(instanceId);
 
         const existing = instances.get(instanceId);
         if (existing !== undefined && !existing.closed) {
@@ -244,6 +278,7 @@ export async function closeNavigator(ctx) {
     const server = instances.get(ctx.instanceId);
     if (server === undefined) return;
     instances.delete(ctx.instanceId);
+    suppressedInstances.add(ctx.instanceId);
     await server.close();
     log("Closed a navigator instance");
 }
@@ -284,8 +319,14 @@ async function releaseAllInstances() {
     await Promise.allSettled(pending);
     const servers = [...instances.values()];
     instances.clear();
+    suppressedInstances.clear();
     await Promise.allSettled(servers.map((server) => server.close()));
 }
+
+const artifactTracker = createArtifactChangeTracker({
+    onChanges: handleArtifactChanges,
+    onError: () => log("Could not inspect RPI artifacts for automatic navigation", { level: "warning" }),
+});
 
 for (const signal of ["SIGTERM", "SIGINT"]) {
     process.once(signal, () => {
@@ -293,4 +334,16 @@ for (const signal of ["SIGTERM", "SIGINT"]) {
     });
 }
 
-session = await joinSession({ canvases: [canvasDeclaration] });
+session = await joinSession({
+    canvases: [canvasDeclaration],
+    hooks: {
+        onPreToolUse: async (input) => {
+            if (session?.capabilities?.ui?.canvases !== true) return;
+            await artifactTracker.beforeTool(input.workingDirectory);
+        },
+        onPostToolUse: async (input) => {
+            if (session?.capabilities?.ui?.canvases !== true) return;
+            await artifactTracker.afterTool(input.workingDirectory);
+        },
+    },
+});
