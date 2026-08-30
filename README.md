@@ -31,6 +31,12 @@ Copilot app.
 See [`extensions/rpi-artifact-navigator/`](./extensions/rpi-artifact-navigator)
 for the extension implementation and tests.
 
+The extension detects approved RPI artifacts created or edited by successful
+agent tool calls. It opens a task-scoped panel for a new artifact and refreshes
+that panel without taking focus on later edits. Closing a panel suppresses
+edit-driven reopening until another artifact for that task is created. No
+changes to HVE Core are required.
+
 ### skills.sh CLI
 
 The [skills](https://skills.sh) CLI detects which agent you're using and installs each skill in the right place (e.g. `.claude/skills/`, `.cursor/skills/`, …).

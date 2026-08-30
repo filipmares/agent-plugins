@@ -130,7 +130,7 @@ function sendError(res, err) {
  * `log` is optional and receives operational messages only; it is never given
  * the capability token or an artifact path.
  */
-export async function createNavigatorServer({ workspaceRoot, title, log } = {}) {
+export async function createNavigatorServer({ workspaceRoot, title, selectedArtifactId: initialArtifactId, log } = {}) {
     if (typeof workspaceRoot !== "string" || workspaceRoot === "") {
         throw new ArtifactError(ERROR_CODES.workspaceUnavailable, "No workspace path is available");
     }
@@ -139,9 +139,23 @@ export async function createNavigatorServer({ workspaceRoot, title, log } = {}) 
     const basePath = `/${token}`;
     const html = renderNavigatorHtml({ title });
     const liveStreams = new Set();
+    let selectedArtifactId = null;
+    let targetRevision = 0;
     let closed = false;
     let authority = "";
     let origin = "";
+
+    if (initialArtifactId !== undefined) {
+        await buildArtifactPayload(workspaceRoot, initialArtifactId);
+        selectedArtifactId = initialArtifactId;
+        targetRevision = 1;
+    }
+
+    async function buildNavigatorList() {
+        const payload = { ...(await buildArtifactList(workspaceRoot)), selectedArtifactId, targetRevision };
+        assertResponseWithinLimit(payload);
+        return payload;
+    }
 
     const handler = async (req, res) => {
         try {
@@ -186,7 +200,7 @@ export async function createNavigatorServer({ workspaceRoot, title, log } = {}) 
                     return;
                 }
                 if (route === "/api/artifacts") {
-                    sendJson(res, 200, await buildArtifactList(workspaceRoot));
+                    sendJson(res, 200, await buildNavigatorList());
                     return;
                 }
                 if (route === "/api/artifact") {
@@ -208,7 +222,7 @@ export async function createNavigatorServer({ workspaceRoot, title, log } = {}) 
             }
 
             if (req.method === "POST" && route === "/api/refresh") {
-                sendJson(res, 200, await buildArtifactList(workspaceRoot));
+                sendJson(res, 200, await buildNavigatorList());
                 return;
             }
 
@@ -248,6 +262,14 @@ export async function createNavigatorServer({ workspaceRoot, title, log } = {}) 
         /** True once `close` has run. */
         get closed() {
             return closed;
+        },
+        /** Validate and select an artifact, then notify the live renderer. */
+        async setTarget(artifactId) {
+            if (closed) return 0;
+            await buildArtifactPayload(workspaceRoot, artifactId);
+            selectedArtifactId = artifactId;
+            targetRevision += 1;
+            return this.notifyRefresh();
         },
         /** Notify live renderer streams that on-disk content may have changed. */
         notifyRefresh() {

@@ -25,21 +25,46 @@ class StubCanvasError extends Error {
 
 const stubLog = [];
 let stubWorkspacePath;
+let joinedOptions;
+const stubCanvasOpens = [];
+const stubCanvasOpenResults = [];
+const stubFailingInstances = new Set();
+const stubSession = {
+    capabilities: { ui: { canvases: true } },
+    get workspacePath() {
+        return stubWorkspacePath;
+    },
+    log: async (message, options) => {
+        stubLog.push({ message, options });
+    },
+    rpc: {
+        canvas: {
+            open: async (params) => {
+                if (stubFailingInstances.has(params.instanceId)) throw new Error("simulated open failure");
+                stubCanvasOpens.push(params);
+                const result = await joinedOptions.canvases[0].open({
+                    ...params,
+                    host: { capabilities: { canvases: true } },
+                    session: { workingDirectory: stubWorkspacePath },
+                });
+                stubCanvasOpenResults.push(result);
+                return result;
+            },
+        },
+    },
+};
 
 mock.module("@github/copilot-sdk/extension", () => ({
     CanvasError: StubCanvasError,
     createCanvas: (options) => options,
-    joinSession: async () => ({
-        get workspacePath() {
-            return stubWorkspacePath;
-        },
-        log: async (message, options) => {
-            stubLog.push({ message, options });
-        },
-    }),
+    joinSession: async (options) => {
+        joinedOptions = options;
+        return stubSession;
+    },
 }));
 
 const { ArtifactError, ERROR_CODES, LIMITS } = await import("../artifact-index.mjs");
+const { selectTaskChanges } = await import("../artifact-monitor.mjs");
 const { createNavigatorServer, buildArtifactList } = await import("../server.mjs");
 const { escapeHtml, renderNavigatorHtml, NAVIGATOR_SCRIPT, NAVIGATOR_STYLES } = await import("../renderer.mjs");
 const provider = await import("../extension.mjs");
@@ -70,15 +95,29 @@ function call(server, path, options = {}) {
     });
 }
 
+function callOpened(opened, path = "api/artifacts") {
+    return fetch(`${opened.url}${path}`, { headers: { Host: new URL(opened.url).host } });
+}
+
 beforeEach(async () => {
     workspace = await realpath(mkdtempSync(join(tmpdir(), "rpi-canvas-server-")));
     stubWorkspacePath = workspace;
     stubLog.length = 0;
+    stubCanvasOpens.length = 0;
+    stubCanvasOpenResults.length = 0;
+    stubFailingInstances.clear();
 });
 
 afterEach(async () => {
     while (openServers.length > 0) await openServers.pop().close();
-    for (const instanceId of ["instance-a", "instance-b", "instance-c", "instance-dup"]) {
+    for (const instanceId of [
+        "instance-a",
+        "instance-b",
+        "instance-c",
+        "instance-dup",
+        "rpi-artifact-navigator-auto-open",
+        "rpi-artifact-navigator-b-opened",
+    ]) {
         await provider.closeNavigator({ instanceId });
     }
     rmSync(workspace, { recursive: true, force: true });
@@ -126,6 +165,8 @@ describe("renderer output", () => {
 
     test("the client script assigns artifact text through textContent only", () => {
         expect(NAVIGATOR_SCRIPT).toContain("sourceEl.textContent = doc.source");
+        expect(NAVIGATOR_SCRIPT).toContain("body.selectedArtifactId");
+        expect(NAVIGATOR_SCRIPT).toContain("body.targetRevision");
         expect(NAVIGATOR_SCRIPT).not.toContain("innerHTML");
         expect(NAVIGATOR_SCRIPT).not.toContain("outerHTML");
         expect(NAVIGATOR_SCRIPT).not.toContain("document.write");
@@ -297,6 +338,30 @@ describe("refresh and cleanup", () => {
         const body = await refreshed.json();
         expect(body.count).toBe(1);
         expect(body.artifacts[0].id).toBe(".copilot-tracking/plans/2026-08-27/new-plan.md");
+        expect(body.selectedArtifactId).toBeNull();
+        expect(body.targetRevision).toBe(0);
+    });
+
+    test("stores a validated initial target and advances its revision when retargeted", async () => {
+        const firstId = ".copilot-tracking/plans/2026-08-27/first-plan.md";
+        const secondId = ".copilot-tracking/plans/2026-08-27/second-plan.md";
+        write(firstId, "# First");
+        write(secondId, "# Second");
+        const server = await createNavigatorServer({
+            workspaceRoot: workspace,
+            title: "RPI Artifact Navigator",
+            selectedArtifactId: firstId,
+        });
+        openServers.push(server);
+
+        let body = await (await call(server, `${server.basePath}/api/artifacts`)).json();
+        expect(body.selectedArtifactId).toBe(firstId);
+        expect(body.targetRevision).toBe(1);
+
+        await server.setTarget(secondId);
+        body = await (await call(server, `${server.basePath}/api/artifacts`)).json();
+        expect(body.selectedArtifactId).toBe(secondId);
+        expect(body.targetRevision).toBe(2);
     });
 
     test("notifyRefresh reports the streams it reached and is inert with none", async () => {
@@ -443,12 +508,123 @@ describe("artifact listing", () => {
 });
 
 describe("canvas provider contract", () => {
+    test("selects one primary artifact when a tool changes multiple files for a task", () => {
+        const common = { taskSlug: "example", modifiedAt: "2026-08-30T10:00:00.000Z", sha256: "x" };
+        expect(
+            selectTaskChanges([
+                {
+                    ...common,
+                    id: ".copilot-tracking/details/2026-08-30/example-phase-details.md",
+                    type: "phase-details",
+                    operation: "create",
+                },
+                {
+                    ...common,
+                    id: ".copilot-tracking/plans/2026-08-30/example-plan.md",
+                    type: "plan",
+                    operation: "create",
+                },
+            ]),
+        ).toEqual([
+            {
+                ...common,
+                id: ".copilot-tracking/plans/2026-08-30/example-plan.md",
+                type: "plan",
+                operation: "create",
+            },
+        ]);
+    });
+
+    test("registers self-contained artifact change hooks", () => {
+        expect(typeof joinedOptions.hooks.onPreToolUse).toBe("function");
+        expect(typeof joinedOptions.hooks.onPostToolUse).toBe("function");
+    });
+
+    test("opens on artifact creation and refreshes an existing instance on edits", async () => {
+        const artifactId = ".copilot-tracking/research/2026-08-27/auto-open-research.md";
+        const input = { workingDirectory: workspace };
+
+        await joinedOptions.hooks.onPreToolUse(input);
+        write(artifactId, "# Initial");
+        await joinedOptions.hooks.onPostToolUse(input);
+
+        expect(stubCanvasOpens).toEqual([
+            {
+                canvasId: "rpi-artifact-navigator",
+                instanceId: "rpi-artifact-navigator-auto-open",
+                input: { artifactId },
+            },
+        ]);
+
+        await joinedOptions.hooks.onPreToolUse(input);
+        write(artifactId, "# Updated");
+        await joinedOptions.hooks.onPostToolUse(input);
+
+        expect(stubCanvasOpens).toHaveLength(1);
+        const opened = stubCanvasOpenResults[0];
+        const body = await (await callOpened(opened)).json();
+        expect(body).toMatchObject({ selectedArtifactId: artifactId, targetRevision: 2 });
+    });
+
+    test("respects user close on edits and reopens for a new artifact", async () => {
+        const researchId = ".copilot-tracking/research/2026-08-27/auto-open-research.md";
+        const planId = ".copilot-tracking/plans/2026-08-27/auto-open-plan.md";
+        const input = { workingDirectory: workspace };
+
+        await joinedOptions.hooks.onPreToolUse(input);
+        write(researchId, "# Research");
+        await joinedOptions.hooks.onPostToolUse(input);
+        await provider.closeNavigator({ instanceId: "rpi-artifact-navigator-auto-open" });
+
+        await joinedOptions.hooks.onPreToolUse(input);
+        write(researchId, "# Research update");
+        await joinedOptions.hooks.onPostToolUse(input);
+        expect(stubCanvasOpens).toHaveLength(1);
+
+        await joinedOptions.hooks.onPreToolUse(input);
+        write(planId, "# Plan");
+        await joinedOptions.hooks.onPostToolUse(input);
+        expect(stubCanvasOpens).toHaveLength(2);
+        expect(stubCanvasOpens[1].input).toEqual({ artifactId: planId });
+    });
+
+    test("isolates automatic navigation failures between changed tasks", async () => {
+        const failedId = ".copilot-tracking/research/2026-08-27/a-failed-research.md";
+        const openedId = ".copilot-tracking/research/2026-08-27/b-opened-research.md";
+        const input = { workingDirectory: workspace };
+        stubFailingInstances.add("rpi-artifact-navigator-a-failed");
+
+        await joinedOptions.hooks.onPreToolUse(input);
+        write(failedId, "# Failed");
+        write(openedId, "# Opened");
+        await joinedOptions.hooks.onPostToolUse(input);
+
+        expect(stubCanvasOpens).toEqual([
+            {
+                canvasId: "rpi-artifact-navigator",
+                instanceId: "rpi-artifact-navigator-b-opened",
+                input: { artifactId: openedId },
+            },
+        ]);
+        expect(stubLog.some((entry) => entry.message.includes("a-failed"))).toBe(true);
+    });
+
     test("declares one canvas with the exact id, schema, and three actions", () => {
         const declaration = provider.canvasDeclaration;
         expect(declaration.id).toBe("rpi-artifact-navigator");
         expect(declaration.displayName).toBe("RPI Artifact Navigator");
         expect(typeof declaration.description).toBe("string");
-        expect(declaration.inputSchema).toEqual({ type: "object", additionalProperties: false });
+        expect(declaration.inputSchema).toEqual({
+            type: "object",
+            additionalProperties: false,
+            properties: {
+                artifactId: {
+                    type: "string",
+                    minLength: 1,
+                    description: "Normalized workspace-relative path of the artifact to select.",
+                },
+            },
+        });
         expect(declaration.actions.map((action) => action.name)).toEqual([
             "list_rpi_artifacts",
             "get_rpi_artifact",
@@ -460,6 +636,7 @@ describe("canvas provider contract", () => {
             expect(action.inputSchema.additionalProperties).toBe(false);
         }
         expect(declaration.actions[1].inputSchema.required).toEqual(["artifactId"]);
+        expect(declaration.actions[2].inputSchema).toEqual(declaration.inputSchema);
     });
 
     test("list_rpi_artifacts returns a raw object, not a string or envelope", async () => {
@@ -490,24 +667,26 @@ describe("canvas provider contract", () => {
         expect(result.artifact.sha256).toMatch(/^[0-9a-f]{64}$/);
     });
 
-    test("refresh_rpi_artifacts counts live instances and never writes", async () => {
+    test("refresh_rpi_artifacts targets only the addressed live instance", async () => {
         write(".copilot-tracking/plans/2026-08-27/a-plan.md", "# A");
 
-        const idle = await provider.refreshRpiArtifacts({ input: {} });
+        const idle = await provider.refreshRpiArtifacts({ input: {}, instanceId: "absent" });
         expect(idle.refreshedInstances).toBe(0);
         expect(Object.keys(idle).sort()).toEqual(["artifacts", "count", "refreshedInstances"]);
 
         await provider.openNavigator({ instanceId: "instance-a", session: { workingDirectory: workspace } });
         await provider.openNavigator({ instanceId: "instance-b", session: { workingDirectory: workspace } });
 
-        const live = await provider.refreshRpiArtifacts({ input: {} });
-        expect(live.refreshedInstances).toBe(2);
+        const live = await provider.refreshRpiArtifacts({ input: {}, instanceId: "instance-a" });
+        expect(live.refreshedInstances).toBe(1);
         expect(live.count).toBe(1);
     });
 
     test.each([
         ["list_rpi_artifacts", (input) => provider.listRpiArtifacts({ input }), { unexpected: true }, ERROR_CODES.requestInvalid],
         ["refresh_rpi_artifacts", (input) => provider.refreshRpiArtifacts({ input }), [1], ERROR_CODES.requestInvalid],
+        ["refresh extra key", (input) => provider.refreshRpiArtifacts({ input }), { artifactId: ".copilot-tracking/plans/2026-08-27/a-plan.md", extra: 1 }, ERROR_CODES.requestInvalid],
+        ["refresh target outside", (input) => provider.refreshRpiArtifacts({ input }), { artifactId: "README.md" }, ERROR_CODES.artifactNotAllowed],
         ["get_rpi_artifact missing", (input) => provider.getRpiArtifact({ input }), {}, ERROR_CODES.requestInvalid],
         ["get_rpi_artifact extra", (input) => provider.getRpiArtifact({ input }), { artifactId: "a.md", extra: 1 }, ERROR_CODES.requestInvalid],
         ["get_rpi_artifact empty", (input) => provider.getRpiArtifact({ input }), { artifactId: "" }, ERROR_CODES.artifactIdInvalid],
@@ -545,6 +724,62 @@ describe("canvas provider contract", () => {
         expect(again.url).toBe(first.url);
         expect(other.url).not.toBe(first.url);
         expect(first.title).toBe("RPI Artifact Navigator");
+    });
+
+    test("open selects an initial artifact and retargets the existing instance", async () => {
+        const firstId = ".copilot-tracking/plans/2026-08-27/first-plan.md";
+        const secondId = ".copilot-tracking/research/2026-08-27/second-research.md";
+        write(firstId, "# First");
+        write(secondId, "# Second");
+
+        const first = await provider.openNavigator({
+            instanceId: "instance-a",
+            input: { artifactId: firstId },
+            session: { workingDirectory: workspace },
+        });
+        let body = await (await callOpened(first)).json();
+        expect(body.selectedArtifactId).toBe(firstId);
+        expect(body.targetRevision).toBe(1);
+
+        const again = await provider.openNavigator({
+            instanceId: "instance-a",
+            input: { artifactId: secondId },
+            session: { workingDirectory: workspace },
+        });
+        expect(again.url).toBe(first.url);
+        body = await (await callOpened(again)).json();
+        expect(body.selectedArtifactId).toBe(secondId);
+        expect(body.targetRevision).toBe(2);
+    });
+
+    test("targeted refresh isolates selection state between instances", async () => {
+        const firstId = ".copilot-tracking/plans/2026-08-27/first-plan.md";
+        const secondId = ".copilot-tracking/plans/2026-08-27/second-plan.md";
+        write(firstId, "# First");
+        write(secondId, "# Second");
+
+        const a = await provider.openNavigator({
+            instanceId: "instance-a",
+            input: { artifactId: firstId },
+            session: { workingDirectory: workspace },
+        });
+        const b = await provider.openNavigator({
+            instanceId: "instance-b",
+            input: { artifactId: firstId },
+            session: { workingDirectory: workspace },
+        });
+
+        const refreshed = await provider.refreshRpiArtifacts({
+            instanceId: "instance-a",
+            input: { artifactId: secondId },
+            session: { workingDirectory: workspace },
+        });
+        expect(refreshed.refreshedInstances).toBe(1);
+
+        const bodyA = await (await callOpened(a)).json();
+        const bodyB = await (await callOpened(b)).json();
+        expect(bodyA).toMatchObject({ selectedArtifactId: secondId, targetRevision: 2 });
+        expect(bodyB).toMatchObject({ selectedArtifactId: firstId, targetRevision: 1 });
     });
 
     test("concurrent opens for one instance share a single server that close fully releases", async () => {
