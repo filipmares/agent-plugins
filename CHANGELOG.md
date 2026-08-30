@@ -7,6 +7,9 @@ and plugin versioning follows [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## [Unreleased]
 
+### Added — RPI Artifact Navigator targeting
+- Added optional active-artifact targeting for navigator open and refresh, including per-instance refresh isolation and selection updates for HVE Core RPI phase checkpoints.
+
 ### Added — Copilot Code Review agent
 - Added the user-invocable, evidence-based `Copilot Code Review` agent and its Copilot plugin manifest and documentation wiring; it reviews supplied changes without implementing fixes.
 
