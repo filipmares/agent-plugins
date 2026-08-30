@@ -70,6 +70,10 @@ function call(server, path, options = {}) {
     });
 }
 
+function callOpened(opened, path = "api/artifacts") {
+    return fetch(`${opened.url}${path}`, { headers: { Host: new URL(opened.url).host } });
+}
+
 beforeEach(async () => {
     workspace = await realpath(mkdtempSync(join(tmpdir(), "rpi-canvas-server-")));
     stubWorkspacePath = workspace;
@@ -126,6 +130,8 @@ describe("renderer output", () => {
 
     test("the client script assigns artifact text through textContent only", () => {
         expect(NAVIGATOR_SCRIPT).toContain("sourceEl.textContent = doc.source");
+        expect(NAVIGATOR_SCRIPT).toContain("body.selectedArtifactId");
+        expect(NAVIGATOR_SCRIPT).toContain("body.targetRevision");
         expect(NAVIGATOR_SCRIPT).not.toContain("innerHTML");
         expect(NAVIGATOR_SCRIPT).not.toContain("outerHTML");
         expect(NAVIGATOR_SCRIPT).not.toContain("document.write");
@@ -297,6 +303,30 @@ describe("refresh and cleanup", () => {
         const body = await refreshed.json();
         expect(body.count).toBe(1);
         expect(body.artifacts[0].id).toBe(".copilot-tracking/plans/2026-08-27/new-plan.md");
+        expect(body.selectedArtifactId).toBeNull();
+        expect(body.targetRevision).toBe(0);
+    });
+
+    test("stores a validated initial target and advances its revision when retargeted", async () => {
+        const firstId = ".copilot-tracking/plans/2026-08-27/first-plan.md";
+        const secondId = ".copilot-tracking/plans/2026-08-27/second-plan.md";
+        write(firstId, "# First");
+        write(secondId, "# Second");
+        const server = await createNavigatorServer({
+            workspaceRoot: workspace,
+            title: "RPI Artifact Navigator",
+            selectedArtifactId: firstId,
+        });
+        openServers.push(server);
+
+        let body = await (await call(server, `${server.basePath}/api/artifacts`)).json();
+        expect(body.selectedArtifactId).toBe(firstId);
+        expect(body.targetRevision).toBe(1);
+
+        await server.setTarget(secondId);
+        body = await (await call(server, `${server.basePath}/api/artifacts`)).json();
+        expect(body.selectedArtifactId).toBe(secondId);
+        expect(body.targetRevision).toBe(2);
     });
 
     test("notifyRefresh reports the streams it reached and is inert with none", async () => {
@@ -448,7 +478,17 @@ describe("canvas provider contract", () => {
         expect(declaration.id).toBe("rpi-artifact-navigator");
         expect(declaration.displayName).toBe("RPI Artifact Navigator");
         expect(typeof declaration.description).toBe("string");
-        expect(declaration.inputSchema).toEqual({ type: "object", additionalProperties: false });
+        expect(declaration.inputSchema).toEqual({
+            type: "object",
+            additionalProperties: false,
+            properties: {
+                artifactId: {
+                    type: "string",
+                    minLength: 1,
+                    description: "Normalized workspace-relative path of the artifact to select.",
+                },
+            },
+        });
         expect(declaration.actions.map((action) => action.name)).toEqual([
             "list_rpi_artifacts",
             "get_rpi_artifact",
@@ -460,6 +500,7 @@ describe("canvas provider contract", () => {
             expect(action.inputSchema.additionalProperties).toBe(false);
         }
         expect(declaration.actions[1].inputSchema.required).toEqual(["artifactId"]);
+        expect(declaration.actions[2].inputSchema).toEqual(declaration.inputSchema);
     });
 
     test("list_rpi_artifacts returns a raw object, not a string or envelope", async () => {
@@ -490,24 +531,26 @@ describe("canvas provider contract", () => {
         expect(result.artifact.sha256).toMatch(/^[0-9a-f]{64}$/);
     });
 
-    test("refresh_rpi_artifacts counts live instances and never writes", async () => {
+    test("refresh_rpi_artifacts targets only the addressed live instance", async () => {
         write(".copilot-tracking/plans/2026-08-27/a-plan.md", "# A");
 
-        const idle = await provider.refreshRpiArtifacts({ input: {} });
+        const idle = await provider.refreshRpiArtifacts({ input: {}, instanceId: "absent" });
         expect(idle.refreshedInstances).toBe(0);
         expect(Object.keys(idle).sort()).toEqual(["artifacts", "count", "refreshedInstances"]);
 
         await provider.openNavigator({ instanceId: "instance-a", session: { workingDirectory: workspace } });
         await provider.openNavigator({ instanceId: "instance-b", session: { workingDirectory: workspace } });
 
-        const live = await provider.refreshRpiArtifacts({ input: {} });
-        expect(live.refreshedInstances).toBe(2);
+        const live = await provider.refreshRpiArtifacts({ input: {}, instanceId: "instance-a" });
+        expect(live.refreshedInstances).toBe(1);
         expect(live.count).toBe(1);
     });
 
     test.each([
         ["list_rpi_artifacts", (input) => provider.listRpiArtifacts({ input }), { unexpected: true }, ERROR_CODES.requestInvalid],
         ["refresh_rpi_artifacts", (input) => provider.refreshRpiArtifacts({ input }), [1], ERROR_CODES.requestInvalid],
+        ["refresh extra key", (input) => provider.refreshRpiArtifacts({ input }), { artifactId: ".copilot-tracking/plans/2026-08-27/a-plan.md", extra: 1 }, ERROR_CODES.requestInvalid],
+        ["refresh target outside", (input) => provider.refreshRpiArtifacts({ input }), { artifactId: "README.md" }, ERROR_CODES.artifactNotAllowed],
         ["get_rpi_artifact missing", (input) => provider.getRpiArtifact({ input }), {}, ERROR_CODES.requestInvalid],
         ["get_rpi_artifact extra", (input) => provider.getRpiArtifact({ input }), { artifactId: "a.md", extra: 1 }, ERROR_CODES.requestInvalid],
         ["get_rpi_artifact empty", (input) => provider.getRpiArtifact({ input }), { artifactId: "" }, ERROR_CODES.artifactIdInvalid],
@@ -545,6 +588,62 @@ describe("canvas provider contract", () => {
         expect(again.url).toBe(first.url);
         expect(other.url).not.toBe(first.url);
         expect(first.title).toBe("RPI Artifact Navigator");
+    });
+
+    test("open selects an initial artifact and retargets the existing instance", async () => {
+        const firstId = ".copilot-tracking/plans/2026-08-27/first-plan.md";
+        const secondId = ".copilot-tracking/research/2026-08-27/second-research.md";
+        write(firstId, "# First");
+        write(secondId, "# Second");
+
+        const first = await provider.openNavigator({
+            instanceId: "instance-a",
+            input: { artifactId: firstId },
+            session: { workingDirectory: workspace },
+        });
+        let body = await (await callOpened(first)).json();
+        expect(body.selectedArtifactId).toBe(firstId);
+        expect(body.targetRevision).toBe(1);
+
+        const again = await provider.openNavigator({
+            instanceId: "instance-a",
+            input: { artifactId: secondId },
+            session: { workingDirectory: workspace },
+        });
+        expect(again.url).toBe(first.url);
+        body = await (await callOpened(again)).json();
+        expect(body.selectedArtifactId).toBe(secondId);
+        expect(body.targetRevision).toBe(2);
+    });
+
+    test("targeted refresh isolates selection state between instances", async () => {
+        const firstId = ".copilot-tracking/plans/2026-08-27/first-plan.md";
+        const secondId = ".copilot-tracking/plans/2026-08-27/second-plan.md";
+        write(firstId, "# First");
+        write(secondId, "# Second");
+
+        const a = await provider.openNavigator({
+            instanceId: "instance-a",
+            input: { artifactId: firstId },
+            session: { workingDirectory: workspace },
+        });
+        const b = await provider.openNavigator({
+            instanceId: "instance-b",
+            input: { artifactId: firstId },
+            session: { workingDirectory: workspace },
+        });
+
+        const refreshed = await provider.refreshRpiArtifacts({
+            instanceId: "instance-a",
+            input: { artifactId: secondId },
+            session: { workingDirectory: workspace },
+        });
+        expect(refreshed.refreshedInstances).toBe(1);
+
+        const bodyA = await (await callOpened(a)).json();
+        const bodyB = await (await callOpened(b)).json();
+        expect(bodyA).toMatchObject({ selectedArtifactId: secondId, targetRevision: 2 });
+        expect(bodyB).toMatchObject({ selectedArtifactId: firstId, targetRevision: 1 });
     });
 
     test("concurrent opens for one instance share a single server that close fully releases", async () => {

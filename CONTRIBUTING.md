@@ -114,6 +114,9 @@ Working rules for that extension:
 - The per-instance HTTP server binds to `127.0.0.1` behind an unguessable path capability. Do not relax the `Host`, `Origin`, CORS, or Content-Security-Policy handling in `server.mjs`.
 - Support claims for the canvas must name only configurations that were
   actually verified. Do not broaden them without new evidence.
+- Keep artifact targeting optional and instance-scoped. Phase-boundary opens
+  may select an artifact, while in-phase refresh must update only the addressed
+  panel and must not create or reopen an instance the user closed.
 
 Run `bun run test:canvas` before opening a PR that touches the canvas.
 

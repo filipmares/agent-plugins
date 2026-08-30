@@ -30,6 +30,17 @@ const CANVAS_ID = "rpi-artifact-navigator";
 const CANVAS_TITLE = "RPI Artifact Navigator";
 
 const EMPTY_INPUT_SCHEMA = Object.freeze({ type: "object", additionalProperties: false });
+const OPTIONAL_ARTIFACT_INPUT_SCHEMA = Object.freeze({
+    type: "object",
+    additionalProperties: false,
+    properties: {
+        artifactId: {
+            type: "string",
+            minLength: 1,
+            description: "Normalized workspace-relative path of the artifact to select.",
+        },
+    },
+});
 const ARTIFACT_INPUT_SCHEMA = Object.freeze({
     type: "object",
     required: ["artifactId"],
@@ -116,6 +127,22 @@ function requireArtifactInput(input) {
     return input.artifactId;
 }
 
+function requireOptionalArtifactInput(input) {
+    if (input === undefined || input === null) return undefined;
+    if (typeof input !== "object" || Array.isArray(input)) {
+        throw new CanvasError(ERROR_CODES.requestInvalid, "Input must be an object");
+    }
+    const keys = Object.keys(input);
+    if (keys.length === 0) return undefined;
+    if (keys.length !== 1 || keys[0] !== "artifactId") {
+        throw new CanvasError(ERROR_CODES.requestInvalid, "artifactId is the only accepted property");
+    }
+    if (typeof input.artifactId !== "string" || input.artifactId.length === 0) {
+        throw new CanvasError(ERROR_CODES.artifactIdInvalid, "artifactId must be a non-empty string");
+    }
+    return input.artifactId;
+}
+
 export async function listRpiArtifacts(ctx) {
     try {
         requireEmptyInput(ctx?.input);
@@ -136,16 +163,22 @@ export async function getRpiArtifact(ctx) {
 
 export async function refreshRpiArtifacts(ctx) {
     try {
-        requireEmptyInput(ctx?.input);
-        const payload = await buildArtifactList(await resolveWorkspace(ctx));
+        const artifactId = requireOptionalArtifactInput(ctx?.input);
+        const workspaceRoot = await resolveWorkspace(ctx);
+        const payload = await buildArtifactList(workspaceRoot);
+        const server = instances.get(ctx?.instanceId);
 
         // Refresh publishes only an ephemeral invalidation to live instances.
         // It never writes a file or any durable state.
         let refreshedInstances = 0;
-        for (const server of instances.values()) {
-            if (server.closed) continue;
-            server.notifyRefresh();
+        if (server !== undefined && !server.closed) {
+            if (artifactId === undefined) server.notifyRefresh();
+            else await server.setTarget(artifactId);
             refreshedInstances += 1;
+        } else if (artifactId !== undefined) {
+            // Direct handler tests and a close race still validate supplied ids,
+            // even though there is no live renderer to notify.
+            await buildArtifactPayload(workspaceRoot, artifactId);
         }
         return { ...payload, refreshedInstances };
     } catch (err) {
@@ -157,22 +190,30 @@ export async function refreshRpiArtifacts(ctx) {
 export async function openNavigator(ctx) {
     try {
         assertCanvasSupported(ctx);
+        const artifactId = requireOptionalArtifactInput(ctx?.input);
         const instanceId = ctx.instanceId;
 
         const existing = instances.get(instanceId);
         if (existing !== undefined && !existing.closed) {
+            if (artifactId !== undefined) await existing.setTarget(artifactId);
             return { url: existing.url, title: CANVAS_TITLE, status: "Reusing the open navigator instance" };
         }
 
         const inFlight = pendingInstances.get(instanceId);
         if (inFlight !== undefined) {
             const joined = await inFlight;
+            if (artifactId !== undefined) await joined.setTarget(artifactId);
             return { url: joined.url, title: CANVAS_TITLE, status: "Reusing the open navigator instance" };
         }
 
         const creation = (async () => {
             const workspaceRoot = await resolveWorkspace(ctx);
-            const server = await createNavigatorServer({ workspaceRoot, title: CANVAS_TITLE, log });
+            const server = await createNavigatorServer({
+                workspaceRoot,
+                title: CANVAS_TITLE,
+                selectedArtifactId: artifactId,
+                log,
+            });
             instances.set(instanceId, server);
             return server;
         })();
@@ -211,7 +252,7 @@ export const canvasDeclaration = createCanvas({
     id: CANVAS_ID,
     displayName: CANVAS_TITLE,
     description: "Browse read-only RPI tracking artifacts, their metadata, and their heading outlines.",
-    inputSchema: EMPTY_INPUT_SCHEMA,
+    inputSchema: OPTIONAL_ARTIFACT_INPUT_SCHEMA,
     actions: [
         {
             name: "list_rpi_artifacts",
@@ -227,8 +268,8 @@ export const canvasDeclaration = createCanvas({
         },
         {
             name: "refresh_rpi_artifacts",
-            description: "Re-read the approved roots from disk and refresh any open navigator panels.",
-            inputSchema: EMPTY_INPUT_SCHEMA,
+            description: "Re-read the approved roots and optionally select one artifact in this navigator panel.",
+            inputSchema: OPTIONAL_ARTIFACT_INPUT_SCHEMA,
             handler: refreshRpiArtifacts,
         },
     ],

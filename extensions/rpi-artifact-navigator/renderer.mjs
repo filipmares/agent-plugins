@@ -166,7 +166,7 @@ export const NAVIGATOR_SCRIPT = String.raw`
   // Content-Security-Policy forbid inline script entirely.
   var base = window.location.pathname.replace(/\/+$/, "");
 
-  var state = { artifacts: [], selectedId: null, document: null };
+  var state = { artifacts: [], selectedId: null, document: null, targetRevision: -1 };
 
   var statusEl = document.getElementById("status");
   var listEl = document.getElementById("artifact-list");
@@ -349,28 +349,47 @@ export const NAVIGATOR_SCRIPT = String.raw`
 
   function applyList(body) {
     state.artifacts = body.artifacts;
-    var stillPresent = state.artifacts.some(function (a) { return a.id === state.selectedId; });
-    if (state.selectedId && !stillPresent) {
+    var nextId = state.selectedId;
+    var targetChanged = Number.isInteger(body.targetRevision) && body.targetRevision > state.targetRevision;
+    if (Number.isInteger(body.targetRevision)) state.targetRevision = body.targetRevision;
+    if (
+      targetChanged &&
+      typeof body.selectedArtifactId === "string" &&
+      state.artifacts.some(function (a) { return a.id === body.selectedArtifactId; })
+    ) {
+      nextId = body.selectedArtifactId;
+      state.selectedId = nextId;
+    }
+    var stillPresent = state.artifacts.some(function (a) { return a.id === nextId; });
+    if (nextId && !stillPresent) {
+      nextId = null;
       state.selectedId = null;
       state.document = null;
       renderDocument();
     }
     renderList();
     setStatus(body.count === 1 ? "1 artifact available" : body.count + " artifacts available", "info");
+    return nextId;
   }
 
   function load() {
-    return request("/api/artifacts").then(applyList).catch(function (err) {
-      setStatus("Could not load artifacts: " + err.message, "error");
-    });
+    return request("/api/artifacts")
+      .then(function (body) {
+        var nextId = applyList(body);
+        if (nextId) return select(nextId);
+        return undefined;
+      })
+      .catch(function (err) {
+        setStatus("Could not load artifacts: " + err.message, "error");
+      });
   }
 
   function refresh() {
     setStatus("Refreshing from disk\u2026", "info");
     return request("/api/refresh", { method: "POST" })
       .then(function (body) {
-        applyList(body);
-        if (state.selectedId) return select(state.selectedId);
+        var nextId = applyList(body);
+        if (nextId) return select(nextId);
         return undefined;
       })
       .catch(function (err) {
