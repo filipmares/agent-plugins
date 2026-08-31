@@ -1,0 +1,173 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-30T22:02:39-07:00",
+  "title": "Design System: RPI Artifact Navigator",
+  "extensions": {
+    "colorMeta": {
+      "canvas": { "role": "neutral", "displayName": "Canvas", "canonical": "#ffffff", "dark": "#0d1117", "tonalRamp": ["#010409", "#0d1117", "#151b23", "#212830", "#2a313c", "#d1d9e0", "#eef1f4", "#ffffff"] },
+      "canvas-subtle": { "role": "neutral", "displayName": "Canvas Subtle", "canonical": "#f6f8fa", "dark": "#151b23" },
+      "canvas-inset": { "role": "neutral", "displayName": "Canvas Inset", "canonical": "#f6f8fa", "dark": "#010409" },
+      "canvas-hover": { "role": "neutral", "displayName": "Canvas Hover", "canonical": "#eef1f4", "dark": "#212830" },
+      "canvas-active": { "role": "neutral", "displayName": "Canvas Active", "canonical": "#e6eaef", "dark": "#2a313c" },
+      "border": { "role": "neutral", "displayName": "Hairline Border", "canonical": "#d1d9e0", "dark": "#3d444d" },
+      "border-strong": { "role": "neutral", "displayName": "Control Border", "canonical": "#818b98", "dark": "#6e7681" },
+      "fg": { "role": "neutral", "displayName": "Foreground", "canonical": "#1f2328", "dark": "#f0f6fc" },
+      "fg-muted": { "role": "neutral", "displayName": "Foreground Muted", "canonical": "#59636e", "dark": "#9198a1" },
+      "accent": { "role": "primary", "displayName": "Primer Blue", "canonical": "#0969da", "dark": "#4493f8", "tonalRamp": ["#002155", "#0a3069", "#0550ae", "#0969da", "#218bff", "#54aeff", "#b6e3ff", "#ddf4ff"] },
+      "accent-solid": { "role": "primary", "displayName": "Primer Blue Solid", "canonical": "#0969da", "dark": "#1f6feb" },
+      "accent-on-solid": { "role": "primary", "displayName": "On Accent", "canonical": "#ffffff", "dark": "#ffffff" },
+      "accent-subtle": { "role": "primary", "displayName": "Accent Wash", "canonical": "#ddf4ff", "dark": "#121d2f" },
+      "success": { "role": "state", "displayName": "Success", "canonical": "#1a7f37", "dark": "#3fb950" },
+      "attention": { "role": "state", "displayName": "Attention", "canonical": "#9a6700", "dark": "#d29922" },
+      "severe": { "role": "state", "displayName": "Severe", "canonical": "#bc4c00", "dark": "#db6d28" },
+      "danger": { "role": "state", "displayName": "Danger", "canonical": "#cf222e", "dark": "#f85149" },
+      "done": { "role": "state", "displayName": "Done", "canonical": "#8250df", "dark": "#ab7df8" }
+    },
+    "typographyMeta": {
+      "document-title": { "displayName": "Document Title", "purpose": "The open artifact's H1 in the document pane header." },
+      "app-title": { "displayName": "App Title", "purpose": "The panel name in the top bar." },
+      "label": { "displayName": "Section Label", "purpose": "The uppercase muted Artifacts pane heading and empty-state subheads." },
+      "body": { "displayName": "Body", "purpose": "Base document text size." },
+      "item-title": { "displayName": "Item Title", "purpose": "Artifact row titles; bolds to 600 when the row is current." },
+      "meta": { "displayName": "Meta", "purpose": "Row metadata, status line, the document identity line and its chips, and the metadata grid." },
+      "mono": { "displayName": "Mono / Source", "purpose": "Artifact source and every path, hash, size, timestamp, slug, and count." }
+    },
+    "shadows": [],
+    "motion": [
+      { "name": "settle", "value": "settle 1100ms ease-out 1 (@keyframes settle { from { background-color: var(--accent-subtle); } to { background-color: transparent; } })", "purpose": "One-shot fade on a row that changed since the last poll, played on the refresh that introduced it." },
+      { "name": "pulse", "value": "pulse 1.3s ease-in-out infinite (@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } })", "purpose": "The busy status dot while the panel is reading or opening." },
+      { "name": "shimmer", "value": "shimmer 1.5s ease-in-out infinite (@keyframes shimmer { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } })", "purpose": "Skeleton loading bars before the first list load." },
+      { "name": "state-transition-fast", "value": "120ms ease", "purpose": "Row/button background and border color transitions; the filter hint fade." },
+      { "name": "chevron-rotate", "value": "160ms ease", "purpose": "Disclosure chevron rotation on open/close." },
+      { "name": "reduced-motion", "value": "@media (prefers-reduced-motion: reduce) { *,*::before,*::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; scroll-behavior: auto !important; } }", "purpose": "Disarms every animation, transition, and smooth scroll." }
+    ],
+    "breakpoints": [
+      { "name": "two-column", "value": "60rem", "note": "At and below, the index column narrows to minmax(11rem, 17rem); still two columns, Document keeps the rest. Literal value asserted by the test suite." },
+      { "name": "master-detail", "value": "40rem", "note": "At and below, the index and document stop being neighbours and become two master-detail views; .app[data-view] toggles which shows, a .back control returns to the list, and the index pane head hides." }
+    ]
+  },
+  "components": [
+    {
+      "name": "Text Button Base",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The shared text-button base (.btn): neutral raised fill on a strong border. It now backs only the quiet variant; the top bar's former 'Refresh from disk' text button is now the icon button.",
+      "html": "<button class=\"ds-btn-primary\" type=\"button\">Button</button>",
+      "css": ".ds-btn-primary { font: 500 0.75rem/1.5 var(--font-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif); padding: 0.3125rem 0.625rem; color: var(--fg, #1f2328); background: var(--canvas-subtle, #f6f8fa); border: 1px solid var(--border-strong, #818b98); border-radius: 6px; cursor: pointer; white-space: nowrap; transition: background-color 120ms ease, border-color 120ms ease; } .ds-btn-primary:hover { background: var(--canvas-hover, #eef1f4); } .ds-btn-primary:active { background: var(--canvas-active, #e6eaef); } .ds-btn-primary:focus-visible { outline: 2px solid var(--accent, #0969da); outline-offset: 2px; } .ds-btn-primary[disabled] { color: var(--fg-muted, #59636e); border-color: var(--border, #d1d9e0); cursor: default; }"
+    },
+    {
+      "name": "Icon Button (Refresh)",
+      "kind": "button",
+      "refersTo": "button-icon",
+      "description": "The top bar's refresh control: a 1.75rem square, transparent border, --fg-muted foreground. Its glyph is an inline authored <svg> (a stroked 270-degree arc plus a filled arrowhead) drawn in currentColor, with no xmlns and no style attribute. Accessible name comes from aria-label plus a matching title; deliberately not animated while refreshing.",
+      "html": "<button class=\"ds-icon-btn\" type=\"button\" aria-label=\"Refresh from disk\" title=\"Refresh from disk\"><svg class=\"ds-icon\" viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" aria-hidden=\"true\" focusable=\"false\"><path d=\"M13.25 8a5.25 5.25 0 1 1-5.25-5.25\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\"></path><path d=\"M7.9 0.4 10.9 2.75 7.9 5.1Z\" fill=\"currentColor\"></path></svg></button>",
+      "css": ".ds-icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 1.75rem; height: 1.75rem; padding: 0; color: var(--fg-muted, #59636e); background: none; border: 1px solid transparent; border-radius: 6px; cursor: pointer; transition: color 120ms ease, background-color 120ms ease, border-color 120ms ease; } .ds-icon-btn:hover { color: var(--fg, #1f2328); background: var(--canvas-subtle, #f6f8fa); border-color: var(--border, #d1d9e0); } .ds-icon-btn:active { background: var(--canvas-active, #e6eaef); } .ds-icon-btn:focus-visible { outline: 2px solid var(--accent, #0969da); outline-offset: 2px; } .ds-icon-btn[disabled] { color: var(--border-strong, #818b98); background: none; border-color: transparent; cursor: default; } .ds-icon-btn .ds-icon { display: block; }"
+    },
+    {
+      "name": "Quiet Button",
+      "kind": "button",
+      "refersTo": "button-quiet",
+      "description": "The inline 'Copy' action beside the Path value in the metadata record. Transparent on a hairline border that strengthens on hover.",
+      "html": "<button class=\"ds-btn-quiet\" type=\"button\">Copy</button>",
+      "css": ".ds-btn-quiet { font: 500 0.75rem/1.5 var(--font-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif); padding: 0.3125rem 0.625rem; color: var(--fg, #1f2328); background: none; border: 1px solid var(--border, #d1d9e0); border-radius: 6px; cursor: pointer; white-space: nowrap; transition: background-color 120ms ease, border-color 120ms ease; } .ds-btn-quiet:hover { background: var(--canvas-hover, #eef1f4); border-color: var(--border-strong, #818b98); } .ds-btn-quiet:focus-visible { outline: 2px solid var(--accent, #0969da); outline-offset: 2px; }"
+    },
+    {
+      "name": "Filter Field",
+      "kind": "input",
+      "refersTo": "filter-input",
+      "description": "The artifact filter with a monospace '/' keycap hint that fades on focus or input.",
+      "html": "<div class=\"ds-filter\"><input class=\"ds-filter__input\" type=\"search\" placeholder=\"Filter artifacts\" autocomplete=\"off\" spellcheck=\"false\" /><span class=\"ds-filter__hint\" aria-hidden=\"true\">/</span></div>",
+      "css": ".ds-filter { position: relative; } .ds-filter__input { width: 100%; font: 400 0.8125rem/1.5 var(--font-ui, -apple-system, sans-serif); padding: 0.3125rem 2rem 0.3125rem 0.5rem; color: var(--fg, #1f2328); background: var(--canvas, #ffffff); border: 1px solid var(--border-strong, #818b98); border-radius: 6px; } .ds-filter__input::placeholder { color: var(--fg-muted, #59636e); } .ds-filter__input:focus { border-color: var(--accent, #0969da); outline: 2px solid var(--accent, #0969da); outline-offset: 2px; } .ds-filter__hint { position: absolute; right: 0.5rem; top: 50%; transform: translateY(-50%); padding: 0 0.3125rem; font: 400 0.75rem/1.5 var(--font-mono, ui-monospace, Menlo, monospace); color: var(--fg-muted, #59636e); background: var(--canvas, #ffffff); border: 1px solid var(--border, #d1d9e0); border-radius: 3px; pointer-events: none; transition: opacity 120ms ease; } .ds-filter__input:focus ~ .ds-filter__hint, .ds-filter__input:not(:placeholder-shown) ~ .ds-filter__hint { opacity: 0; }"
+    },
+    {
+      "name": "Artifact Row",
+      "kind": "custom",
+      "refersTo": "item",
+      "description": "A list row: title plus a meta line (kind label, relative time, status pill, change dot). Shown here in its selected state with a change marker.",
+      "html": "<button class=\"ds-item\" type=\"button\" aria-current=\"true\"><span class=\"ds-item__title\">Add loopback capability server</span><span class=\"ds-item__meta\"><span class=\"ds-kind\">Plan</span><span class=\"ds-time\">2 min ago</span><span class=\"ds-pill\">in progress</span><span class=\"ds-item__flag\" title=\"Written since you last opened it\"></span></span></button>",
+      "css": ".ds-item { display: block; width: 100%; text-align: left; font: inherit; color: inherit; background: none; border: 0; border-left: 2px solid transparent; padding: 0.375rem 0.75rem 0.4375rem calc(0.75rem - 2px); cursor: pointer; transition: background-color 120ms ease; } .ds-item:hover { background: var(--canvas-hover, #eef1f4); } .ds-item:active { background: var(--canvas-active, #e6eaef); } .ds-item[aria-current=\"true\"] { background: var(--accent-subtle, #ddf4ff); border-left-color: var(--accent, #0969da); } .ds-item[aria-current=\"true\"] .ds-item__title { font-weight: 600; } .ds-item:focus-visible { outline: 2px solid var(--accent, #0969da); outline-offset: -2px; } .ds-item__title { display: block; font-size: 0.8125rem; line-height: 1.4; } .ds-item__meta { display: flex; align-items: center; flex-wrap: wrap; gap: 0.25rem 0.5rem; margin-top: 0.1875rem; font-size: 0.75rem; color: var(--fg-muted, #59636e); } .ds-kind { display: inline-flex; align-items: center; font-weight: 500; color: var(--fg, #1f2328); } .ds-time { font-family: var(--font-mono, ui-monospace, Menlo, monospace); font-variant-numeric: tabular-nums; } .ds-item__flag { flex: none; margin-left: auto; width: 0.4375rem; height: 0.4375rem; border-radius: 50%; background: var(--accent, #0969da); }"
+    },
+    {
+      "name": "Status Pill",
+      "kind": "chip",
+      "refersTo": "pill",
+      "description": "A neutral, fully-rounded pill carrying the parsed artifact status. Never colored.",
+      "html": "<span class=\"ds-pill\">in progress</span>",
+      "css": ".ds-pill { display: inline-block; max-width: 12rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; padding: 0 0.375rem; border: 1px solid var(--border, #d1d9e0); border-radius: 999px; background: var(--canvas-subtle, #f6f8fa); color: var(--fg-muted, #59636e); font-size: 0.75rem; line-height: 1.5; }"
+    },
+    {
+      "name": "Status Line",
+      "kind": "custom",
+      "refersTo": "status",
+      "description": "The polite live region. Its leading dot is colored by tone; the 'busy' tone pulses. Standing message is the change ledger.",
+      "html": "<p class=\"ds-status\" role=\"status\" aria-live=\"polite\" data-tone=\"success\">12 artifacts tracked \u00b7 2 updated</p>",
+      "css": ".ds-status { display: flex; align-items: center; gap: 0.4375rem; min-height: 1.125rem; margin: 0; font-size: 0.75rem; color: var(--fg-muted, #59636e); font-variant-numeric: tabular-nums; } .ds-status::before { content: \"\"; flex: none; width: 0.4375rem; height: 0.4375rem; border-radius: 50%; background: var(--border-strong, #818b98); } .ds-status[data-tone=\"busy\"]::before { background: var(--accent, #0969da); animation: ds-pulse 1.3s ease-in-out infinite; } .ds-status[data-tone=\"success\"]::before { background: var(--success, #1a7f37); } .ds-status[data-tone=\"warning\"]::before { background: var(--attention, #9a6700); } .ds-status[data-tone=\"error\"] { color: var(--danger, #cf222e); font-weight: 500; } .ds-status[data-tone=\"error\"]::before { background: var(--danger, #cf222e); } @keyframes ds-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }"
+    },
+    {
+      "name": "Metadata Record",
+      "kind": "custom",
+      "refersTo": "record-toggle",
+      "description": "The document's full record, as a button-plus-panel disclosure (no <details> anywhere in this surface). An inline 'Metadata' toggle on the identity line is a real ARIA disclosure (aria-expanded + aria-controls) with a CSS chevron that rotates when open; it controls a --canvas-subtle panel, hidden by default, holding the metadata grid. The grid leads with Path (value plus a quiet Copy button); Kind is dropped because the identity line carries it.",
+      "html": "<button class=\"ds-record-toggle\" type=\"button\" aria-expanded=\"true\" aria-controls=\"ds-record\">Metadata</button><div id=\"ds-record\" class=\"ds-record\"><dl class=\"ds-metadata\"><dt>Path</dt><dd class=\"ds-metadata__path\"><span>.copilot-tracking/plans/2026-08-30-loopback-server-plan.md</span><button class=\"ds-btn-quiet\" type=\"button\">Copy</button></dd><dt>Task</dt><dd>loopback-server</dd><dt>SHA-256</dt><dd>3f9a1c0b7e42</dd></dl></div>",
+      "css": ".ds-record-toggle { display: inline-flex; align-items: center; gap: 0.375rem; padding: 0.125rem 0.375rem 0.125rem 0.25rem; font: 400 0.75rem/1.5 var(--font-ui, -apple-system, sans-serif); color: var(--fg-muted, #59636e); background: none; border: 1px solid transparent; border-radius: 6px; cursor: pointer; } .ds-record-toggle::before { content: \"\"; flex: none; width: 0.4375rem; height: 0.4375rem; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform 160ms ease; } .ds-record-toggle[aria-expanded=\"true\"]::before { transform: rotate(45deg); } .ds-record-toggle:hover { color: var(--fg, #1f2328); background: var(--canvas-subtle, #f6f8fa); border-color: var(--border, #d1d9e0); } .ds-record-toggle:focus-visible { outline: 2px solid var(--accent, #0969da); outline-offset: 2px; } .ds-record { padding: 0.75rem 0.875rem 0.875rem; border-bottom: 1px solid var(--border, #d1d9e0); background: var(--canvas-subtle, #f6f8fa); } .ds-record[hidden] { display: none; } .ds-metadata { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.3125rem 0.875rem; margin: 0; font-size: 0.75rem; } .ds-metadata dt { color: var(--fg-muted, #59636e); } .ds-metadata dd { margin: 0; font-family: var(--font-mono, ui-monospace, Menlo, monospace); overflow-wrap: anywhere; } .ds-metadata dd.ds-metadata__path { display: flex; align-items: baseline; gap: 0.5rem; } .ds-metadata dd.ds-metadata__path span { min-width: 0; overflow-wrap: anywhere; } .ds-btn-quiet { flex: none; font: 500 0.75rem/1.5 var(--font-ui, -apple-system, sans-serif); padding: 0.3125rem 0.625rem; color: var(--fg, #1f2328); background: none; border: 1px solid var(--border, #d1d9e0); border-radius: 6px; cursor: pointer; white-space: nowrap; transition: background-color 120ms ease, border-color 120ms ease; } .ds-btn-quiet:hover { background: var(--canvas-hover, #eef1f4); border-color: var(--border-strong, #818b98); } .ds-btn-quiet:focus-visible { outline: 2px solid var(--accent, #0969da); outline-offset: 2px; }"
+    },
+    {
+      "name": "Back Control",
+      "kind": "nav",
+      "refersTo": "button-back",
+      "description": "The master-detail back button shown below 40rem at the top of the document head. Returns from the document view to the artifact list. Left-pointing CSS chevron; display: none at wide, inline-flex at narrow.",
+      "html": "<button class=\"ds-back\" type=\"button\">Artifacts</button>",
+      "css": ".ds-back { display: inline-flex; align-items: center; gap: 0.375rem; padding: 0.25rem 0.5rem 0.25rem 0.375rem; font: 500 0.75rem/1.5 var(--font-ui, -apple-system, sans-serif); color: var(--fg-muted, #59636e); background: none; border: 1px solid transparent; border-radius: 6px; cursor: pointer; } .ds-back::before { content: \"\"; flex: none; width: 0.4375rem; height: 0.4375rem; border-left: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg); } .ds-back:hover { color: var(--fg, #1f2328); background: var(--canvas-subtle, #f6f8fa); border-color: var(--border, #d1d9e0); } .ds-back:focus-visible { outline: 2px solid var(--accent, #0969da); outline-offset: 2px; }"
+    },
+    {
+      "name": "Keycap",
+      "kind": "custom",
+      "refersTo": "keycap",
+      "description": "A monospace key hint used in the keyboard legend and the filter '/' affordance.",
+      "html": "<span class=\"ds-key\">/</span>",
+      "css": ".ds-key { display: inline-block; min-width: 1.75rem; text-align: center; padding: 0 0.3125rem; font: 400 0.75rem/1.5 var(--font-mono, ui-monospace, Menlo, monospace); color: var(--fg, #1f2328); background: var(--canvas-subtle, #f6f8fa); border: 1px solid var(--border, #d1d9e0); border-radius: 3px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "Native Chrome, Not an App",
+    "overview": "This is a canvas panel that opens itself inside the GitHub Copilot app while an engineer supervises an agent running a Research \u2192 Plan \u2192 Implement \u2192 Review loop. Its whole ambition is to look like it was always part of the host \u2014 a GitHub Primer surface executed at full fidelity, not a quirky reading of it. The palette is Primer's neutrals plus a single blue accent, dividers are hairlines, corners are a quiet 6px, and every path, hash, and source byte is set in the system monospace. Convention is the commitment. The panel is a change ledger, not a generic two-pane Markdown viewer: it holds the previous modified-time of every artifact, so the one thing it does that a plain file tree cannot is tell the visitor what moved while they were away. That single idea earns the design's only reserved uses of color \u2014 the accent marks selection, focus, and change, and nothing else. Everything visible is drawn from a system font stack, a color, CSS geometry, or an inline SVG authored directly in the markup, because the served Content-Security-Policy forbids fetched images, icon fonts, web fonts, remote assets, data: URLs, and any inline style or script \u2014 the panel's one icon (the refresh glyph) is an inline <svg> element in the document, never a downloaded asset. There is no elevation vocabulary at all \u2014 depth is tonal, built from a five-step canvas ramp and hairline borders, never a shadow.",
+    "keyCharacteristics": [
+      "GitHub Primer neutrals plus one blue accent; no second hue for decoration.",
+      "Every mark is a system font, a color, CSS geometry, or an inline authored SVG \u2014 never a fetched image or font of any kind.",
+      "Flat by design: tonal layering and hairlines, zero shadows.",
+      "Monospace is reserved for machine facts (paths, hashes, sizes, times, slugs, counts).",
+      "Motion is nearly silent: one change-settle, one busy-pulse, one loading-shimmer.",
+      "Full light and dark token sets, switched by prefers-color-scheme."
+    ],
+    "rules": [
+      { "name": "The Reserved Accent Rule", "body": "Blue means one of exactly three things: this is selected, this has focus, or this changed. It is never a decoration or a brand flourish. Its rarity is what makes the change marker legible at a glance.", "section": "colors" },
+      { "name": "The Uncolored Category Rule", "body": "Artifact kind (Research, Plan, Details, Changes, Critique, Review) carries no color \u2014 it is a weighted --fg label, not a chip. On a Primer surface a green or amber chip reads as state, so coloring category would lie about status. Category is typography; status is color.", "section": "colors" },
+      { "name": "The Strong-Border Control Rule", "body": "Interactive controls stroke with --border-strong; structural dividers stroke with the lighter --border. The heavier stroke is not stylistic \u2014 it is how a button or field clears 3:1 contrast against its own background while dividers stay quiet.", "section": "colors" },
+      { "name": "The 12px Floor Rule", "body": "Nothing renders below 0.75rem (12px). Counts, hints, and the source all sit exactly on the floor; there is no smaller step.", "section": "typography" },
+      { "name": "The Monospace-for-Facts Rule", "body": "Monospace is reserved for values the system produced verbatim \u2014 file paths, SHA-256 hashes, byte sizes, timestamps, task slugs, counts, and the artifact source. It is never used decoratively or for prose. Mono on this surface signals 'this is exact.'", "section": "typography" },
+      { "name": "The No-Shadow Rule", "body": "Surfaces never lift off the page. If something needs to read as raised, recessed, or interactive, it changes tone or gains a border \u2014 it never casts a shadow. This keeps the panel flush with Primer, which layers the same way.", "section": "elevation" },
+      { "name": "The Authored, Never Fetched Rule", "body": "A mark may be CSS geometry (a border, a radius, a rotated edge) or an inline <svg> authored directly in the markup \u2014 but never a fetched resource. The CSP's img-src 'none' governs fetches (<img>, CSS url()), so it does not touch inline SVG, which is an element in the document. Two hard constraints on any inline SVG in this surface: it carries no xmlns attribute (the HTML parser assigns the SVG namespace automatically, and the literal xmlns=\"http://www.w3.org/2000/svg\" would introduce an http:// string the test suite forbids in the emitted document), and no style attribute (inline styles are blocked by style-src 'self'; use presentation attributes like fill, stroke, stroke-width, stroke-linecap instead, and currentColor to inherit state colors). Still forbidden, unchanged: fetched images, icon fonts, web fonts, data: URLs, remote assets of any kind, and inline <style> or <script>.", "section": "shapes" }
+    ],
+    "dos": [
+      "Do build every mark from a system font stack, a color, CSS geometry, or an inline authored <svg>. Chevrons, dots, and keycaps are borders and radii; the one icon is an inline SVG element \u2014 the CSP forbids fetched images, icon fonts, web fonts, data: URLs, and remote assets, not markup you author in the document.",
+      "Do reserve --accent for selection, focus, and change. Restraint is what makes the change ledger readable.",
+      "Do stroke interactive controls with --border-strong and dividers with --border, so controls clear 3:1 against their own fill.",
+      "Do set every machine-emitted value (path, hash, size, time, slug, count, source) in --font-mono, and keep human prose in --font-ui.",
+      "Do ship both themes: define new colors in the :root block and the prefers-color-scheme: dark block together, and keep color-scheme: light dark.",
+      "Do keep motion disarmable: every animation and transition collapses under the prefers-reduced-motion: reduce media query, and the status line stays honest \u2014 it never claims a movement that did not happen.",
+      "Do preserve the accessibility contract: skip link, semantic landmarks, the polite live region, visible :focus-visible rings (with the -2px inset on full-bleed rows), and focus restoration across list rebuilds."
+    ],
+    "donts": [
+      "Don't add a shadow, blur, or lift. Convey depth with the canvas tone ramp and hairline borders only.",
+      "Don't color artifact category. Kind is a weighted --fg label; a colored chip would read as status on a Primer surface.",
+      "Don't spend the state hues (success / attention / severe / danger / done) on chrome \u2014 they belong to the status line.",
+      "Don't put an xmlns or a style attribute on inline SVG. The parser assigns the SVG namespace, and a literal xmlns=\"http://...\" adds an http:// string the test suite forbids; inline style is blocked by style-src 'self'. Use presentation attributes (fill, stroke, stroke-width, stroke-linecap) and currentColor instead.",
+      "Don't fetch a mark: no images, icon fonts, web fonts, data: URLs, remote assets, or inline <style>/<script>. Author it in the document or draw it in CSS.",
+      "Don't introduce a second accent, a brand color, or a decorative gradient.",
+      "Don't drop below 0.75rem (12px) for any text.",
+      "Don't break the source invariant: pre#source holds exactly one text node assigned via textContent. No gutter, no highlighting, no markup \u2014 the inert-source guarantee and the test suite depend on it.",
+      "Don't narrow the reading measure by centering the source column; hold it from the right edge with max(1rem, calc(100% - 82ch)).",
+      "Don't change the 60rem / 40rem breakpoints or the 82ch measure casually \u2014 several are asserted by tests/canvas-server.test.mjs and are contractual, not stylistic."
+    ]
+  }
+}
