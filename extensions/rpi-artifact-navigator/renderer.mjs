@@ -608,6 +608,7 @@ export const NAVIGATOR_SCRIPT = String.raw`
   var metadataEl = document.getElementById("metadata");
   var sourceEl = document.getElementById("source");
   var docEmptyEl = document.getElementById("doc-empty");
+  var skipLinkEl = document.getElementById("skip-link");
   var appEl = document.getElementById("app");
   var backBtn = document.getElementById("back");
   var refreshBtn = document.getElementById("refresh");
@@ -755,11 +756,11 @@ export const NAVIGATOR_SCRIPT = String.raw`
     return groups;
   }
 
-  function emptyBlock(title, detail, roots) {
+  function emptyBlock(title, detail, withRoots) {
     var li = el("li", "empty");
     li.appendChild(el("span", "empty__title", title));
     li.appendChild(document.createTextNode(detail));
-    if (roots) {
+    if (withRoots) {
       var list = el("ul", "empty__roots");
       APPROVED_ROOTS.forEach(function (root) { list.appendChild(el("li", null, root)); });
       li.appendChild(list);
@@ -1111,6 +1112,17 @@ export const NAVIGATOR_SCRIPT = String.raw`
   recordToggle.addEventListener("click", function () {
     setRecordOpen(recordEl.hidden);
   });
+  // The source is hidden until an artifact is open, and a narrow panel may be
+  // showing the index instead, so the skip target is resolved at activation
+  // rather than assumed to be on screen. The href still names a real element,
+  // which keeps the link meaningful if this handler never runs.
+  skipLinkEl.addEventListener("click", function (event) {
+    event.preventDefault();
+    showView("document");
+    var target = sourceEl.hidden ? docEmptyEl : sourceEl;
+    target.focus();
+  });
+
   backBtn.addEventListener("click", function () {
     showView("list");
     var rows = listEl.querySelectorAll("[data-artifact-id]");
@@ -1168,7 +1180,7 @@ chips, a path row with copy, collapsed details, then the source. Below 40rem the
 two panes become two views, and the document owns the panel while it is open.
 FORM: category canon, Primer, pinned by the user. No direction roll.
 -->
-<a class="skip-link" href="#source">Skip to artifact source</a>
+<a id="skip-link" class="skip-link" href="#document-pane">Skip to content</a>
 <div class="app" id="app" data-view="list">
   <header class="topbar">
     <h1>${safeTitle}</h1>
@@ -1199,7 +1211,7 @@ FORM: category canon, Primer, pinned by the user. No direction roll.
       </div>
     </nav>
 
-    <section class="pane pane--document" aria-labelledby="document-title">
+    <section id="document-pane" class="pane pane--document" aria-labelledby="document-title" tabindex="-1">
       <div class="doc__head">
         <button id="back" class="back" type="button">Artifacts</button>
         <h2 id="document-title">No artifact open</h2>
@@ -1211,7 +1223,7 @@ FORM: category canon, Primer, pinned by the user. No direction roll.
       <div id="record" class="record" hidden>
         <dl id="metadata" class="metadata"></dl>
       </div>
-      <div id="doc-empty" class="doc__empty">
+      <div id="doc-empty" class="doc__empty" tabindex="-1">
         <p class="doc__empty-lead">Choose an artifact, or let the agent choose one for you.</p>
         <p>This panel is a read-only view of the Markdown the RPI workflow writes. The files stay authoritative, so refreshing or reopening always re-reads them from disk. A new artifact opens the panel; an edited one refreshes it in place and is marked here until you look at it.</p>
         <h3>Keyboard</h3>
