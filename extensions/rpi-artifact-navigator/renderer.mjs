@@ -2,9 +2,9 @@
  * Read-only navigator renderer.
  *
  * Produces the HTML, CSS, and client script served by `server.mjs`. Artifact
- * text is never interpolated into markup here; the client fetches JSON and
- * assigns it through `textContent`, so hostile Markdown, embedded HTML, and
- * scripts remain inert.
+ * text is never interpolated into the shell. The client fetches exact source,
+ * renders it with a pinned Markdown parser, sanitizes to a detached DOM
+ * fragment, and commits only the restricted result.
  *
  * The stylesheet and client script are served as separate same-origin
  * resources so the Content-Security-Policy can forbid inline script and style
@@ -24,6 +24,88 @@ const HTML_ESCAPES = Object.freeze({
 /** Escape a value for interpolation into HTML text or an attribute value. */
 export function escapeHtml(value) {
     return String(value ?? "").replace(/[&<>"']/g, (char) => HTML_ESCAPES[char]);
+}
+
+/**
+ * Remove complete raw HTML regions from a Marked token tree.
+ *
+ * Block HTML arrives as one token and is dropped directly. Inline HTML arrives
+ * as sibling tag and content tokens, so a tag stack suppresses everything
+ * through the matching close. Unclosed or malformed nesting fails closed by
+ * suppressing the rest of that inline token sequence.
+ */
+export function dropRawHtmlRegions(tokens) {
+    const voidTags = new Set([
+        "area",
+        "base",
+        "br",
+        "col",
+        "embed",
+        "hr",
+        "img",
+        "input",
+        "link",
+        "meta",
+        "param",
+        "source",
+        "track",
+        "wbr",
+    ]);
+
+    function boundaryOf(token) {
+        const value = String(token.text ?? token.raw ?? "").trim();
+        if (value === "" || value.startsWith("<!") || value.startsWith("<?")) return { kind: "single" };
+
+        const closing = value.match(/^<\s*\/\s*([A-Za-z][\w:-]*)\s*>$/);
+        if (closing !== null) return { kind: "close", tag: closing[1].toLowerCase() };
+
+        const opening = value.match(/^<\s*([A-Za-z][\w:-]*)\b/);
+        if (opening === null || !value.endsWith(">")) return { kind: "single" };
+
+        const tag = opening[1].toLowerCase();
+        if (voidTags.has(tag) || /\/\s*>$/.test(value)) return { kind: "single" };
+        return { kind: "open", tag };
+    }
+
+    function cleanToken(token) {
+        if (Array.isArray(token.tokens)) token.tokens = cleanArray(token.tokens);
+        if (Array.isArray(token.items)) token.items.forEach(cleanToken);
+        if (Array.isArray(token.header)) token.header.forEach(cleanToken);
+        if (Array.isArray(token.rows)) {
+            token.rows.forEach((row) => {
+                if (Array.isArray(row)) row.forEach(cleanToken);
+            });
+        }
+    }
+
+    function cleanArray(items) {
+        const result = [];
+        const openTags = [];
+
+        for (const token of items) {
+            if (token && token.type === "html") {
+                if (token.block === true) continue;
+
+                const boundary = boundaryOf(token);
+                if (boundary.kind === "open") {
+                    openTags.push(boundary.tag);
+                } else if (boundary.kind === "close" && openTags.length > 0) {
+                    const index = openTags.lastIndexOf(boundary.tag);
+                    if (index !== -1) openTags.length = index;
+                }
+                continue;
+            }
+            if (openTags.length > 0) continue;
+
+            if (token && typeof token === "object") cleanToken(token);
+            result.push(token);
+        }
+
+        if (Object.prototype.hasOwnProperty.call(items, "links")) result.links = items.links;
+        return result;
+    }
+
+    return cleanArray(Array.isArray(tokens) ? tokens : []);
 }
 
 export const NAVIGATOR_STYLES = `
@@ -83,7 +165,7 @@ body {
   color: var(--fg);
   -webkit-font-smoothing: antialiased;
 }
-h1, h2, p, dl, dd, pre, ul { margin: 0; }
+h1, h2, p, dl, dd, pre, ul, ol, blockquote { margin: 0; }
 ul { list-style: none; padding: 0; }
 
 .visually-hidden {
@@ -421,22 +503,88 @@ dd { font-family: var(--font-mono); overflow-wrap: anywhere; }
 dd.metadata__path { display: flex; align-items: baseline; gap: 0.5rem; }
 dd.metadata__path span { min-width: 0; overflow-wrap: anywhere; }
 
-pre.source {
+.source {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
-  /* Hold the reading measure near 80 characters on a wide pane without
-     centering the column, which no code surface does. */
-  padding: 0.875rem max(1rem, calc(100% - 82ch)) 1.5rem 1rem;
+  padding: 1rem max(1rem, calc(100% - 86ch)) 2rem 1rem;
   background: var(--canvas);
   color: var(--fg);
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font: 400 0.75rem/1.7 var(--font-mono);
+  font: 400 0.875rem/1.65 var(--font-ui);
+}
+.source[hidden] { display: none; }
+.source > :first-child { margin-top: 0; }
+.source > :last-child { margin-bottom: 0; }
+.source h1,
+.source h2,
+.source h3,
+.source h4,
+.source h5,
+.source h6 {
+  margin: 1.5em 0 0.5em;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.source h1 { padding-bottom: 0.3em; border-bottom: 1px solid var(--border); font-size: 1.5rem; }
+.source h2 { padding-bottom: 0.3em; border-bottom: 1px solid var(--border); font-size: 1.25rem; }
+.source h3 { font-size: 1.075rem; }
+.source h4 { font-size: 1rem; }
+.source h5 { font-size: 0.875rem; }
+.source h6 { color: var(--fg-muted); font-size: 0.8125rem; }
+.source p,
+.source blockquote,
+.source ul,
+.source ol,
+.source pre,
+.source .table-scroll,
+.source hr { margin: 0 0 1em; }
+.source ul,
+.source ol { padding-left: 1.75rem; }
+.source ul { list-style: disc; }
+.source ol { list-style: decimal; }
+.source li + li { margin-top: 0.25em; }
+.source li > ul,
+.source li > ol { margin: 0.25em 0 0; }
+.source blockquote {
+  padding: 0 1rem;
+  color: var(--fg-muted);
+  border-left: 0.25rem solid var(--border);
+}
+.source hr { height: 1px; padding: 0; background: var(--border); border: 0; }
+.source code {
+  padding: 0.125em 0.3em;
+  background: var(--canvas-subtle);
+  border-radius: 3px;
+  font: 0.85em/1.5 var(--font-mono);
+}
+.source pre {
+  overflow: auto;
+  padding: 0.75rem 1rem;
+  background: var(--canvas-inset);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  white-space: pre;
   tab-size: 4;
 }
-pre.source[hidden] { display: none; }
+.source pre code { padding: 0; background: transparent; border-radius: 0; font-size: 0.75rem; }
+.source .table-scroll { max-width: 100%; overflow-x: auto; }
+.source table { width: max-content; min-width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
+.source th,
+.source td { padding: 0.375rem 0.625rem; border: 1px solid var(--border); text-align: left; vertical-align: top; }
+.source th { background: var(--canvas-subtle); font-weight: 600; }
+.source tr:nth-child(even) td { background: var(--canvas-subtle); }
+.source input[type="checkbox"] { margin: 0 0.375rem 0 0; vertical-align: -0.1em; accent-color: var(--accent); }
+.doc__error {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 1.25rem 1rem;
+  color: var(--danger);
+  font-size: 0.8125rem;
+}
+.doc__error[hidden] { display: none; }
 
 .doc__empty {
   flex: 1 1 auto;
@@ -564,6 +712,8 @@ export const NAVIGATOR_SCRIPT = String.raw`
 (function () {
   "use strict";
 
+  ${dropRawHtmlRegions.toString()}
+
   // The document is served at the capability base path, so the base is derived
   // from the current location instead of being injected inline. This lets the
   // Content-Security-Policy forbid inline script entirely.
@@ -596,7 +746,8 @@ export const NAVIGATOR_SCRIPT = String.raw`
     query: "",
     changed: Object.create(null),
     flash: Object.create(null),
-    loaded: false
+    loaded: false,
+    markdownConfigured: false
   };
 
   var seenRevisions = Object.create(null);
@@ -608,6 +759,7 @@ export const NAVIGATOR_SCRIPT = String.raw`
   var metadataEl = document.getElementById("metadata");
   var sourceEl = document.getElementById("source");
   var docEmptyEl = document.getElementById("doc-empty");
+  var docErrorEl = document.getElementById("doc-error");
   var skipLinkEl = document.getElementById("skip-link");
   var appEl = document.getElementById("app");
   var backBtn = document.getElementById("back");
@@ -933,6 +1085,120 @@ export const NAVIGATOR_SCRIPT = String.raw`
     addTime(chipsEl, doc);
   }
 
+  var SANITIZE_CONFIG = {
+    RETURN_DOM_FRAGMENT: true,
+    ALLOWED_TAGS: [
+      "blockquote", "br", "code", "del", "em", "h1", "h2", "h3", "h4", "h5", "h6",
+      "hr", "input", "li", "ol", "p", "pre", "strong", "table", "tbody", "td", "th",
+      "thead", "tr", "ul"
+    ],
+    ALLOWED_ATTR: ["type", "checked", "disabled"],
+    ALLOW_ARIA_ATTR: false,
+    ALLOW_DATA_ATTR: false,
+    FORBID_TAGS: ["a", "audio", "button", "form", "iframe", "img", "math", "object", "script", "style", "svg", "video"],
+    FORBID_ATTR: ["class", "id", "style"]
+  };
+
+  function escapeMarkup(value) {
+    return String(value == null ? "" : value).replace(/[&<>"']/g, function (character) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[character];
+    });
+  }
+
+  function requireMarkdownRuntime() {
+    var markdown = window.marked;
+    var purifier = window.DOMPurify;
+    if (
+      !markdown ||
+      typeof markdown.lexer !== "function" ||
+      typeof markdown.parser !== "function" ||
+      typeof markdown.use !== "function"
+    ) {
+      throw new Error("Markdown parser unavailable");
+    }
+    if (!purifier || typeof purifier.sanitize !== "function") {
+      throw new Error("Markdown sanitizer unavailable");
+    }
+    if (!state.markdownConfigured) {
+      markdown.use({
+        gfm: true,
+        breaks: false,
+        renderer: {
+          html: function () { return ""; },
+          image: function (token) { return escapeMarkup(token && token.text); },
+          link: function (token) {
+            var label = this.parser.parseInline(token.tokens);
+            var destination = escapeMarkup(token.href);
+            return label + (destination ? " (" + destination + ")" : "");
+          }
+        }
+      });
+      state.markdownConfigured = true;
+    }
+    return { markdown: markdown, purifier: purifier };
+  }
+
+  function normalizeHeading(value) {
+    return String(value == null ? "" : value).trim().replace(/\s+/g, " ");
+  }
+
+  function postprocessFragment(fragment, doc) {
+    if (!fragment || fragment.nodeType !== 11 || typeof fragment.querySelectorAll !== "function") {
+      throw new Error("Sanitizer did not return a document fragment");
+    }
+
+    var first = fragment.firstElementChild;
+    if (
+      first &&
+      first.tagName === "H1" &&
+      normalizeHeading(first.textContent) === normalizeHeading(doc.title || doc.id.split("/").pop())
+    ) {
+      first.remove();
+    }
+
+    var inputs = fragment.querySelectorAll("input");
+    for (var i = 0; i < inputs.length; i++) {
+      var input = inputs[i];
+      if (input.getAttribute("type") !== "checkbox") {
+        input.remove();
+        continue;
+      }
+      var checked = input.hasAttribute("checked");
+      while (input.attributes.length > 0) input.removeAttribute(input.attributes[0].name);
+      input.setAttribute("type", "checkbox");
+      input.setAttribute("disabled", "");
+      if (checked) input.setAttribute("checked", "");
+    }
+
+    var tables = Array.prototype.slice.call(fragment.querySelectorAll("table"));
+    tables.forEach(function (table) {
+      var wrapper = el("div", "table-scroll");
+      table.replaceWith(wrapper);
+      wrapper.appendChild(table);
+    });
+
+    return fragment;
+  }
+
+  function buildMarkdownFragment(doc) {
+    var runtime = requireMarkdownRuntime();
+    var tokens = dropRawHtmlRegions(runtime.markdown.lexer(doc.source));
+    var rendered = runtime.markdown.parser(tokens);
+    if (typeof rendered !== "string") throw new Error("Markdown parser returned an unsupported result");
+    var fragment = runtime.purifier.sanitize(rendered, SANITIZE_CONFIG);
+    return postprocessFragment(fragment, doc);
+  }
+
+  function showRenderError(doc) {
+    sourceEl.textContent = "";
+    sourceEl.hidden = true;
+    docEmptyEl.hidden = true;
+    docErrorEl.textContent =
+      "This artifact could not be rendered safely. Refresh from disk to retry. The source file was not changed.";
+    docErrorEl.hidden = false;
+    setStatus("Could not render " + (doc.title || doc.id.split("/").pop()) + " safely", "error");
+  }
+
   function renderDocument() {
     var doc = state.document;
 
@@ -942,11 +1208,13 @@ export const NAVIGATOR_SCRIPT = String.raw`
       recordToggle.hidden = true;
       setRecordOpen(false);
       docEmptyEl.hidden = false;
+      docErrorEl.hidden = true;
+      docErrorEl.textContent = "";
       sourceEl.hidden = true;
       metadataEl.textContent = "";
       sourceEl.textContent = "";
       showView("list");
-      return;
+      return true;
     }
 
     titleEl.textContent = doc.title || doc.id.split("/").pop();
@@ -954,12 +1222,20 @@ export const NAVIGATOR_SCRIPT = String.raw`
     recordToggle.hidden = false;
     setRecordOpen(false);
     docEmptyEl.hidden = true;
-    sourceEl.hidden = false;
     renderMetadata(doc);
 
-    // textContent keeps artifact source inert: no markup is ever parsed.
-    sourceEl.textContent = doc.source;
-    sourceEl.scrollTop = 0;
+    try {
+      var fragment = buildMarkdownFragment(doc);
+      sourceEl.replaceChildren(fragment);
+      sourceEl.hidden = false;
+      docErrorEl.hidden = true;
+      docErrorEl.textContent = "";
+      sourceEl.scrollTop = 0;
+      return true;
+    } catch (err) {
+      showRenderError(doc);
+      return false;
+    }
   }
 
   function select(artifactId, viaUser) {
@@ -970,7 +1246,7 @@ export const NAVIGATOR_SCRIPT = String.raw`
         state.document = body.artifact;
         delete state.changed[artifactId];
         renderList();
-        renderDocument();
+        var rendered = renderDocument();
         showView("document");
         // On a narrow panel the index has just left the screen, so the keyboard
         // follows it. Only a deliberate choice moves focus: an agent-driven open
@@ -978,7 +1254,7 @@ export const NAVIGATOR_SCRIPT = String.raw`
         // are doing. The offset parent is null while the control is not
         // displayed, which is exactly the wide layout where both panes stay up.
         if (viaUser && backBtn.offsetParent !== null) backBtn.focus();
-        reportLedger();
+        if (rendered) reportLedger();
       })
       .catch(function (err) {
         setStatus("Could not open the artifact: " + err.message, "error");
@@ -1119,7 +1395,7 @@ export const NAVIGATOR_SCRIPT = String.raw`
   skipLinkEl.addEventListener("click", function (event) {
     event.preventDefault();
     showView("document");
-    var target = sourceEl.hidden ? docEmptyEl : sourceEl;
+    var target = !sourceEl.hidden ? sourceEl : (!docErrorEl.hidden ? docErrorEl : docEmptyEl);
     target.focus();
   });
 
@@ -1170,13 +1446,13 @@ export function renderNavigatorHtml({ title } = {}) {
 THESIS: a change ledger for the files an agent is writing right now, not a
 generic three pane Markdown viewer whose panes are equal and inert.
 OWN-WORLD: GitHub Primer chrome. Neutrals plus one accent, hairline dividers,
-6px radii, system sans for chrome and ui-monospace for every path, hash, size
-and source byte. Kind dots, status pills, collapsible panes.
+6px radii, system sans for chrome and ui-monospace for every path, hash, size,
+and code block. Kind dots, status pills, collapsible panes.
 STORY: the visitor sees which artifacts moved, opens one, and reads it whole.
 FIRST VIEWPORT: hairline top bar with title, live status dot and Refresh. Below
 it the Artifacts pane, filtered and grouped by task, newest task first, changed
 rows carrying an accent marker. The document pane holds title, kind and status
-chips, a path row with copy, collapsed details, then the source. Below 40rem the
+chips, a path row with copy, collapsed details, then rendered Markdown. Below 40rem the
 two panes become two views, and the document owns the panel while it is open.
 FORM: category canon, Primer, pinned by the user. No direction roll.
 -->
@@ -1241,10 +1517,13 @@ FORM: category canon, Primer, pinned by the user. No direction roll.
           <li>.copilot-tracking/reviews/logs</li>
         </ul>
       </div>
-      <pre id="source" class="source" tabindex="0" aria-label="Artifact source, read only"></pre>
+      <div id="doc-error" class="doc__error" tabindex="-1" role="alert" hidden></div>
+      <article id="source" class="source" tabindex="0" aria-label="Rendered artifact, read only"></article>
     </section>
   </div>
 </div>
+<script src="vendor/marked.umd.js" defer></script>
+<script src="vendor/purify.min.js" defer></script>
 <script src="app.js" defer></script>
 </body>
 </html>`;

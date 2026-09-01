@@ -37,6 +37,14 @@ that panel without taking focus on later edits. Closing a panel suppresses
 edit-driven reopening until another artifact for that task is created. No
 changes to HVE Core are required.
 
+The document pane renders GitHub-flavored Markdown with pinned, offline copies
+of Marked and DOMPurify. Raw HTML and control comments are omitted, images and
+executable diagrams are not loaded, task-list inputs stay disabled, and links
+are shown as non-navigating label-and-destination text so they cannot replace
+the canvas. The artifact source remains authoritative and unchanged in the
+extension API. If parsing or sanitization fails, the pane clears stale content
+and shows a persistent read-only error; **Refresh from disk** retries rendering.
+
 ### skills.sh CLI
 
 The [skills](https://skills.sh) CLI detects which agent you're using and installs each skill in the right place (e.g. `.claude/skills/`, `.cursor/skills/`, …).

@@ -111,6 +111,17 @@ Working rules for that extension:
 - The canvas is **read-only**. Do not add a write, edit, delete, rename, or move path.
 - Reads stay inside the approved `.copilot-tracking` roots enforced in `artifact-index.mjs`. Widening that allowlist is a security change, not a convenience change.
 - Extension modules depend only on the Node standard library and `@github/copilot-sdk`. Do not introduce a package manifest, lockfile, or third-party dependency unless the extension requires it.
+- Browser-only third-party code must remain pinned and offline under
+  `extensions/rpi-artifact-navigator/vendor/`. Update `vendor/manifest.json`
+  with the exact version, npm tarball member, and SHA-256 digest; preserve the
+  selected upstream license under `third-party-licenses/`; and serve only named
+  files through capability-scoped routes. Do not add a CDN or general static
+  file route.
+- The Markdown boundary must drop raw HTML before DOMPurify, use explicit tag
+  and attribute allowlists, build a detached fragment, and commit successful
+  content once. Do not combine DOMPurify `USE_PROFILES` with `ALLOWED_TAGS`,
+  because the profile overrides the explicit tag allowlist. Failures must clear
+  stale content and remain visibly retryable without an unsanitized fallback.
 - The per-instance HTTP server binds to `127.0.0.1` behind an unguessable path capability. Do not relax the `Host`, `Origin`, CORS, or Content-Security-Policy handling in `server.mjs`.
 - Support claims for the canvas must name only configurations that were
   actually verified. Do not broaden them without new evidence.
@@ -119,7 +130,10 @@ Working rules for that extension:
   refresh without taking focus and must not reopen an instance the user closed;
   a newly created artifact may reopen that task's panel.
 
-Run `bun run test:canvas` before opening a PR that touches the canvas.
+Run `bun run test:canvas` before opening a PR that touches the canvas. Rendering
+changes also require a macOS GitHub Copilot canvas check for supported Markdown,
+hostile input, missing or throwing libraries, focus and refresh behavior, and
+narrow and wide layouts; Bun assertions do not execute or attest the final DOM.
 
 ## Code of Conduct
 

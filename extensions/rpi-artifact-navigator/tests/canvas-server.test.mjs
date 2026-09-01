@@ -1,19 +1,21 @@
 /**
  * Semantic tests for the loopback server, renderer, and canvas provider.
  *
- * Owns escaped rendering, HTTP methods and routes, the per-instance capability
- * trust model, refresh behavior, open idempotency, action success and error
- * variants, and resource cleanup.
+ * Owns sanitized rendering contracts, trusted assets, HTTP methods and routes,
+ * the per-instance capability trust model, refresh behavior, open idempotency,
+ * action success and error variants, and resource cleanup.
  *
  * The Copilot SDK is only resolvable inside the CLI's extension fork, so it is
  * replaced with a minimal stand-in that mirrors the parts the provider uses.
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { runInNewContext } from "node:vm";
 
 class StubCanvasError extends Error {
     constructor(code, message) {
@@ -66,7 +68,8 @@ mock.module("@github/copilot-sdk/extension", () => ({
 const { ArtifactError, ERROR_CODES, LIMITS } = await import("../artifact-index.mjs");
 const { selectTaskChanges } = await import("../artifact-monitor.mjs");
 const { createNavigatorServer, buildArtifactList } = await import("../server.mjs");
-const { escapeHtml, renderNavigatorHtml, NAVIGATOR_SCRIPT, NAVIGATOR_STYLES } = await import("../renderer.mjs");
+const { dropRawHtmlRegions, escapeHtml, renderNavigatorHtml, NAVIGATOR_SCRIPT, NAVIGATOR_STYLES } =
+    await import("../renderer.mjs");
 const provider = await import("../extension.mjs");
 
 let workspace;
@@ -124,6 +127,17 @@ afterEach(async () => {
 });
 
 describe("renderer output", () => {
+    test("the vendored browser assets match their pinned manifest and notices", () => {
+        const manifest = JSON.parse(readFileSync(new URL("../vendor/manifest.json", import.meta.url), "utf8"));
+        expect(manifest.assets).toHaveLength(2);
+        for (const asset of manifest.assets) {
+            const contents = readFileSync(new URL(`../vendor/${asset.file}`, import.meta.url));
+            expect(createHash("sha256").update(contents).digest("hex")).toBe(asset.sha256);
+            expect(readFileSync(new URL(`../vendor/${asset.licenseFile}`, import.meta.url), "utf8").trim()).not.toBe("");
+            expect(asset.source).toStartWith("https://registry.npmjs.org/");
+        }
+    });
+
     test("escapes HTML metacharacters in every context", () => {
         expect(escapeHtml('<script>"x"&\'y\'</script>')).toBe(
             "&lt;script&gt;&quot;x&quot;&amp;&#39;y&#39;&lt;/script&gt;",
@@ -163,14 +177,62 @@ describe("renderer output", () => {
         expect(NAVIGATOR_STYLES).toContain("max-width: 60rem");
     });
 
-    test("the client script assigns artifact text through textContent only", () => {
-        expect(NAVIGATOR_SCRIPT).toContain("sourceEl.textContent = doc.source");
+    test("loads the pinned renderer before the sanitizer and application script", () => {
+        const html = renderNavigatorHtml({});
+        const marked = html.indexOf('src="vendor/marked.umd.js"');
+        const purifier = html.indexOf('src="vendor/purify.min.js"');
+        const application = html.indexOf('src="app.js"');
+        expect(marked).toBeGreaterThan(0);
+        expect(purifier).toBeGreaterThan(marked);
+        expect(application).toBeGreaterThan(purifier);
+    });
+
+    test("the client script uses a strict detached render-then-commit boundary", () => {
+        expect(NAVIGATOR_SCRIPT).toContain('html: function () { return ""; }');
+        expect(NAVIGATOR_SCRIPT).toContain("dropRawHtmlRegions(runtime.markdown.lexer(doc.source))");
+        expect(NAVIGATOR_SCRIPT).toContain("RETURN_DOM_FRAGMENT: true");
+        expect(NAVIGATOR_SCRIPT).toContain("ALLOWED_TAGS");
+        expect(NAVIGATOR_SCRIPT).toContain("FORBID_TAGS");
+        expect(NAVIGATOR_SCRIPT).not.toContain("USE_PROFILES");
+        expect(NAVIGATOR_SCRIPT).toContain("typeof markdown.lexer");
+        expect(NAVIGATOR_SCRIPT).toContain("typeof markdown.parser");
+        expect(NAVIGATOR_SCRIPT).toContain("typeof purifier.sanitize");
+        expect(NAVIGATOR_SCRIPT).toContain("sourceEl.replaceChildren(fragment)");
+        expect(NAVIGATOR_SCRIPT.match(/sourceEl\.replaceChildren/g)).toHaveLength(1);
+        expect(NAVIGATOR_SCRIPT).toContain('return label + (destination ? " (" + destination + ")" : "")');
+        expect(NAVIGATOR_SCRIPT).toContain("This artifact could not be rendered safely");
         expect(NAVIGATOR_SCRIPT).toContain("body.selectedArtifactId");
         expect(NAVIGATOR_SCRIPT).toContain("body.targetRevision");
         expect(NAVIGATOR_SCRIPT).not.toContain("innerHTML");
         expect(NAVIGATOR_SCRIPT).not.toContain("outerHTML");
         expect(NAVIGATOR_SCRIPT).not.toContain("document.write");
         expect(NAVIGATOR_SCRIPT).not.toContain("eval(");
+    });
+
+    test("drops complete inline raw HTML regions with the pinned Marked lexer", () => {
+        const moduleBox = { exports: {} };
+        runInNewContext(readFileSync(new URL("../vendor/marked.umd.js", import.meta.url), "utf8"), {
+            module: moduleBox,
+            exports: moduleBox.exports,
+            globalThis: {},
+        });
+        const marked = moduleBox.exports;
+        marked.use({ renderer: { html: () => "" } });
+
+        const source = [
+            'before <script>alert(1)</script> middle <span title="1 > 0">hidden <em>nested</em></span> after',
+            "",
+            "<div>block hidden</div>",
+            "",
+            "visible <!-- control marker --> **ordinary**",
+        ].join("\n");
+        const rendered = marked.parser(dropRawHtmlRegions(marked.lexer(source)));
+
+        expect(rendered).toContain("before  middle  after");
+        expect(rendered).toContain("visible  <strong>ordinary</strong>");
+        for (const hidden of ["alert(1)", "hidden", "nested", "block hidden", "control marker"]) {
+            expect(rendered).not.toContain(hidden);
+        }
     });
 });
 
@@ -188,7 +250,7 @@ describe("server routing and trust model", () => {
         expect(first.basePath).not.toBe(second.basePath);
     });
 
-    test("serves the document, stylesheet, and script under the capability path", async () => {
+    test("serves the document, stylesheet, application, and pinned vendor scripts under the capability path", async () => {
         const server = await startServer();
 
         const document = await call(server, `${server.basePath}/`);
@@ -202,6 +264,16 @@ describe("server routing and trust model", () => {
         const script = await call(server, `${server.basePath}/app.js`);
         expect(script.status).toBe(200);
         expect(script.headers.get("content-type")).toContain("text/javascript");
+
+        const marked = await call(server, `${server.basePath}/vendor/marked.umd.js`);
+        expect(marked.status).toBe(200);
+        expect(marked.headers.get("content-type")).toContain("text/javascript");
+        expect((await marked.text()).length).toBeGreaterThan(40000);
+
+        const purifier = await call(server, `${server.basePath}/vendor/purify.min.js`);
+        expect(purifier.status).toBe(200);
+        expect(purifier.headers.get("content-type")).toContain("text/javascript");
+        expect((await purifier.text()).length).toBeGreaterThan(25000);
     });
 
     test("sets restrictive security headers on every response", async () => {
