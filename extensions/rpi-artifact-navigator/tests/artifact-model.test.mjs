@@ -540,6 +540,7 @@ describe("metadata parsing", () => {
         expect(extractStatus("* Execution status: Partial\n")).toBe("Partial");
         expect(extractStatus("* Critique execution status: Complete\n", "plan-critique")).toBe("Complete");
         expect(extractStatus("* Execution status: Complete.\n")).toBe("Complete");
+        expect(extractStatus("* Execution status: Complete?!\n")).toBe("Complete");
         expect(extractStatus("* Critique execution status: Complete\n")).toBeNull();
         expect(extractStatus("Some prose mentioning Status: not metadata\n")).toBeNull();
         expect(extractStatus("# Title only\n")).toBeNull();
@@ -558,6 +559,15 @@ describe("metadata parsing", () => {
         const mixed = `${complete}\n| P02 | Second | Ready. | P02 |`;
         expect(extractStatus(mixed, "phase-details")).toBe("Ready");
         expect(extractStatus(mixed)).toBeNull();
+
+        const noTrailingPipes = [
+            "## Phase Index",
+            "",
+            "| Phase ID | Name | Status",
+            "|---|---|---",
+            "| P01 | First | Complete",
+        ].join("\n");
+        expect(extractStatus(noTrailingPipes, "phase-details")).toBe("Complete");
     });
 
     test("builds statuses from critique and phase-details artifact contracts", () => {

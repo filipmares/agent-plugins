@@ -153,11 +153,11 @@ function extractPhaseDetailsStatus(source) {
             }
             if (inPhaseIndex) break;
         }
-        if (!inPhaseIndex || !line.trim().startsWith("|") || !line.trim().endsWith("|")) continue;
+        const trimmed = line.trim();
+        if (!inPhaseIndex || !trimmed.startsWith("|")) continue;
 
-        const cells = line
-            .trim()
-            .slice(1, -1)
+        const cells = trimmed
+            .slice(1, trimmed.endsWith("|") ? -1 : undefined)
             .split("|")
             .map((cell) => cell.trim());
         if (statusColumn === -1) {
@@ -175,7 +175,7 @@ function extractPhaseDetailsStatus(source) {
 }
 
 function normalizeStatus(value) {
-    const normalized = value?.trim().replace(/\.$/, "").trim();
+    const normalized = value?.trim().replace(/[.!?]+$/, "").trim();
     return normalized || null;
 }
 
