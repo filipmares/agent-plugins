@@ -538,8 +538,49 @@ describe("metadata parsing", () => {
         expect(extractStatus("* Planning status: Ready\n")).toBe("Ready");
         expect(extractStatus("- **Status**: Blocked\n")).toBe("Blocked");
         expect(extractStatus("* Execution status: Partial\n")).toBe("Partial");
+        expect(extractStatus("* Critique execution status: Complete\n", "plan-critique")).toBe("Complete");
+        expect(extractStatus("* Execution status: Complete.\n")).toBe("Complete");
+        expect(extractStatus("* Critique execution status: Complete\n")).toBeNull();
         expect(extractStatus("Some prose mentioning Status: not metadata\n")).toBeNull();
         expect(extractStatus("# Title only\n")).toBeNull();
+    });
+
+    test("derives phase-details status from the first incomplete phase-index row", () => {
+        const complete = [
+            "## Phase Index",
+            "",
+            "| Phase ID | Name | Status | Detail sections |",
+            "|---|---|---|---|",
+            "| P01 | First | Complete | P01 |",
+        ].join("\n");
+        expect(extractStatus(complete, "phase-details")).toBe("Complete");
+
+        const mixed = `${complete}\n| P02 | Second | Ready. | P02 |`;
+        expect(extractStatus(mixed, "phase-details")).toBe("Ready");
+        expect(extractStatus(mixed)).toBeNull();
+    });
+
+    test("builds statuses from critique and phase-details artifact contracts", () => {
+        const summary = (id, source) =>
+            buildArtifactSummary({
+                id,
+                source,
+                sizeBytes: Buffer.byteLength(source),
+                modifiedAt: "2026-08-27T12:00:00.000Z",
+                sha256: "abc",
+            });
+        expect(
+            summary(
+                ".copilot-tracking/reviews/plans/2026-08-27/example-plan-critique.md",
+                "# Critique\n\n* Critique execution status: Complete\n",
+            ).status,
+        ).toBe("Complete");
+        expect(
+            summary(
+                ".copilot-tracking/details/2026-08-27/example-phase-details.md",
+                "# Details\n\n## Phase Index\n\n| Phase | Status |\n|---|---|\n| P01 | Complete |\n",
+            ).status,
+        ).toBe("Complete");
     });
 
     test("keeps a malformed artifact viewable with unknown metadata", () => {

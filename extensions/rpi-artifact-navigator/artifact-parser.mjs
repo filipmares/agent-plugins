@@ -138,21 +138,65 @@ export function extractTitle(headings) {
     return first === undefined ? null : first.text;
 }
 
-/**
- * Extract a status value from the common RPI metadata shapes.
- *
- * Only bullet metadata lines outside code fences are considered so that
- * narrative prose mentioning "Status" cannot be promoted to workflow state.
- */
-export function extractStatus(source) {
+function extractPhaseDetailsStatus(source) {
+    let inPhaseIndex = false;
+    let statusColumn = -1;
+    const statuses = [];
+
     for (const { line, inCode } of codeAwareLines(source)) {
         if (inCode) continue;
-        const match = line.match(/^\s*[-*]\s*(?:\*\*)?(Planning status|Execution status|Status)(?:\*\*)?\s*:\s*(.+?)\s*$/i);
-        if (match === null) continue;
-        const value = match[2].replace(/^\*+|\*+$/g, "").trim();
-        if (value !== "") return value;
+        const heading = line.match(/^#{1,6}\s+(.+?)\s*#*\s*$/);
+        if (heading !== null) {
+            if (/^Phase Index$/i.test(heading[1].trim())) {
+                inPhaseIndex = true;
+                continue;
+            }
+            if (inPhaseIndex) break;
+        }
+        if (!inPhaseIndex || !line.trim().startsWith("|") || !line.trim().endsWith("|")) continue;
+
+        const cells = line
+            .trim()
+            .slice(1, -1)
+            .split("|")
+            .map((cell) => cell.trim());
+        if (statusColumn === -1) {
+            statusColumn = cells.findIndex((cell) => /^Status$/i.test(cell));
+            continue;
+        }
+        if (cells.every((cell) => /^:?-{3,}:?$/.test(cell))) continue;
+
+        const value = normalizeStatus(cells[statusColumn]?.replace(/^\*+|\*+$/g, ""));
+        if (value) statuses.push(value);
     }
-    return null;
+
+    if (statuses.length === 0) return null;
+    return statuses.find((status) => !/^Complete$/i.test(status)) ?? statuses[0];
+}
+
+function normalizeStatus(value) {
+    const normalized = value?.trim().replace(/\.$/, "").trim();
+    return normalized || null;
+}
+
+/**
+ * Extract a status value from the metadata shape owned by an artifact kind.
+ *
+ * Only metadata outside code fences is considered so narrative prose cannot be
+ * promoted to workflow state.
+ */
+export function extractStatus(source, artifactType = "unknown") {
+    for (const { line, inCode } of codeAwareLines(source)) {
+        if (inCode) continue;
+        const match = line.match(
+            /^\s*[-*]\s*(?:\*\*)?(Planning status|Execution status|Critique execution status|Status)(?:\*\*)?\s*:\s*(.+?)\s*$/i,
+        );
+        if (match === null) continue;
+        if (/^Critique execution status$/i.test(match[1]) && artifactType !== "plan-critique") continue;
+        const value = normalizeStatus(match[2].replace(/^\*+|\*+$/g, ""));
+        if (value !== null) return value;
+    }
+    return artifactType === "phase-details" ? extractPhaseDetailsStatus(source) : null;
 }
 
 /**
@@ -161,13 +205,14 @@ export function extractStatus(source) {
  * `file` is the value returned by `readArtifactFile`.
  */
 export function buildArtifactSummary(file, headings = extractHeadings(file.source)) {
+    const type = classifyArtifact(file.id);
     return {
         id: file.id,
-        type: classifyArtifact(file.id),
+        type,
         date: extractDate(file.id),
         taskSlug: extractTaskSlug(file.id),
         title: extractTitle(headings),
-        status: extractStatus(file.source),
+        status: extractStatus(file.source, type),
         modifiedAt: file.modifiedAt,
         sizeBytes: file.sizeBytes,
     };

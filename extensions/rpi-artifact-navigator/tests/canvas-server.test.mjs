@@ -66,7 +66,16 @@ mock.module("@github/copilot-sdk/extension", () => ({
 const { ArtifactError, ERROR_CODES, LIMITS } = await import("../artifact-index.mjs");
 const { selectTaskChanges } = await import("../artifact-monitor.mjs");
 const { createNavigatorServer, buildArtifactList } = await import("../server.mjs");
-const { escapeHtml, renderNavigatorHtml, NAVIGATOR_SCRIPT, NAVIGATOR_STYLES } = await import("../renderer.mjs");
+const {
+    ARTIFACT_READING_STEPS,
+    STATUS_TONE_RULES,
+    classifyStatusTone,
+    compareArtifactsForReading,
+    escapeHtml,
+    renderNavigatorHtml,
+    NAVIGATOR_SCRIPT,
+    NAVIGATOR_STYLES,
+} = await import("../renderer.mjs");
 const provider = await import("../extension.mjs");
 
 let workspace;
@@ -171,6 +180,77 @@ describe("renderer output", () => {
         expect(NAVIGATOR_SCRIPT).not.toContain("outerHTML");
         expect(NAVIGATOR_SCRIPT).not.toContain("document.write");
         expect(NAVIGATOR_SCRIPT).not.toContain("eval(");
+    });
+
+    test("uses one canonical lifecycle contract in tests and the production script", () => {
+        expect(ARTIFACT_READING_STEPS).toEqual([
+            { type: "research", position: 1, label: "Research" },
+            { type: "plan", position: 2, label: "Plan" },
+            { type: "phase-details", position: 3, label: "Details" },
+            { type: "plan-critique", position: 4, label: "Critique" },
+            { type: "changes", position: 5, label: "Changes" },
+            { type: "review-log", position: 6, label: "Review" },
+        ]);
+        expect(NAVIGATOR_SCRIPT).toContain(`var READING_STEPS = ${JSON.stringify(ARTIFACT_READING_STEPS)};`);
+        expect(NAVIGATOR_SCRIPT).toContain("group.items.sort(readingOrder)");
+    });
+
+    test("orders known, sparse, tied, and unknown artifacts by lifecycle", () => {
+        const artifact = (type, id, modifiedAt = "2026-09-01T12:00:00.000Z") => ({ type, id, modifiedAt });
+        const mixed = [
+            artifact("unknown", "other"),
+            artifact("changes", "changes"),
+            artifact("research", "research"),
+            artifact("plan-critique", "critique"),
+            artifact("review-log", "review"),
+            artifact("phase-details", "details"),
+            artifact("plan", "plan"),
+        ];
+        expect(mixed.sort(compareArtifactsForReading).map((item) => item.id)).toEqual([
+            "research",
+            "plan",
+            "details",
+            "critique",
+            "changes",
+            "review",
+            "other",
+        ]);
+
+        const sparse = [artifact("changes", "changes"), artifact("research", "research")];
+        expect(sparse.sort(compareArtifactsForReading).map((item) => item.id)).toEqual(["research", "changes"]);
+
+        const ties = [
+            artifact("plan", "older", "2026-09-01T10:00:00.000Z"),
+            artifact("plan", "newer", "2026-09-01T11:00:00.000Z"),
+            artifact("other-a", "z"),
+            artifact("other-b", "a"),
+        ];
+        expect(ties.sort(compareArtifactsForReading).map((item) => item.id)).toEqual(["newer", "older", "a", "z"]);
+    });
+
+    test("exposes phase labels and rail semantics without instructional chrome", () => {
+        const html = renderNavigatorHtml({});
+        expect(html).not.toContain("Newest tasks first");
+        expect(html).not.toContain('class="list-guide"');
+        expect(NAVIGATOR_SCRIPT).toContain('step === null ? "Other" : step.label');
+        expect(NAVIGATOR_SCRIPT).toContain('label = (artifact.title || artifact.id) + ", " + readingLabel');
+        expect(NAVIGATOR_SCRIPT).toContain('li.className = "artifact-step"');
+        expect(NAVIGATOR_STYLES).toContain(".artifact-step::before");
+        expect(NAVIGATOR_STYLES).toContain(".artifact-step--current::after");
+        expect(NAVIGATOR_STYLES).toContain('grid-template-areas:');
+        expect(NAVIGATOR_STYLES).toContain(".item__state");
+        expect(NAVIGATOR_SCRIPT).toContain('el("span", "item__state", artifact.status)');
+    });
+
+    test("uses semantic state colors from one production-linked tone contract", () => {
+        expect(classifyStatusTone("Ready")).toBe("accent");
+        expect(classifyStatusTone("Complete")).toBe("success");
+        expect(classifyStatusTone("Conformant with justified divergence")).toBe("success");
+        expect(classifyStatusTone("In progress")).toBe("attention");
+        expect(classifyStatusTone("Blocked")).toBe("danger");
+        expect(classifyStatusTone("Draft")).toBe("neutral");
+        expect(NAVIGATOR_SCRIPT).toContain(`var STATUS_TONE_RULES = ${JSON.stringify(STATUS_TONE_RULES)};`);
+        expect(NAVIGATOR_SCRIPT).toContain('itemState.setAttribute("data-tone", statusTone(artifact.status))');
     });
 });
 
