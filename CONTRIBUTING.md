@@ -113,10 +113,10 @@ Working rules for that extension:
 - Extension modules depend only on the Node standard library and `@github/copilot-sdk`. Do not introduce a package manifest, lockfile, or third-party dependency unless the extension requires it.
 - Browser-only third-party code must remain pinned and offline under
   `extensions/rpi-artifact-navigator/vendor/`. Update `vendor/manifest.json`
-  with the exact version, npm tarball member, and SHA-256 digest; preserve the
-  selected upstream license under `third-party-licenses/`; and serve only named
-  files through capability-scoped routes. Do not add a CDN or general static
-  file route.
+  with the exact version, npm tarball member, license source, and SHA-256
+  digest; preserve the selected upstream license verbatim under
+  `third-party-licenses/`; and serve only named files through capability-scoped
+  routes. Do not add a CDN or general static file route.
 - The Markdown boundary must drop raw HTML before DOMPurify, use explicit tag
   and attribute allowlists, build a detached fragment, and commit successful
   content once. Do not combine DOMPurify `USE_PROFILES` with `ALLOWED_TAGS`,

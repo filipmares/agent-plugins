@@ -66,10 +66,11 @@ RPI Artifact Navigator:
   stealing focus. Closing a panel suppresses edit-driven reopening for that task
   until a new artifact appears.
 - Data available per artifact: workspace-relative id (path), kind, date, task
-  slug, title (first H1), status (parsed from `Status` / `Planning status` /
-  `Execution status` bullets, outside code fences), last-modified time, size in
-  bytes, SHA-256, the full ATX heading outline with level and source line, and
-  the exact source text. Unknown metadata is reported as `null`, never invented.
+  slug, title (first H1), status (parsed from kind-owned metadata outside code
+  fences, including phase-index tables and critique execution status),
+  last-modified time, size in bytes, SHA-256, the full ATX heading outline with
+  level and source line, and the exact source text. Unknown metadata is reported
+  as `null`, never invented.
 - Markdown is never converted to HTML. Source text is displayed as inert text.
 - Hard ceilings that fail explicitly rather than truncate: 200 artifacts,
   1 MiB per file, 500 headings, 1.5 MiB response.
@@ -97,8 +98,8 @@ resource, so `img-src` does not govern it; it must carry no `xmlns` attribute
   app chrome — neutral and unobtrusive — and should sit alongside GitHub Primer
   and github.com/Copilot app surfaces, whose craft level is the bar.
 - Confirmed by the user: the redesign may add navigation capabilities that the
-  existing data already supports (filter/search, grouping by task and date, copy
-  path). It may not invent data.
+  existing data already supports (filter/search, grouping by task and date,
+  lifecycle reading order, copy path). It may not invent data.
 - Revised by the user after seeing the build: no heading outline. Artifacts are
   read whole, so a parallel outline pane is not worth its width. Headings are
   still parsed and their count is still reported; only the navigator pane is

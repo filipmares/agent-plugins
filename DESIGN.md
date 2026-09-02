@@ -146,6 +146,12 @@ holds the previous modified-time of every artifact, so the one thing it does
 that a plain file tree cannot is tell the visitor what moved while they were
 away. That single idea earns the design's only reserved uses of color: the
 accent marks selection, focus, and change, and nothing else.
+Task groups remain newest-first, while artifacts inside each task follow the
+fixed RPI reading sequence Research, Plan, Details, Critique, Changes, Review.
+The available artifacts form a quiet vertical phase rail: neutral dots and
+phase names carry sequence without prefixed numbers, while the current dot uses
+the existing accent. Missing phases create no placeholders; unknown kinds follow
+as hollow-dot Other artifacts.
 Everything visible is drawn from a system font stack, a color, CSS geometry, or
 an inline SVG authored directly in the markup — the served Content-Security-Policy
 forbids *fetched* images, icon fonts, web fonts, remote assets, `data:` URLs, and
@@ -203,11 +209,13 @@ in `.impeccable/design.json`.
 - **Foreground Muted** (`#59636e` / `#9198a1`, `--fg-muted`): Metadata, labels,
   counts, placeholders, chevrons, and the resting status dot.
 
-### State hues (status line only)
+### State hues
 - **Success** (`#1a7f37` / `#3fb950`), **Attention** (`#9a6700` / `#d29922`),
   **Severe** (`#bc4c00` / `#db6d28`), **Danger** (`#cf222e` / `#f85149`),
-  **Done** (`#8250df` / `#ab7df8`). These color the live status region's dot and,
-  for errors, its text. They are a reserved palette; do not spend them on chrome.
+  **Done** (`#8250df` / `#ab7df8`). These color the live status region and the
+  artifact row's state text. Ready uses accent, complete/passed/conformant use
+  success, in-progress/partial/revise use attention, and blocked/failed use
+  danger. Unknown states remain neutral.
 
 ### Named Rules
 **The Reserved Accent Rule.** Blue means one of exactly three things: this is
@@ -387,10 +395,9 @@ inline `<style>` or `<script>`.
   filled arrowhead in `currentColor` (see the Authored, Never Fetched Rule).
 
 ### Chips & Pills
-- **Status pill (`.pill`):** `--canvas-subtle` fill, `--border` stroke,
+- **Document status pill (`.pill`):** `--canvas-subtle` fill, `--border` stroke,
   `--fg-muted` text, fully rounded (`999px`), `max-width: 12rem` with ellipsis.
-  Carries the parsed artifact status ("in progress", etc.). It is neutral — a
-  pill is not a colored badge.
+  It appears only in the open document identity line.
 - **Kind label (`.kind`):** inline, weight 500, `--fg`, *no* background or
   border. Category is a weighted word, never a chip (see the Uncolored Category
   Rule).
@@ -442,8 +449,10 @@ inline `<style>` or `<script>`.
 
 ### Artifact Row (signature)
 - **Structure:** a full-width `<button>` with a 2px transparent left border, a
-  13px title, and a meta line (kind label · relative time · optional status pill
-  · optional change flag).
+  two-row grid, and a 13px title. The lower row keeps kind and relative time at
+  the left while normalized status is plain, weighted text anchored at the
+  right. The optional change flag owns a reserved terminal column across both
+  rows, so neither long titles nor status presence moves it.
 - **States:** hover `--canvas-hover`, active `--canvas-active`. Selected
   (`aria-current="true"`, now the only `aria-current` state in the panel) →
   `--accent-subtle` fill, `--accent` left border, bold title. **Changed** rows
@@ -497,7 +506,7 @@ inline `<style>` or `<script>`.
 - **Don't** color artifact category. Kind is a weighted `--fg` label; a colored
   chip would read as status on a Primer surface.
 - **Don't** spend the state hues (success / attention / severe / danger / done)
-  on chrome — they belong to the status line.
+ on decorative chrome — they belong to live status and artifact state text.
 - **Don't** put an `xmlns` or a `style` attribute on inline SVG. The parser
   assigns the SVG namespace, and a literal `xmlns="http://..."` adds an `http://`
   string the test suite forbids; inline `style` is blocked by `style-src 'self'`.

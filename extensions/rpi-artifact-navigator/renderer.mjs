@@ -108,6 +108,40 @@ export function dropRawHtmlRegions(tokens) {
     return cleanArray(Array.isArray(tokens) ? tokens : []);
 }
 
+export const ARTIFACT_READING_STEPS = Object.freeze([
+    Object.freeze({ type: "research", position: 1, label: "Research" }),
+    Object.freeze({ type: "plan", position: 2, label: "Plan" }),
+    Object.freeze({ type: "phase-details", position: 3, label: "Details" }),
+    Object.freeze({ type: "plan-critique", position: 4, label: "Critique" }),
+    Object.freeze({ type: "changes", position: 5, label: "Changes" }),
+    Object.freeze({ type: "review-log", position: 6, label: "Review" }),
+]);
+
+export const STATUS_TONE_RULES = Object.freeze([
+    Object.freeze({ tone: "danger", terms: Object.freeze(["blocked", "failed", "error", "not accepted"]) }),
+    Object.freeze({ tone: "attention", terms: Object.freeze(["in progress", "partial", "revise", "needs clarification"]) }),
+    Object.freeze({ tone: "success", terms: Object.freeze(["complete", "passed", "conformant", "accepted"]) }),
+    Object.freeze({ tone: "accent", terms: Object.freeze(["ready"]) }),
+]);
+
+const ARTIFACT_READING_POSITIONS = new Map(ARTIFACT_READING_STEPS.map((step) => [step.type, step.position]));
+
+export function classifyStatusTone(status) {
+    const normalized = String(status ?? "").trim().toLowerCase();
+    for (const rule of STATUS_TONE_RULES) {
+        if (rule.terms.some((term) => normalized.includes(term))) return rule.tone;
+    }
+    return "neutral";
+}
+
+export function compareArtifactsForReading(left, right) {
+    const leftPosition = ARTIFACT_READING_POSITIONS.get(left.type) ?? Number.POSITIVE_INFINITY;
+    const rightPosition = ARTIFACT_READING_POSITIONS.get(right.type) ?? Number.POSITIVE_INFINITY;
+    if (leftPosition !== rightPosition) return leftPosition - rightPosition;
+    if (left.modifiedAt !== right.modifiedAt) return left.modifiedAt < right.modifiedAt ? 1 : -1;
+    return left.id.localeCompare(right.id);
+}
+
 export const NAVIGATOR_STYLES = `
 :root {
   color-scheme: light dark;
@@ -321,7 +355,6 @@ h1 {
 }
 .filter__input:focus ~ .filter__hint,
 .filter__input:not(:placeholder-shown) ~ .filter__hint { opacity: 0; }
-
 /* List items --------------------------------------------------------- */
 
 .group__label {
@@ -340,7 +373,13 @@ h1 {
 .group__count { margin-left: auto; font-variant-numeric: tabular-nums; }
 
 .item {
-  display: block;
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "title flag"
+    "meta flag";
+  column-gap: 0.5rem;
   width: 100%;
   text-align: left;
   font: inherit;
@@ -348,28 +387,67 @@ h1 {
   background: none;
   border: 0;
   border-left: 2px solid transparent;
-  padding: 0.375rem 0.75rem 0.4375rem calc(0.75rem - 2px);
+  padding: 0.375rem 0.75rem 0.4375rem calc(2rem - 2px);
   cursor: pointer;
   overflow-wrap: anywhere;
   transition: background-color 120ms ease;
+}
+.artifact-step {
+  position: relative;
+}
+.artifact-step::before {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  bottom: 0;
+  left: 0.9975rem;
+  width: 1px;
+  background: var(--border);
+  pointer-events: none;
+}
+.artifact-step:first-child::before { top: 1.0625rem; }
+.artifact-step:last-child::before { bottom: calc(100% - 1.0625rem); }
+.artifact-step::after {
+  content: "";
+  position: absolute;
+  z-index: 2;
+  top: 0.875rem;
+  left: 0.8125rem;
+  width: 0.4375rem;
+  height: 0.4375rem;
+  border: 2px solid var(--canvas);
+  border-radius: 50%;
+  background: var(--border-strong);
+  pointer-events: none;
+}
+.artifact-step--other::after {
+  border: 1px solid var(--border-strong);
+  background: var(--canvas);
+}
+.artifact-step--current::after {
+  background: var(--accent);
 }
 .item:hover { background: var(--canvas-hover); }
 .item:active { background: var(--canvas-active); }
 .item[aria-current="true"] { background: var(--accent-subtle); border-left-color: var(--accent); }
 .item[aria-current="true"] .item__title { font-weight: 600; }
-.item__title { display: block; font-size: 0.8125rem; line-height: 1.4; }
+.item__title { grid-area: title; display: block; min-width: 0; font-size: 0.8125rem; line-height: 1.4; }
 .item__meta {
-  display: flex;
+  grid-area: meta;
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
   align-items: center;
-  flex-wrap: wrap;
-  gap: 0.25rem 0.5rem;
+  gap: 0.5rem;
+  min-width: 0;
   margin-top: 0.1875rem;
   font-size: 0.75rem;
   color: var(--fg-muted);
 }
 .item__flag {
+  grid-area: flag;
+  align-self: center;
   flex: none;
-  margin-left: auto;
   width: 0.4375rem;
   height: 0.4375rem;
   border-radius: 50%;
@@ -381,6 +459,20 @@ h1 {
 .kind { display: inline-flex; align-items: center; font-weight: 500; color: var(--fg); }
 
 .time { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.item__state {
+  min-width: 0;
+  max-width: 8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  justify-self: end;
+  color: var(--fg);
+  font-weight: 500;
+}
+.item__state[data-tone="accent"] { color: var(--accent); }
+.item__state[data-tone="success"] { color: var(--success); }
+.item__state[data-tone="attention"] { color: var(--attention); }
+.item__state[data-tone="danger"] { color: var(--danger); }
 
 .pill {
   display: inline-block;
@@ -738,6 +830,9 @@ export const NAVIGATOR_SCRIPT = String.raw`
     "unknown": "Artifact"
   };
 
+  var READING_STEPS = ${JSON.stringify(ARTIFACT_READING_STEPS)};
+  var STATUS_TONE_RULES = ${JSON.stringify(STATUS_TONE_RULES)};
+
   var state = {
     artifacts: [],
     selectedId: null,
@@ -830,6 +925,24 @@ export const NAVIGATOR_SCRIPT = String.raw`
     return KIND_LABELS[type] || KIND_LABELS.unknown;
   }
 
+  function readingStep(type) {
+    for (var i = 0; i < READING_STEPS.length; i++) {
+      if (READING_STEPS[i].type === type) return READING_STEPS[i];
+    }
+    return null;
+  }
+
+  function statusTone(status) {
+    var normalized = String(status || "").trim().toLowerCase();
+    for (var i = 0; i < STATUS_TONE_RULES.length; i++) {
+      var rule = STATUS_TONE_RULES[i];
+      for (var j = 0; j < rule.terms.length; j++) {
+        if (normalized.indexOf(rule.terms[j]) !== -1) return rule.tone;
+      }
+    }
+    return "neutral";
+  }
+
   function relativeTime(iso) {
     var at = Date.parse(iso);
     if (!isFinite(at)) return "time unknown";
@@ -896,11 +1009,16 @@ export const NAVIGATOR_SCRIPT = String.raw`
       group.items.push(artifact);
       if (artifact.modifiedAt > group.latest) group.latest = artifact.modifiedAt;
     });
-    function newestFirst(a, b) {
+    function readingOrder(a, b) {
+      var aStep = readingStep(a.type);
+      var bStep = readingStep(b.type);
+      var aPosition = aStep === null ? Number.POSITIVE_INFINITY : aStep.position;
+      var bPosition = bStep === null ? Number.POSITIVE_INFINITY : bStep.position;
+      if (aPosition !== bPosition) return aPosition - bPosition;
       if (a.modifiedAt !== b.modifiedAt) return a.modifiedAt < b.modifiedAt ? 1 : -1;
-      return a.id < b.id ? -1 : 1;
+      return a.id.localeCompare(b.id);
     }
-    groups.forEach(function (group) { group.items.sort(newestFirst); });
+    groups.forEach(function (group) { group.items.sort(readingOrder); });
     groups.sort(function (a, b) {
       if (a.latest !== b.latest) return a.latest < b.latest ? 1 : -1;
       return a.key < b.key ? -1 : 1;
@@ -942,21 +1060,24 @@ export const NAVIGATOR_SCRIPT = String.raw`
     button.appendChild(el("span", "item__title", artifact.title || artifact.id.split("/").pop()));
 
     var meta = el("span", "item__meta");
-    meta.appendChild(el("span", "kind", kindLabel(artifact.type)));
+    var step = readingStep(artifact.type);
+    var readingLabel = step === null ? "Other" : step.label;
+    meta.appendChild(el("span", "kind", readingLabel));
     addTime(meta, artifact);
     if (artifact.status) {
-      var pill = el("span", "pill", artifact.status);
-      pill.title = "Status " + artifact.status;
-      meta.appendChild(pill);
+      var itemState = el("span", "item__state", artifact.status);
+      itemState.title = "Status " + artifact.status;
+      itemState.setAttribute("data-tone", statusTone(artifact.status));
+      meta.appendChild(itemState);
     }
+    button.appendChild(meta);
     if (state.changed[artifact.id]) {
       var flag = el("span", "item__flag");
       flag.title = "Written since you last opened it";
-      meta.appendChild(flag);
+      button.appendChild(flag);
     }
-    button.appendChild(meta);
 
-    var label = (artifact.title || artifact.id) + ", " + kindLabel(artifact.type);
+    var label = (artifact.title || artifact.id) + ", " + readingLabel;
     if (artifact.status) label += ", status " + artifact.status;
     if (state.changed[artifact.id]) label += ", updated";
     button.setAttribute("aria-label", label);
@@ -1016,6 +1137,9 @@ export const NAVIGATOR_SCRIPT = String.raw`
       sublist.setAttribute("aria-label", "Artifacts for " + group.key);
       group.items.forEach(function (artifact) {
         var li = el("li");
+        li.className = "artifact-step";
+        if (readingStep(artifact.type) === null) li.className += " artifact-step--other";
+        if (artifact.id === state.selectedId) li.className += " artifact-step--current";
         li.appendChild(buildItem(artifact));
         sublist.appendChild(li);
       });
