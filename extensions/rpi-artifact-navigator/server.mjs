@@ -20,6 +20,7 @@
 
 import { randomBytes } from "node:crypto";
 import { createServer } from "node:http";
+import { readFile } from "node:fs/promises";
 
 import {
     ArtifactError,
@@ -30,6 +31,11 @@ import {
 } from "./artifact-index.mjs";
 import { buildArtifactDocument, buildArtifactSummary } from "./artifact-parser.mjs";
 import { NAVIGATOR_SCRIPT, NAVIGATOR_STYLES, renderNavigatorHtml } from "./renderer.mjs";
+
+const [MARKED_SCRIPT, DOMPURIFY_SCRIPT] = await Promise.all([
+    readFile(new URL("./vendor/marked.umd.js", import.meta.url), "utf8"),
+    readFile(new URL("./vendor/purify.min.js", import.meta.url), "utf8"),
+]);
 
 const CONTENT_SECURITY_POLICY = [
     "default-src 'none'",
@@ -197,6 +203,14 @@ export async function createNavigatorServer({ workspaceRoot, title, selectedArti
                 }
                 if (route === "/app.js") {
                     sendText(res, 200, "text/javascript; charset=utf-8", NAVIGATOR_SCRIPT);
+                    return;
+                }
+                if (route === "/vendor/marked.umd.js") {
+                    sendText(res, 200, "text/javascript; charset=utf-8", MARKED_SCRIPT);
+                    return;
+                }
+                if (route === "/vendor/purify.min.js") {
+                    sendText(res, 200, "text/javascript; charset=utf-8", DOMPURIFY_SCRIPT);
                     return;
                 }
                 if (route === "/api/artifacts") {

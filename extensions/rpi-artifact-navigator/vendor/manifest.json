@@ -1,0 +1,24 @@
+{
+  "assets": [
+    {
+      "name": "marked",
+      "version": "18.0.11",
+      "file": "marked.umd.js",
+      "source": "https://registry.npmjs.org/marked/-/marked-18.0.11.tgz#package/lib/marked.umd.js",
+      "sha256": "69451c8541c9c1e7a4bf3ffc6f73c4d89633de92bfbe3e484dfe182ef8091f88",
+      "license": "MIT",
+      "licenseSource": "https://registry.npmjs.org/marked/-/marked-18.0.11.tgz#package/LICENSE",
+      "licenseFile": "../third-party-licenses/marked.txt"
+    },
+    {
+      "name": "dompurify",
+      "version": "3.4.14",
+      "file": "purify.min.js",
+      "source": "https://registry.npmjs.org/dompurify/-/dompurify-3.4.14.tgz#package/dist/purify.min.js",
+      "sha256": "c2f26ea4fc0d88141c9aa430eb515ac86fce59418ceebd85fa475b87a8d6c3e6",
+      "license": "Apache-2.0",
+      "licenseSource": "https://registry.npmjs.org/dompurify/-/dompurify-3.4.14.tgz#package/LICENSE",
+      "licenseFile": "../third-party-licenses/dompurify.txt"
+    }
+  ]
+}
