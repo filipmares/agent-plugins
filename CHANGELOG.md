@@ -7,6 +7,10 @@ and plugin versioning follows [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## [Unreleased]
 
+### Added — RPI Artifact Navigator plugin distribution
+- The `agent-plugins` plugin manifest now declares `extensions: ["extensions/rpi-artifact-navigator"]`, so installing the plugin installs the canvas and `copilot plugin update agent-plugins` delivers canvas updates. Previously the canvas was reachable only through a manual **Import canvas from repo** copy, which had no update channel — a plugin version bump did not reach it. Unlike the removed `hve-core-canvas` package, this needs no second plugin and no `../../extensions` symlink, because the repo root is already the plugin source.
+- Bumped the plugin and marketplace manifests to `2.1.0`.
+
 ### Added — RPI Artifact Navigator targeting
 - Added self-contained RPI artifact change detection, automatic task-scoped opening, per-instance refresh isolation, and active-artifact selection without requiring HVE Core changes.
 

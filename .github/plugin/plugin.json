@@ -1,7 +1,7 @@
 {
   "name": "agent-plugins",
   "description": "Developer skills plus an evidence-based Copilot code review agent for reviewing supplied changes without implementing fixes.",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "author": {
     "name": "filipmares"
   },
@@ -22,5 +22,8 @@
   ],
   "agents": [
     ".github/agents/copilot-code-review.agent.md"
+  ],
+  "extensions": [
+    "extensions/rpi-artifact-navigator"
   ]
 }

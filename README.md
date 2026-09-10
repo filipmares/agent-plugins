@@ -8,24 +8,32 @@ Skills are packaged instructions (and optional supporting files) that extend an 
 
 ### GitHub Copilot CLI
 
-This repo is also a [Copilot CLI plugin marketplace](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/plugins-marketplace). Register it once, then install the bundled plugin (five skills and the **Copilot Code Review** agent):
+This repo is also a [Copilot CLI plugin marketplace](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/plugins-marketplace). Register it once, then install the bundled plugin (five skills, the **Copilot Code Review** agent, and the **RPI Artifact Navigator** canvas):
 
 ```bash
 copilot plugin marketplace add filipmares/agent-plugins
 copilot plugin install agent-plugins@agent-plugins
 ```
 
-Update later with `copilot plugin update agent-plugins`.
+Update later with `copilot plugin update agent-plugins`. Updates are pull-based:
+a self-registered marketplace does not auto-update unless you set
+`"autoUpdate": true` on its `extraKnownMarketplaces` entry in your user settings.
 
 ### Experimental canvas extension
 
-The repository contains an optional, standalone **RPI Artifact Navigator**
-canvas under [`extensions/rpi-artifact-navigator/`](./extensions/rpi-artifact-navigator).
-It is not project-scoped and is not activated just by opening this repository.
+The plugin ships an optional **RPI Artifact Navigator** canvas under
+[`extensions/rpi-artifact-navigator/`](./extensions/rpi-artifact-navigator).
+Installing the plugin installs the canvas with it, so
+`copilot plugin update agent-plugins` also delivers canvas updates. The canvas
+loads only while the `agent-plugins` plugin is enabled, and it can be disabled
+on its own without uninstalling the plugin. It is not project-scoped and is not
+activated just by opening this repository.
 
-In the GitHub Copilot app, open **Customize → Extensions → Import canvas from
-repo**, choose `filipmares/agent-plugins`, and select
-`extensions/rpi-artifact-navigator/` when prompted. Canvas support is experimental and verified only on macOS with the GitHub
+To take the canvas without the plugin, open **Customize → Extensions → Import
+canvas from repo** in the GitHub Copilot app, choose `filipmares/agent-plugins`,
+and select `extensions/rpi-artifact-navigator/` when prompted. A manual import is
+a one-time copy that receives no further updates — re-import to pick up changes.
+Canvas support is experimental and verified only on macOS with the GitHub
 Copilot app.
 
 See [`extensions/rpi-artifact-navigator/`](./extensions/rpi-artifact-navigator)

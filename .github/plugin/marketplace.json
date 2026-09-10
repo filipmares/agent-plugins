@@ -5,14 +5,14 @@
   },
   "metadata": {
     "description": "Skills that boost productivity for developers and anyone working with AI agents",
-    "version": "2.0.0"
+    "version": "2.1.0"
   },
   "plugins": [
     {
       "name": "agent-plugins",
       "source": ".",
       "description": "Developer skills plus an evidence-based Copilot code review agent for reviewing supplied changes without implementing fixes.",
-      "version": "2.0.0",
+      "version": "2.1.0",
       "category": "development-tools",
       "author": {
         "name": "filipmares"
