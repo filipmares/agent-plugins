@@ -74,9 +74,13 @@ and background tokens rather than depending on app-internal variables.
   Enter opens the focused folder. These navigation keys do not intercept
   editing. Rich editing uses Markdown input shortcuts and standard Mod+B,
   Mod+I, Mod+Shift+S (strike), Mod+E (code), Mod+Z / Mod+Shift+Z.
-  Mod+K opens the link popover (edit, remove, or open).
+  Mod+K opens the link popover (edit, remove, or open). Typing
+  `[label](https://…)` turns the label into a link when the closing `)` is
+  typed (http, https and mailto only; other addresses stay literal text).
+  Typing a row such as `| Name | Status |` on its own top-level line and
+  pressing Enter creates a table with that header and one empty row.
   Table Tab / Shift+Tab moves between cells; Tab at the end adds a row.
-  Creating tables or adding columns requires Markdown view.
+  Adding columns requires Markdown view.
 
 **View as Markdown** switches to the monospace textarea. Opening or switching
 views without edits never rewrites the body. A semantic round-trip check

@@ -3,6 +3,8 @@ import { Editor, Extension, InputRule, Node, type JSONContent } from "@tiptap/co
 import StarterKit from "@tiptap/starter-kit";
 import { ListItem } from "@tiptap/extension-list";
 import { Table, TableRow, TableCell, TableHeader } from "@tiptap/extension-table";
+import { Selection, type EditorState, type Transaction } from "@tiptap/pm/state";
+import { closeHistory } from "@tiptap/pm/history";
 import { markdownToDoc, roundTripSafe, serializeEdit } from "./rich-codec";
 
 export const safeExternal = (value: string) => {
@@ -11,6 +13,41 @@ export const safeExternal = (value: string) => {
     } catch { return false; }
 };
 const localImage = (value: string) => value !== "" && !/^(?:[a-z][a-z\d+.-]*:|[\\/])/i.test(value);
+
+// Typing ")" that completes [label](https://…) turns the label into a link; unsafe or code contexts stay literal.
+// Returns the typed ")" and the conversion as separate steps so undo restores the literal syntax.
+export function typedLink(state: EditorState, from: number, to: number, text: string): [Transaction, Transaction] | null {
+    const $from = state.doc.resolve(from);
+    const { code, link } = state.schema.marks;
+    if (text !== ")" || from !== to || $from.parent.type.spec.code || (state.storedMarks ?? $from.marks()).some(mark => mark.type === code)) return null;
+    const match = /\[([^[\]\ufffc]+)\]\(([^()\s\ufffc]+)$/.exec($from.parent.textBetween(0, $from.parentOffset, undefined, "\ufffc"));
+    if (!match || !safeExternal(match[2])) return null;
+    const start = $from.start() + match.index;
+    if (state.doc.rangeHasMark(start, from, code)) return null;
+    const insert = state.tr.insertText(text, from, to);
+    const labelEnd = start + 1 + match[1].length;
+    const convert = state.apply(insert).tr.delete(labelEnd, from + text.length).delete(start, start + 1)
+        .addMark(start, labelEnd - 1, link.create({ href: match[2] })).removeStoredMark(link);
+    return [insert, closeHistory(convert)];
+}
+
+// Enter after a top-level "| A | B |" line turns it into a header row plus one empty body row.
+export function typedTable(state: EditorState): Transaction | null {
+    const { $from, empty } = state.selection;
+    if (!empty || $from.depth !== 1 || $from.parent.type.name !== "paragraph" || $from.parentOffset !== $from.parent.content.size) return null;
+    let plain = true;
+    $from.parent.forEach(node => { if (!node.isText || node.marks.length) plain = false; });
+    const row = plain && /^\s*\|(.*)\|\s*$/.exec($from.parent.textContent);
+    const cells = row ? row[1].split("|").map(cell => cell.trim()) : [];
+    if (!cells.some(Boolean)) return null;
+    const { table, tableRow, tableHeader, tableCell, paragraph } = state.schema.nodes;
+    const para = (value = "") => paragraph.create(null, value ? state.schema.text(value) : null);
+    const header = tableRow.create(null, cells.map(cell => tableHeader.create(null, para(cell))));
+    const body = tableRow.create(null, cells.map(() => tableCell.create(null, para())));
+    const at = $from.before();
+    const tr = state.tr.replaceWith(at, $from.after(), table.create(null, [header, body]));
+    return closeHistory(tr.setSelection(Selection.near(tr.doc.resolve(at + 1 + header.nodeSize))));
+}
 
 const ChecklistItem = ListItem.extend({
     addAttributes() {
@@ -168,7 +205,12 @@ export function createRichEditor(options: {
         addKeyboardShortcuts() {
             return {
                 "Mod-k": () => { options.link(); return true; },
-                Enter: () => this.editor.isActive("table") ? this.editor.commands.goToNextCell() : false,
+                Enter: () => {
+                    if (this.editor.isActive("table")) return this.editor.commands.goToNextCell();
+                    const tr = typedTable(this.editor.state);
+                    if (tr) this.editor.view.dispatch(tr);
+                    return !!tr;
+                },
                 "Shift-Enter": tableBreak,
                 "Mod-Enter": tableBreak,
             };
@@ -181,6 +223,13 @@ export function createRichEditor(options: {
         content: markdownToDoc(options.body),
         editorProps: {
             attributes: { role: "textbox", "aria-label": "Note", "aria-multiline": "true", spellcheck: "true" },
+            handleTextInput: (view, from, to, text) => {
+                const steps = view.composing ? null : typedLink(view.state, from, to, text);
+                if (!steps) return false;
+                view.dispatch(steps[0]);
+                if (view.state.doc.eq(steps[1].before)) view.dispatch(steps[1]);
+                return true;
+            },
             handleDOMEvents: {
                 auxclick: (_view, event) => {
                     if (!(event.target as HTMLElement).closest("a")) return false;
