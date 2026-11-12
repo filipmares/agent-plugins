@@ -341,12 +341,14 @@ textarea.addEventListener("input", () => {
 textarea.addEventListener("blur", () => void save());
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") void save(); });
 // The server finishes any in-flight save first, then saves this text or keeps it for recovery on the next open.
+// An unresolved conflict is only kept, never saved: closing must not choose Keep Mine for the user.
 // Browsers cap keepalive bodies at about 64 KB, so larger unsaved text can still be lost when the panel closes.
 addEventListener("pagehide", () => {
     if (!dirty()) return;
     const body = state.draft
         ? { draft: state.draft.key, folder: state.draft.folder, body: textarea.value }
-        : { id: keyOf(state.note!), folder: state.note!.folder, body: textarea.value, expectedVersion: state.note!.version };
+        : { id: keyOf(state.note!), folder: state.note!.folder, body: textarea.value, expectedVersion: state.note!.version,
+            ...(state.conflict ? { stash: true } : {}) };
     void fetch("api/note/rescue", { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
         .catch(() => {});
 });
@@ -484,6 +486,8 @@ async function resolveConflict(keepMine: boolean) {
         state.conflict = false;
         state.recovered = false;
         if (keepMine) {
+            // Compare against what is on disk now, so text undone back to the old version still gets saved.
+            state.sent = fresh.body;
             renderEditor();
             await save();
         } else {
@@ -501,7 +505,12 @@ const freshVersion = (note: Summary) => (keyOf(note) === openKey() ? state.note!
 
 async function afterNoteMutation(note: Note) {
     if (state.note && keyOf(state.note) === keyOf(note)) {
-        state.note = { ...note, body: state.note.body };
+        // A move can rewrite asset links; adopt them, or ask the user if they kept typing meanwhile.
+        if (note.body !== state.note.body) {
+            if (textarea.value === state.sent) setText(note.body);
+            else state.conflict = true;
+        }
+        state.note = note;
         renderEditor();
     }
     await refreshLists();
@@ -524,6 +533,7 @@ async function moveNote(note: Summary, folder: string) {
     try {
         const moved = await request<Note>("api/note/move", { id: keyOf(note), folder, expectedVersion: freshVersion(note) });
         if (!moved.id && keyOf(note) === openKey()) {
+            // Keep the pre-move body so afterNoteMutation can still see rewritten links.
             state.note = { ...moved, body: state.note!.body };
             state.ui.noteId = keyOf(moved);
             persistUi();

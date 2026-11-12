@@ -195,13 +195,16 @@ export function markdownText(body) {
 export function renameAssetLinks(body, oldName, newName, { caseInsensitive = false } = {}) {
     if (oldName === newName) return body;
     const key = value => caseInsensitive ? value.toLowerCase() : value;
+    const escape = name => name.replace(/[\\()[\] *]/g, "\\$&");
+    const decode = value => { try { return decodeURIComponent(value); } catch { return value; } };
+    // Only the first path component names the assets folder; it may be written raw, escaped, or percent-encoded.
+    const isOld = name => key(name) === key(oldName) || key(decode(name)) === key(oldName);
     const edits = [];
     function visit(node) {
         if (["link", "image", "definition"].includes(node.type)) {
-            let url;
-            try { url = decodeURI(node.url); } catch { url = node.url; }
-            const prefix = key(url).startsWith(key(`./${oldName}/`)) ? "./" : "";
-            if (key(url).startsWith(key(`${prefix}${oldName}/`))) {
+            const prefix = node.url.startsWith("./") ? "./" : "";
+            const slash = node.url.indexOf("/", prefix.length);
+            if (slash > prefix.length && isOld(node.url.slice(prefix.length, slash))) {
                 const source = body.slice(node.position.start.offset, node.position.end.offset);
                 let end = node.type === "image" ? 1 : 0;
                 let depth = 0;
@@ -218,13 +221,16 @@ export function renameAssetLinks(body, oldName, newName, { caseInsensitive = fal
                     throw new NotesError("asset_link_unsupported", "Cannot safely rewrite an asset link; the note was not moved.");
                 }
                 const whitespace = /^[ \t\r\n]*<?/.exec(source.slice(end + 2))[0];
-                const start = node.position.start.offset + end + 2 + whitespace.length;
-                const variants = [oldName, encodeURI(oldName), oldName.replace(/[\\()[\] *]/g, "\\$&")];
-                const matched = variants.find(name => key(body.slice(start, start + prefix.length + name.length + 1)) === key(`${prefix}${name}/`));
-                if (!matched) throw new NotesError("asset_link_unsupported", "Cannot safely rewrite an encoded asset link.");
-                const replacement = matched === encodeURI(oldName) && matched !== oldName ? encodeURI(newName)
-                    : matched !== oldName ? newName.replace(/[\\()[\] *]/g, "\\$&") : newName;
-                edits.push({ start: start + prefix.length, length: matched.length, replacement });
+                const start = node.position.start.offset + end + 2 + whitespace.length + prefix.length;
+                const written = body.startsWith(prefix, start - prefix.length) ? body.slice(start, body.indexOf("/", start)) : "";
+                let replacement;
+                if (key(written) === key(oldName)) replacement = newName;
+                else if (key(written) === key(escape(oldName))) replacement = escape(newName);
+                else if (key(decode(written)) === key(oldName)) {
+                    replacement = encodeURIComponent(newName).replace(/[()]/g, char => `%${char.charCodeAt(0).toString(16)}`);
+                }
+                else throw new NotesError("asset_link_unsupported", "Cannot safely rewrite an encoded asset link.");
+                edits.push({ start, length: written.length, replacement });
             }
         }
         node.children?.forEach(visit);

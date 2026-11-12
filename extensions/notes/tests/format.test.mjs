@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { markdownText, parseNote, renameAssetLinks, serializeNote, slug } from "../note-format.mjs";
+import { parseMarkdown } from "../vendor/markdown.mjs";
 
 describe("Markdown preservation", () => {
     test("preserves custom mappings, anchors and comments when updating owned metadata", () => {
@@ -78,9 +79,23 @@ describe("Markdown preservation", () => {
         expect(updated).toContain("![example](old.assets/no-change.png)");
     });
 
+    test.each(["(", ")"])("preserves encoded unmatched %s in asset destinations", char => {
+        const encoded = char === "(" ? "%28" : "%29";
+        const body = `![pic](Foo%20${encoded}.assets/p.png)`;
+        const updated = renameAssetLinks(body, `Foo ${char}.assets`, `Foo ${char}-2.assets`);
+        expect(updated).toBe(`![pic](Foo%20${encoded}-2.assets/p.png)`);
+        expect(parseMarkdown(updated).children[0].children).toMatchObject([
+            { type: "image", url: `Foo%20${encoded}-2.assets/p.png`, alt: "pic" },
+        ]);
+    });
+
     test("keeps Unicode and encoded spaces when changing asset destinations", () => {
         expect(renameAssetLinks("![pic](Work%20Plan.assets/p.png)", "Work Plan.assets", "Work Plan-2.assets"))
             .toBe("![pic](Work%20Plan-2.assets/p.png)");
+        expect(renameAssetLinks("![pic](Report%20%231.assets/p%20q.png?x=1#y)", "Report #1.assets", "Report #1-2.assets"))
+            .toBe("![pic](Report%20%231-2.assets/p%20q.png?x=1#y)");
+        expect(renameAssetLinks("[f](<Q&A #1.assets/f.txt>)", "Q&A #1.assets", "Q&A #1-2.assets"))
+            .toBe("[f](<Q&A #1-2.assets/f.txt>)");
         expect(slug("\u010cesk\u00fd pl\u00e1n")).toBe("cesky-plan");
         expect(slug("\u65e5\u672c\u8a9e")).toBe("\u65e5\u672c\u8a9e");
         expect(slug("CON")).toBe("note-con");

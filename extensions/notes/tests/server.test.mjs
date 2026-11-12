@@ -225,6 +225,35 @@ describe("Notes panel server", () => {
         expect(popped.filter(Boolean).map(entry => entry.body).sort()).toEqual(["a", "b", "c"]);
     });
 
+    test("keeps unresolved recovery across closes without overwriting the fresh version", async () => {
+        await start();
+        const created = await call("api/note/create", { method: "POST", body: { body: "# Shared\nCurrent external text", folder: "" } });
+        const current = created.json;
+        const recovery = { noteId: current.id, folder: "", body: "# Shared\nOlder recovered draft" };
+        await pushRecovery(recoveryPath(statePath), recovery);
+
+        for (let reopen = 0; reopen < 2; reopen++) {
+            expect((await call("api/state")).json.recovery).toEqual(recovery);
+            const fresh = (await call(`api/note?id=${current.id}`)).json;
+            const rescued = await call("api/note/rescue", { method: "POST", body: {
+                id: fresh.id, folder: fresh.folder, body: recovery.body, expectedVersion: fresh.version, stash: true,
+            } });
+            expect(rescued.status).toBe(200);
+            expect(rescued.json).toEqual({ recovered: true });
+            expect(await library.read(current.id)).toMatchObject({ body: current.body, version: current.version });
+            await server.close();
+            await start();
+        }
+
+        expect((await call("api/state")).json.recovery).toEqual(recovery);
+        const kept = await call("api/note/update", { method: "POST", body: {
+            id: current.id, body: recovery.body, expectedVersion: current.version,
+        } });
+        expect(kept.status).toBe(200);
+        expect((await library.read(current.id)).body).toBe(recovery.body);
+        expect((await call("api/state")).json.recovery).toBeNull();
+    });
+
     test("resolves canvas targets to canonical identifiers", async () => {
         const note = await library.create({ body: "# Target", folder: "Work/Plans" }, { sessionId: "s", actor: "user" });
         expect(await resolveTarget(library, { noteId: note.path })).toEqual({ noteId: note.id, folder: "Work/Plans" });

@@ -24,7 +24,8 @@ become an overlay. Below 640 px, one pane is shown at a time.
   the meantime, the text is kept in
   `$COPILOT_HOME/extensions/notes/artifacts/recovery/` (the only place
   outside the library that holds note content). It reopens as a Reload /
-  Keep Mine choice the next time Notes opens, and is then removed. Browsers
+  Keep Mine choice the next time Notes opens. Closing an unresolved conflict
+  keeps it for the next open; only choosing Keep Mine overwrites the note. Browsers
   cap this close-time request at about 64 KB, so larger unsaved edits can
   still be lost if the panel closes within a second of typing.
 - Keyboard: ↑/↓ to change notes, Enter to edit, Delete to delete,
@@ -174,6 +175,8 @@ Git attributes preserve bundle/licence bytes; source fingerprints normalize
 text line endings. The stale-bundle test works without `node_modules`.
 
 The default test suite uses isolated temporary libraries and mocked trash.
+Client persistence tests run the full TypeScript controller against the real
+server with an inert DOM and controlled timers; they do not verify rendering.
 On Windows it also compiles the recycle helper against a nonexistent target,
 without trashing anything. Node subprocess tests exercise races across actual
 processes. Setting

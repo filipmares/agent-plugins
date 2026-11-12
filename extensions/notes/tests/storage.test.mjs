@@ -313,6 +313,21 @@ describe("names, folders, and assets", () => {
         expect(new Date(moved.lastEdited).getTime()).toBe(new Date(note.lastEdited).getTime());
     });
 
+    test.each([
+        ["Report #1", "Report%20%231"],
+        ["Foo (", "Foo%20%28"],
+        ["Foo )", "Foo%20%29"],
+    ])("moves imported asset links with encoded reserved characters: %s", async (name, encoded) => {
+        await write(`${name}.md`, `# Report\n![image](${encoded}.assets/p.png)`);
+        await write(`${name}.assets/p.png`, "pixels");
+        await write(`Work/${name}.md`, "# Other");
+        const note = await library.read(`${name}.md`);
+        const moved = await library.move(note.id, { folder: "Work", expectedVersion: note.version });
+        expect(moved.path).toBe(`Work/${name}-2.md`);
+        expect(moved.body).toContain(`![image](${encoded}-2.assets/p.png)`);
+        expect(await readFile(join(root, "Work", `${name}-2.assets`, "p.png"), "utf8")).toBe("pixels");
+    });
+
     test("concurrent creators never overwrite a same-title note", async () => {
         const other = new NotesLibrary(root);
         const notes = await Promise.all([
