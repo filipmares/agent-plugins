@@ -98,9 +98,10 @@ The **Copilot** button opens an inline prompt. Enter saves all current changes,
 then sends the prompt with the note's absolute file path attached to this panel's
 owning session. Conflicts or save failures block sending. The SDK's
 `session.send({ prompt, attachments: [{ type: "file", path, displayName }],
-mode: "enqueue" })` queues behind a busy turn; a returned message ID produces
-"Sent to chat" without moving focus out of the panel. There is no Ask Copilot
-shortcut and no retry that drops the attachment.
+mode: "enqueue" })` queues behind a busy turn; a returned message ID hides the
+prompt, returns focus to the Copilot button, and shows "Sent to chat" in the
+toolbar. Escape also hides the prompt; a failed send keeps it open with the
+text. There is no Ask Copilot shortcut and no retry that drops the attachment.
 
 UI state (sidebar visibility, selection, open note, collapsed folders) is
 stored in `$COPILOT_HOME/extensions/notes/artifacts/ui-state.json`. It holds

@@ -111,13 +111,15 @@ let guarded = false;
 let editorError = false;
 const markdownButton = iconButton("code", "View as Markdown", () => toggleMarkdown());
 const copilotButton = iconButton("copilot", "Ask Copilot about this note", () => {
-    askPanel.hidden = !askPanel.hidden;
-    copilotButton.setAttribute("aria-expanded", String(!askPanel.hidden));
-    if (!askPanel.hidden) askInput.focus();
+    if (!askPanel.hidden) return hideAsk();
+    askPanel.hidden = false;
+    copilotButton.setAttribute("aria-expanded", "true");
+    askInput.focus();
 }, { "aria-expanded": "false", "aria-controls": "ask-note" });
 const askInput = h("input", { type: "text", class: "text-input", "aria-label": "Ask Copilot about this note", placeholder: "Ask about this note", maxlength: "16000" });
+// Lives in the toolbar so "Sent to chat" stays visible after the prompt hides.
 const askStatus = h("span", { role: "status", class: "ask-status" });
-const askPanel = h("div", { id: "ask-note", class: "ask-note", hidden: true }, askInput, askStatus);
+const askPanel = h("div", { id: "ask-note", class: "ask-note", hidden: true }, askInput);
 const emptyEditor = h("div", { class: "empty-editor" }, icon("note"), h("p", {}, "No note selected"));
 const pinButton = iconButton("pin", "Pin note", () => state.note && void togglePin(state.note));
 const moveButton = iconButton("file-moved", "Move note to folder", () => state.note && void moveDialog(state.note));
@@ -144,7 +146,7 @@ const listPane = h("section", { class: "list-pane", "aria-label": "Note list" },
 const editorPane = h("main", { class: "editor-pane", "aria-label": "Editor" },
     h("header", { class: "pane-header editor-toolbar" },
         iconButton("chevron-left", "Back to notes", () => void backToList(), { class: "icon-button narrow-only" }),
-        h("span", { class: "spacer" }), markdownButton, copilotButton, pinButton, moveButton, trashButton),
+        h("span", { class: "spacer" }), askStatus, markdownButton, copilotButton, pinButton, moveButton, trashButton),
     askPanel, banner, fidelityBanner,
     h("div", { class: "editor-scroll" }, dateLine, textarea, richElement, emptyEditor),
 );
@@ -365,8 +367,17 @@ function editLink() {
     input.select();
 }
 
+// Hiding the focused input would drop focus to the page, so return it to the toggle.
+function hideAsk() {
+    const focused = askPanel.contains(document.activeElement);
+    askPanel.hidden = true;
+    copilotButton.setAttribute("aria-expanded", "false");
+    if (focused) copilotButton.focus();
+}
+
 let asking = false;
 askInput.addEventListener("keydown", async event => {
+    if (event.key === "Escape" && !event.isComposing) { event.preventDefault(); hideAsk(); return; }
     if (event.key !== "Enter" || event.isComposing || asking || !askInput.value.trim()) return;
     event.preventDefault();
     const prompt = askInput.value;
@@ -381,6 +392,7 @@ askInput.addEventListener("keydown", async event => {
         if (gen !== navGen) return;
         askStatus.textContent = "Sent to chat";
         askInput.value = "";
+        hideAsk();
         window.setTimeout(() => { if (gen === navGen && askStatus.textContent === "Sent to chat") askStatus.textContent = ""; }, 3000);
     } catch (error) { askStatus.textContent = "Not sent"; showToast(message(error)); }
     finally { asking = false; askInput.readOnly = false; }
@@ -471,8 +483,7 @@ function discardEditor() {
     rich?.destroy();
     rich = null;
     state.ui.noteId = null;
-    askPanel.hidden = true;
-    copilotButton.setAttribute("aria-expanded", "false");
+    hideAsk();
     persistUi();
 }
 
@@ -517,7 +528,7 @@ async function openNote(key: string, { focus = false } = {}) {
         state.conflict = false;
         state.recovered = false;
         setText(note.body, { resetView: true });
-        askPanel.hidden = true;
+        hideAsk();
         askStatus.textContent = "";
         editorPane.querySelector(".link-popover")?.remove();
         textarea.scrollTop = 0;
@@ -536,9 +547,8 @@ async function openNote(key: string, { focus = false } = {}) {
 async function compose() {
     if (!(await flush())) return;
     navGen++;
-    askPanel.hidden = true;
+    hideAsk();
     askStatus.textContent = "";
-    copilotButton.setAttribute("aria-expanded", "false");
     const selection = state.ui.selection;
     state.note = null;
     state.conflict = false;

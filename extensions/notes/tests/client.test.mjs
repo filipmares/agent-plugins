@@ -11,7 +11,7 @@ const source = await readFile(new URL("../client/app.ts", import.meta.url), "utf
 const instrumented = source.replace(/^import .+;$/gm, "").replace(/\bvoid start\(\);(?=\s*$)/, "globalThis.clientReady = start();");
 if (instrumented === source) throw new Error("Cannot await Notes client startup.");
 const script = new Bun.Transpiler({ loader: "ts" }).transformSync(instrumented + `
-globalThis.client = { state, textarea, toast, openNote, moveNote, save, resolveConflict, refresh, askInput, askStatus, compose, toggleMarkdown, isPlain: () => plain };
+globalThis.client = { state, textarea, toast, openNote, moveNote, save, resolveConflict, refresh, askInput, askStatus, askPanel, copilotButton, compose, toggleMarkdown, isPlain: () => plain };
 `);
 const context = { sessionId: "client-test", actor: "user" };
 let fixture, root, library, server, statePath, clients;
@@ -97,15 +97,17 @@ async function openClient({ richSafe = false } = {}) {
     return panel;
 }
 
+const startServer = (options = {}) => createNotesServer({
+    getLibrary: async () => library, getContext: async () => context, sessionId: context.sessionId, statePath, ...options,
+});
+
 beforeEach(async () => {
     fixture = await mkdtemp(join(tmpdir(), "copilot-notes-client-"));
     root = join(fixture, "notes");
     library = new NotesLibrary(root, { trash: async () => { throw new Error("Unexpected trash call"); } });
     statePath = join(fixture, "state", "ui.json");
     clients = [];
-    server = await createNotesServer({
-        getLibrary: async () => library, getContext: async () => context, sessionId: context.sessionId, statePath,
-    });
+    server = await startServer();
 });
 
 afterEach(async () => {
@@ -170,6 +172,45 @@ describe("Notes client persistence", () => {
         panel.askInput.dispatchEvent(Object.assign(new Event("keydown"), { key: "Enter" }));
         await panel.settle();
         expect(panel.calls.filter(call => call.path === "api/ask")).toHaveLength(count);
+    });
+
+    test("Ask Copilot hides on Escape and after sending, but stays open with the prompt when sending fails", async () => {
+        await server.close();
+        const sent = [];
+        let fail = true;
+        server = await startServer({ sendMessage: async message => {
+            if (fail) throw new Error("busy");
+            sent.push(message);
+            return "message-1";
+        } });
+        const note = await library.create({ body: "# Ask\nsend me" }, context);
+        const panel = await openClient();
+        await panel.openNote(note.id);
+        const press = key => panel.askInput.dispatchEvent(Object.assign(new Event("keydown"), { key }));
+        const settled = async status => {
+            for (let i = 0; i < 200 && panel.askStatus.textContent !== status; i++) await Bun.sleep(5);
+            expect(panel.askStatus.textContent).toBe(status);
+        };
+        panel.copilotButton.dispatchEvent(new Event("click"));
+        expect(panel.askPanel.hidden).toBe(false);
+        press("Escape");
+        expect(panel.askPanel.hidden).toBe(true);
+        expect(panel.copilotButton.getAttribute("aria-expanded")).toBe("false");
+
+        panel.copilotButton.dispatchEvent(new Event("click"));
+        panel.askInput.value = "Summarize";
+        press("Enter");
+        await settled("Not sent");
+        expect(panel.askPanel.hidden).toBe(false);
+        expect(panel.askInput.value).toBe("Summarize");
+
+        fail = false;
+        press("Enter");
+        await settled("Sent to chat");
+        expect(sent).toMatchObject([{ prompt: "Summarize" }]);
+        expect(panel.askPanel.hidden).toBe(true);
+        expect(panel.copilotButton.getAttribute("aria-expanded")).toBe("false");
+        expect(panel.askInput.value).toBe("");
     });
 
     test.each([false, true])("close/reopen preserves unresolved recovery until explicit resolution (keep mine: %s)", async keepMine => {
