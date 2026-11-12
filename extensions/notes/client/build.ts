@@ -6,6 +6,11 @@ import { fileURLToPath } from "node:url";
 const client = dirname(fileURLToPath(import.meta.url));
 const root = dirname(client);
 const digest = (content: string | Buffer) => createHash("sha256").update(content).digest("hex");
+const ICONS = [
+    "alert", "chevron-down", "chevron-left", "chevron-right", "comment-discussion", "compose", "copilot",
+    "file-directory", "file-moved", "note", "pencil", "pin", "pin-slash", "plus", "repo",
+    "search", "sidebar-collapse", "sidebar-expand", "trash", "x",
+];
 
 export async function sourceHash() {
     const hash = createHash("sha256");
@@ -41,6 +46,29 @@ async function build() {
         if (!result.success) throw new AggregateError(result.logs, `Could not build ${name}`);
         const content = await result.outputs[0].text();
         const file = `${name}.mjs`;
+        await writeFile(join(vendor, file), content);
+        assets.push({ file, sha256: digest(content) });
+    }
+
+    const octicons = JSON.parse(await readFile(join(client, "node_modules", "@primer", "octicons", "build", "data.json"), "utf8"));
+    const icons: Record<string, { width: number; path: string }> = {};
+    for (const name of ICONS) {
+        const icon = octicons[name]?.heights?.["16"];
+        if (!icon) throw new Error(`Unknown 16px Octicon: ${name}`);
+        icons[name] = { width: icon.width, path: icon.path };
+    }
+    const app = await Bun.build({
+        entrypoints: [join(client, "app.ts")],
+        target: "browser",
+        format: "iife",
+        minify: true,
+        define: { __ICONS__: JSON.stringify(icons) },
+    });
+    if (!app.success) throw new AggregateError(app.logs, "Could not build the Notes client");
+    for (const [file, content] of [
+        ["notes-client.js", await app.outputs[0].text()],
+        ["notes-client.css", (await readFile(join(client, "app.css"), "utf8")).replaceAll("\r\n", "\n")],
+    ]) {
         await writeFile(join(vendor, file), content);
         assets.push({ file, sha256: digest(content) });
     }

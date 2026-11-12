@@ -1,9 +1,45 @@
 # Notes
 
-Markdown notes for the GitHub Copilot app. **Phase 1 implements storage and
-`notes_manage`; the editor UI and plugin registration are not shipped yet.**
-Opening the canvas currently returns `notes_editor_pending`, not a placeholder
-that pretends editing is available.
+Markdown notes for the GitHub Copilot app. **Phases 1–2 implement storage,
+`notes_manage`, and an Apple Notes-style panel with a plain Markdown editor.**
+Rich editing, live file watching, and plugin registration are not shipped yet.
+
+## Panel
+
+Open the `notes` canvas. Optional input targets a `noteId`, `folder`, or
+`view` (`all`, `project`, or `session`); `reveal` retargets an open panel.
+The panel has three columns (folders, notes, editor). Below 960 px, folders
+become an overlay. Below 640 px, one pane is shown at a time.
+
+- Smart views: All Notes, This Project, and This Session. Folders support
+  create, rename (double-click), delete with a recursive count, collapse, and
+  dragging notes onto a folder to move them.
+- The list groups notes as Pinned, Today, Yesterday, Previous 7/30 Days, and
+  then by month and year. Search spans every folder and highlights matches.
+  Agent-created notes show a Copilot mark.
+- The editor is a plain Markdown textarea. Edits save after one second, on
+  blur, and when the panel is hidden. Stale saves show a conflict banner
+  (Reload / Keep Mine); nothing is overwritten silently.
+- Closing the panel mid-edit saves the text. If the note changed elsewhere in
+  the meantime, the text is kept in
+  `$COPILOT_HOME/extensions/notes/artifacts/recovery/` (the only place
+  outside the library that holds note content). It reopens as a Reload /
+  Keep Mine choice the next time Notes opens, and is then removed. Browsers
+  cap this close-time request at about 64 KB, so larger unsaved edits can
+  still be lost if the panel closes within a second of typing.
+- Keyboard: ↑/↓ to change notes, Enter to edit, Delete to delete,
+  Shift+F10 or the context menu key for note actions.
+
+UI state (sidebar visibility, selection, open note, collapsed folders) is
+stored in `$COPILOT_HOME/extensions/notes/artifacts/ui-state.json`. It holds
+folder names and a note ID, not note content.
+
+Each panel runs its own server on `127.0.0.1` behind a random 256-bit URL
+token. It checks Host and Origin exactly and accepts only same-origin JSON
+POSTs. It sends no CORS headers and serves a strict CSP. The panel refreshes
+after edits made in this Copilot process, by either the panel or
+`notes_manage`. Changes from other sessions or editors appear on the next
+navigation; live watching arrives in Phase 3.
 
 ## Library and privacy
 
@@ -38,8 +74,8 @@ notes are not indexed. Unsupported files are reported in search warnings.
 The library root itself cannot be a symlink or junction.
 Only UTF-8 notes up to 8 MiB (including frontmatter) are supported.
 
-Phase 1 rescans on tool calls; the cached index, watcher, and editor conflict
-banner belong to later phases. Scanning reads all note files and can hydrate
+Phase 2 rescans on each panel request and tool call; the cached index and
+watcher belong to Phase 3. Scanning reads all note files and can hydrate
 online-only OneDrive/iCloud files.
 
 ## Copilot tool
@@ -72,8 +108,8 @@ descendants. Empty queries list recent notes.
 
 Create makes missing folders, sanitizing portable names and reusing existing
 folders case-insensitively. Move requires an existing folder. Copilot cannot
-rename or delete folders. The storage API includes those user-only operations
-for the forthcoming UI; folder deletion requires a separate confirmation.
+rename or delete folders; the panel exposes those user-only operations, and
+folder deletion requires a separate confirmation.
 Folders containing unsafe descendants remain listed with a warning and a null
 mutation version; they cannot be renamed or deleted through Notes.
 
@@ -129,7 +165,9 @@ Only the maintainer build needs Bun and dependencies. Runtime code is `.mjs`,
 Node standard library, the host-resolved Copilot SDK, and committed offline
 bundles. Do not install the SDK into this extension.
 
-The Phase 1 build emits `vendor/yaml.mjs` and `vendor/markdown.mjs`.
+The build emits `vendor/yaml.mjs`, `vendor/markdown.mjs`, and the browser
+client `vendor/notes-client.js`/`.css` (from `client/app.ts` and `app.css`,
+with Octicons paths inlined at build time).
 `vendor/manifest.json` pins bundle/source hashes, package versions, and licence
 sources. Verbatim dependency licences live in `third-party-licenses/`.
 Git attributes preserve bundle/licence bytes; source fingerprints normalize
@@ -142,7 +180,8 @@ processes. Setting
 `NOTES_TEST_REAL_TRASH=1` opts into moving one test file to your real OS trash.
 Do not set it in an unattended routine test run.
 
-The planned editor and interactions are based on
+The UI and interactions are based on
 [bholmesdev/hubble.md](https://github.com/bholmesdev/hubble.md) (MIT).
-No Hubble editor code is included in Phase 1. Deferred features are tracked in
+No Hubble code is included yet. Icons are [Primer Octicons](https://github.com/primer/octicons) (MIT).
+Deferred features are tracked in
 [issue #60](https://github.com/filipmares/agent-plugins/issues/60).

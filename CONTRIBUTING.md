@@ -140,8 +140,9 @@ narrow and wide layouts; Bun assertions do not execute or attest the final DOM.
 
 ## Notes Extension
 
-`extensions/notes/` is being developed in phases. Phase 1 provides storage and
-the `notes_manage` tool; plugin registration and the editor arrive later.
+`extensions/notes/` is being developed in phases. Phases 1–2 provide storage,
+the `notes_manage` tool, and the panel (loopback server plus a plain editor).
+Plugin registration and the rich editor arrive later.
 
 - Runtime modules use Node's standard library, the host's `@github/copilot-sdk`,
   and committed bundles under `vendor/`. Build-only dependencies live in
@@ -158,6 +159,10 @@ the `notes_manage` tool; plugin registration and the editor arrive later.
   a developer explicitly enables `NOTES_TEST_REAL_TRASH=1`.
 - Run `bun run test:notes` for Notes changes. Do not claim browser, in-app,
   sync-provider, or OS trash support solely from model tests.
+- The panel client (`client/app.ts`, `client/app.css`) is bundled into
+  `vendor/notes-client.*`; rebuild after any `client/` change. The server's
+  CSP forbids inline scripts and styles, so set dynamic styles through CSSOM
+  only. Keep the token path, exact Host/Origin checks, and JSON-only POSTs.
 
 ## Code of Conduct
 

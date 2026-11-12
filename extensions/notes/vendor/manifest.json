@@ -1,5 +1,5 @@
 {
-  "sourceHash": "c6dbc7f7daa47a2a442e3cb34175731a465484de5c829d7fd2519984a88ea880",
+  "sourceHash": "f24b6d564471438a4fbb33eebdd2c6720fc08e3f9902818bab7d37612ed0da71",
   "bunVersion": "1.4.4",
   "assets": [
     {
@@ -9,9 +9,26 @@
     {
       "file": "markdown.mjs",
       "sha256": "ea747febbf4b349a9c6a0d764ecdd2246d20903ebe9973d579894488e82b4e79"
+    },
+    {
+      "file": "notes-client.js",
+      "sha256": "5a37599a38e02356d60a585692a16e0929c25dc22760139354fb2e1b8120f3e8"
+    },
+    {
+      "file": "notes-client.css",
+      "sha256": "c50016d3bddfe688e0ddef02c9db4f74ad55544bc985106d8019af880dcab658"
     }
   ],
   "packages": [
+    {
+      "name": "@primer/octicons",
+      "version": "19.42.0",
+      "source": "https://registry.npmjs.org/@primer/octicons/-/octicons-19.42.0.tgz",
+      "license": "MIT",
+      "licenseSource": "https://registry.npmjs.org/@primer/octicons/-/octicons-19.42.0.tgz#package/LICENSE",
+      "licenseFile": "../third-party-licenses/primer__octicons.txt",
+      "licenseSha256": "da259c8bd0de62713ccdcf88910aebca810644f98c2c912bad814fc79ea778df"
+    },
     {
       "name": "@types/debug",
       "version": "4.1.13",
@@ -524,6 +541,15 @@
       "licenseSource": "https://registry.npmjs.org/ms/-/ms-2.1.3.tgz#package/license.md",
       "licenseFile": "../third-party-licenses/ms.txt",
       "licenseSha256": "1662fae9b5314d11cf51284e2dcd1f006a354f7343f08712a730fcff9a359801"
+    },
+    {
+      "name": "object-assign",
+      "version": "4.1.1",
+      "source": "https://registry.npmjs.org/object-assign/-/object-assign-4.1.1.tgz",
+      "license": "MIT",
+      "licenseSource": "https://registry.npmjs.org/object-assign/-/object-assign-4.1.1.tgz#package/license",
+      "licenseFile": "../third-party-licenses/object-assign.txt",
+      "licenseSha256": "6fb9754611c20f6649f68805e8c990e83261f29316e29de9e6cedae607b8634c"
     },
     {
       "name": "remark-gfm",

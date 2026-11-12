@@ -110,4 +110,21 @@ describe("notes_manage", () => {
         expect(JSON.parse(result.textResultForLlm).error.code).toBe("session_metadata_unavailable");
         expect((await library.search()).total).toBe(0);
     });
+
+    test("notifies open panels after successful writes only", async () => {
+        let changes = 0;
+        const notifying = createNotesTool({
+            getLibrary: async () => library,
+            getContext: async sessionId => ({ sessionId }),
+            onChange: () => { changes += 1; },
+        });
+        const run = async args => JSON.parse((await notifying.handler(args, { sessionId: "session-a" })).textResultForLlm);
+        const note = await run({ operation: "create", body: "# Notify" });
+        await run({ operation: "search" });
+        await run({ operation: "read", noteId: note.id });
+        await run({ operation: "update", noteId: note.id, body: "# Old", expectedVersion: "0".repeat(64) });
+        expect(changes).toBe(1);
+        await run({ operation: "delete", noteId: note.id, expectedVersion: note.version });
+        expect(changes).toBe(2);
+    });
 });

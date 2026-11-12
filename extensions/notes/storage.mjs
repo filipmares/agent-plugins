@@ -302,12 +302,22 @@ export class NotesLibrary {
     }
 
     async search({ query = "", project, session, folder, limit = 50, offset = 0 } = {}) {
+        if (!Number.isInteger(limit) || limit < 1 || limit > 100 || !Number.isInteger(offset) || offset < 0) {
+            throw new NotesError("invalid_request", "Use a limit from 1 to 100 and a non-negative integer offset.");
+        }
+        const { notes, warnings } = await this.list({ query, project, session, folder });
+        return {
+            notes: notes.slice(offset, offset + limit),
+            total: notes.length,
+            nextOffset: offset + limit < notes.length ? offset + limit : null,
+            warnings,
+        };
+    }
+
+    async list({ query = "", project, session, folder } = {}) {
         requireString(query, "query", { empty: true });
         for (const [name, value] of Object.entries({ project, session, folder })) {
             if (value !== undefined) requireString(value, name, { empty: name === "folder" });
-        }
-        if (!Number.isInteger(limit) || limit < 1 || limit > 100 || !Number.isInteger(offset) || offset < 0) {
-            throw new NotesError("invalid_request", "Use a limit from 1 to 100 and a non-negative integer offset.");
         }
         return this.#locked(async root => {
             const snapshot = await this.#scan(root);
@@ -324,15 +334,14 @@ export class NotesLibrary {
                 if (!words.every(word => folded.includes(word) || foldText(title).includes(word))) continue;
                 const match = words.length ? Math.max(0, folded.indexOf(words[0])) : 0;
                 const start = Math.max(0, match - 40);
-                const snippet = (start ? "..." : "") + text.slice(start, start + 180) + (text.length > start + 180 ? "..." : "");
+                const snippet = ((start ? "..." : "") + text.slice(start, start + 180) + (text.length > start + 180 ? "..." : ""))
+                    .replace(/\s+([.,;:!?)\]])/g, "$1");
                 matches.push({ ...summary(note), snippet, titleMatch: words.every(word => foldText(title).includes(word)) });
             }
             matches.sort((a, b) => Number(b.titleMatch) - Number(a.titleMatch)
                 || Date.parse(b.lastEdited) - Date.parse(a.lastEdited) || compareNames(a.path, b.path));
             return {
-                notes: matches.slice(offset, offset + limit).map(({ titleMatch, ...item }) => item),
-                total: matches.length,
-                nextOffset: offset + limit < matches.length ? offset + limit : null,
+                notes: matches.map(({ titleMatch, ...item }) => item),
                 warnings: snapshot.warnings,
             };
         });
