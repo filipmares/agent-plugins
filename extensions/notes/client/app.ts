@@ -258,16 +258,24 @@ let navGen = 0;
 const newDraft = (folder: string) => ({ folder, key: crypto.randomUUID() });
 const dirty = () => (state.draft ? /[^#\s]/.test(textarea.value) : state.note !== null && textarea.value !== state.sent);
 
-function setText(body: string) {
+function setText(body: string, { resetView = false } = {}) {
     const { selectionStart, selectionEnd, scrollTop } = textarea;
-    const focused = rich?.isFocused;
+    const focused = document.activeElement === textarea || rich?.isFocused;
+    const wasPlain = plain;
     const position = rich?.state.selection.from;
     textarea.value = body;
     state.sent = textarea.value;
     if (document.activeElement === textarea) textarea.setSelectionRange(selectionStart, selectionEnd);
     textarea.scrollTop = scrollTop;
     prepareEditor();
-    if (focused && rich && !plain) rich.commands.focus(Math.min(position ?? 1, rich.state.doc.content.size));
+    if (!resetView && wasPlain) plain = true;
+    renderEditor();
+    if (focused) {
+        if (plain) {
+            textarea.focus();
+            textarea.setSelectionRange(selectionStart, selectionEnd);
+        } else if (rich) rich.commands.focus(Math.min(position ?? 1, rich.state.doc.content.size));
+    }
 }
 
 function prepareEditor() {
@@ -508,7 +516,7 @@ async function openNote(key: string, { focus = false } = {}) {
         state.draft = null;
         state.conflict = false;
         state.recovered = false;
-        setText(note.body);
+        setText(note.body, { resetView: true });
         askPanel.hidden = true;
         askStatus.textContent = "";
         editorPane.querySelector(".link-popover")?.remove();
@@ -693,7 +701,8 @@ async function moveNote(note: Summary, folder: string) {
 async function deleteNote(note: Summary) {
     const key = keyOf(note);
     const isOpen = key === openKey();
-    if (isOpen) {
+    const generation = navGen;
+    if (isOpen && generation === navGen) {
         clearTimeout(saveTimer);
         while (inflight) await inflight;
     }
@@ -721,7 +730,7 @@ async function deleteNote(note: Summary) {
         }
         renderEditor();
         await refreshLists();
-        if (isOpen) rows.focus();
+        if (isOpen && (rows.contains(document.activeElement) || document.activeElement === document.body)) rows.focus();
     } catch (error) {
         showToast(message(error));
         void refresh();
@@ -936,7 +945,7 @@ function smartButton(view: "all" | "project" | "session", label: string, iconNam
     const selection = state.ui.selection;
     const current = !state.query.trim() && "view" in selection && selection.view === view;
     return h("button", {
-        type: "button", class: "folder-button smart-button", "aria-current": current ? "true" : undefined, title,
+        type: "button", class: "folder-button smart-button", "data-focus-key": `smart:${view}`, "aria-current": current ? "true" : undefined, title,
         onclick: () => void select({ view }),
     }, icon(iconName), h("span", { class: "folder-name" }, label), count === undefined ? null : h("span", { class: "folder-count" }, String(count)));
 }
@@ -946,7 +955,7 @@ function folderRow(node: FolderNode, depth: number): HTMLElement {
     const current = !state.query.trim() && "folder" in selection && selection.folder.toLowerCase() === node.path.toLowerCase();
     const collapsed = state.ui.collapsed.includes(node.path);
     const button = h("button", {
-        type: "button", class: "folder-button", "aria-current": current ? "true" : undefined,
+        type: "button", class: "folder-button", "data-focus-key": `folder:${node.path}`, "aria-current": current ? "true" : undefined,
         title: node.warning?.message,
         onclick: () => void select({ folder: node.path }),
         ondblclick: () => { if (node.path && node.version) void renameFolder(node); },
@@ -964,7 +973,7 @@ function folderRow(node: FolderNode, depth: number): HTMLElement {
             state.ui.collapsed = collapsed ? state.ui.collapsed.filter(path => path !== node.path) : [...state.ui.collapsed, node.path];
             persistUi();
             renderSidebar();
-        }, { class: "icon-button disclosure", "aria-expanded": String(!collapsed) })
+        }, { class: "icon-button disclosure", "data-focus-key": `disclosure:${node.path}`, "aria-expanded": String(!collapsed) })
         : h("span", { class: "disclosure" });
     const row = h("div", { class: "folder-row" }, toggle, button);
     row.style.setProperty("--depth", String(depth));
@@ -989,7 +998,8 @@ function folderRow(node: FolderNode, depth: number): HTMLElement {
 }
 
 function renderSidebar() {
-    const focused = document.activeElement && sidebar.contains(document.activeElement) ? document.activeElement.getAttribute("aria-label") ?? document.activeElement.textContent : null;
+    const identity = (item: Element) => item.getAttribute("data-focus-key") ?? item.getAttribute("aria-label") ?? item.textContent;
+    const focused = document.activeElement && sidebar.contains(document.activeElement) ? identity(document.activeElement) : null;
     smart.replaceChildren(...[
         smartButton("all", "All Notes", "note", state.folders ? totalCount(state.folders) : undefined),
         state.context.project ? smartButton("project", "This Project", "repo", undefined, state.context.project) : null,
@@ -997,7 +1007,7 @@ function renderSidebar() {
     ].filter(button => button !== null));
     tree.replaceChildren(...(state.folders ? [folderRow(state.folders, 0)] : []));
     if (focused) {
-        const match = [...sidebar.querySelectorAll<HTMLElement>("button")].find(item => (item.getAttribute("aria-label") ?? item.textContent) === focused);
+        const match = [...sidebar.querySelectorAll<HTMLElement>("button")].find(item => identity(item) === focused);
         match?.focus();
     }
 }
@@ -1308,7 +1318,7 @@ async function start() {
                 const note = await request<Note>(`api/note?id=${encodeURIComponent(key)}`);
                 if (gen !== navGen) return connectEvents();
                 state.note = note;
-                setText(note.body);
+                setText(note.body, { resetView: true });
                 renderEditor();
                 renderList();
             } catch {

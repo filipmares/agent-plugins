@@ -11,7 +11,7 @@ const source = await readFile(new URL("../client/app.ts", import.meta.url), "utf
 const instrumented = source.replace(/^import .+;$/gm, "").replace(/\bvoid start\(\);(?=\s*$)/, "globalThis.clientReady = start();");
 if (instrumented === source) throw new Error("Cannot await Notes client startup.");
 const script = new Bun.Transpiler({ loader: "ts" }).transformSync(instrumented + `
-globalThis.client = { state, textarea, toast, openNote, moveNote, save, resolveConflict, refresh, askInput, askStatus, compose, toggleMarkdown };
+globalThis.client = { state, textarea, toast, openNote, moveNote, save, resolveConflict, refresh, askInput, askStatus, compose, toggleMarkdown, isPlain: () => plain };
 `);
 const context = { sessionId: "client-test", actor: "user" };
 let fixture, root, library, server, statePath, clients;
@@ -39,7 +39,7 @@ class Element extends EventTarget {
     querySelectorAll() { return []; }
 }
 
-async function openClient() {
+async function openClient({ richSafe = false } = {}) {
     const window = new EventTarget();
     const document = Object.assign(new EventTarget(), {
         body: new Element(), activeElement: null,
@@ -57,7 +57,7 @@ async function openClient() {
         GUARD_MESSAGE: "This note uses Markdown the rich editor can't keep exactly.",
         safeExternal: value => /^(https?:|mailto:)/.test(value),
         // Only the rendered view is inert. Real codec/schema and browser tests cover the rich view separately.
-        createRichEditor: () => ({ safe: false, editor: { destroy() {}, isFocused: false, state: { selection: { from: 1 } } } }),
+        createRichEditor: () => ({ safe: richSafe, editor: { destroy() {}, isFocused: false, state: { selection: { from: 1 } } } }),
         matchMedia: () => Object.assign(new EventTarget(), { matches: false }),
         EventSource: class extends EventTarget { close() {} },
         __ICONS__: new Proxy({}, { get: () => ({ width: 16, path: "" }) }),
@@ -115,6 +115,22 @@ afterEach(async () => {
 });
 
 describe("Notes client persistence", () => {
+    test("same-note sync retains Markdown view while a different note chooses its own mode", async () => {
+        const note = await library.create({ body: "# Plain view\noriginal" }, context);
+        const other = await library.create({ body: "# Other\nrich" }, context);
+        const panel = await openClient({ richSafe: true });
+        await panel.openNote(note.id);
+        expect(panel.isPlain()).toBe(false);
+        panel.toggleMarkdown();
+        const changed = await library.update(note.id, { body: "# Plain view\nexternal", expectedVersion: note.version }, context);
+        await panel.refresh();
+        expect(panel.isPlain()).toBe(true);
+        expect(panel.textarea.hidden).toBe(false);
+        expect(panel.textarea.value).toBe(changed.body);
+        await panel.openNote(other.id);
+        expect(panel.isPlain()).toBe(false);
+    });
+
     test("live sync silently reloads clean text but preserves dirty and unresolved drafts", async () => {
         const note = await library.create({ body: "# Sync\noriginal" }, context);
         const panel = await openClient();

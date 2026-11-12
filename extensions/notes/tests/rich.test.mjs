@@ -96,6 +96,15 @@ describe("rich Markdown boundary", () => {
         ]);
     });
 
+    test.each([
+        { content: [{ type: "text", text: "one" }, { type: "hardBreak" }, { type: "text", text: "two" }] },
+        { content: [{ type: "text", text: "one\ntwo" }] },
+    ])("refuses table line breaks instead of saving flattened cell text", ({ content }) => {
+        const doc = roundtrip("| Header |\n| --- |\n| Original |");
+        doc.content[0].content[1].content[0].content[0].content = content;
+        expect(() => docToMarkdown(doc)).toThrow("cannot contain line breaks");
+    });
+
     test.each(["javascript:alert(1)", "data:image/svg+xml,bad", "file:///C:/x", "//example.com", "https://a\nb", "vscode://x"])("refuses unsafe link %s", url => {
         expect(safeExternal(url)).toBe(false);
     });

@@ -151,6 +151,11 @@ export function createRichEditor(options: {
     link: () => void; open: (url: string) => void;
 }) {
     let baseline: JSONContent;
+    const tableBreak = () => {
+        if (!editor.isActive("table")) return false;
+        options.notice("Markdown table cells cannot contain line breaks.");
+        return true;
+    };
     function editLinkAt(link: HTMLElement) {
         editor.commands.setTextSelection({
             from: editor.view.posAtDOM(link, 0),
@@ -164,11 +169,8 @@ export function createRichEditor(options: {
             return {
                 "Mod-k": () => { options.link(); return true; },
                 Enter: () => this.editor.isActive("table") ? this.editor.commands.goToNextCell() : false,
-                "Shift-Enter": () => {
-                    if (!this.editor.isActive("table")) return false;
-                    options.notice("Markdown table cells cannot contain line breaks.");
-                    return true;
-                },
+                "Shift-Enter": tableBreak,
+                "Mod-Enter": tableBreak,
             };
         },
     });

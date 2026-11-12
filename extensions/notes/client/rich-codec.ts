@@ -136,6 +136,9 @@ function blockToAst(node: JSONContent): BlockContent {
             children: content.map(row => ({
                 type: "tableRow", children: (row.content ?? []).map(cell => {
                     if (cell.content?.length !== 1 || cell.content[0].type !== "paragraph") throw new Error("Table cells need one paragraph. Use Markdown view.");
+                    if (cell.content[0].content?.some(part => part.type === "hardBreak" || /[\r\n]/.test(part.text ?? ""))) {
+                        throw new Error("Markdown table cells cannot contain line breaks. Undo the line break to save.");
+                    }
                     return { type: "tableCell", children: inlineToAst(cell.content[0].content ?? []) };
                 }),
             })),

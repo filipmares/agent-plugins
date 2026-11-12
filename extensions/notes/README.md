@@ -76,7 +76,8 @@ Each panel runs its own server on `127.0.0.1` behind a random 256-bit URL
 token. It checks Host and Origin exactly and accepts only same-origin JSON
 POSTs. It sends no CORS headers and serves a strict CSP. The panel refreshes
 after edits made by the panel, `notes_manage`, another session, or an external
-editor. Clean notes reload silently; dirty notes keep their text and show
+editor. Clean notes reload silently, retaining Markdown view and editor focus;
+dirty notes keep their text and show
 **Changed elsewhere — Reload / Keep Mine**. Undo does not silently resolve
 that choice. Each provider watches its library with recursive `fs.watch` and
 rescans every 30 seconds; unsupported/failed recursive watching logs a warning
@@ -272,3 +273,8 @@ path, not an immutable snapshot: edits, renames or deletion before consumption
 can affect what the runtime reads. Runtime rejection is surfaced as Not sent,
 never silently retried without the note. The close-time ~64 KB recovery limit
 above still applies.
+
+Windows validation also reproduced intermittent `EPERM` failures while opening
+the library lock or atomically renaming a note, including unchanged storage
+tests and the new live-sync checks. A passing run does not establish that
+these filesystem failures are resolved; they are surfaced, not silently retried.
