@@ -11,6 +11,13 @@ Open the `notes` canvas. Optional input targets a `noteId`, `folder`, or
 The panel has three columns (folders, notes, editor). Below 960 px, folders
 become an overlay. Below 640 px, one pane is shown at a time.
 
+Colors follow the Copilot app's injected canvas theme tokens and light/dark
+mode, with GitHub light/dark defaults when opened outside the host. Folder
+icons and selection are neutral; blue is reserved for focus, drop targets,
+and informational highlights. The documented canvas contract has no dedicated
+sidebar or selection tokens, so those surfaces derive from its foreground
+and background tokens rather than depending on app-internal variables.
+
 - Smart views: All Notes, This Project, and This Session. Folders support
   create, rename (double-click), delete with a recursive count, collapse, and
   dragging notes onto a folder to move them.

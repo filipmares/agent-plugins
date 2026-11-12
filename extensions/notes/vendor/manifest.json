@@ -1,5 +1,5 @@
 {
-  "sourceHash": "763628fba27582590c4f9feffb55f1f9ca6dec9d73840d74c6924e2401cdf30a",
+  "sourceHash": "7b8de1feb5ec17851795143cb1c905e294dcca0e8cef18f15b75a39bb2dbbcff",
   "bunVersion": "1.4.4",
   "assets": [
     {
@@ -16,7 +16,7 @@
     },
     {
       "file": "notes-client.css",
-      "sha256": "c50016d3bddfe688e0ddef02c9db4f74ad55544bc985106d8019af880dcab658"
+      "sha256": "2c52f94c13b458fb77fb8c306ed61498bcebcfe43b1bd394b24021b4d64434db"
     }
   ],
   "packages": [
