@@ -6,6 +6,8 @@
     "validate": "bun run scripts/validate-skill.ts",
     "list": "bun run scripts/list-skills.ts",
     "validate:copilot-plugin": "bun run scripts/validate-copilot-plugin.ts",
-    "test:canvas": "bun test extensions/rpi-artifact-navigator/tests/*.test.mjs"
+    "test:canvas": "bun test extensions/rpi-artifact-navigator/tests/*.test.mjs",
+    "build:notes": "bun run extensions/notes/client/build.ts",
+    "test:notes": "bun test extensions/notes/tests/*.test.mjs"
   }
 }

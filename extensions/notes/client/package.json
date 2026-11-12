@@ -1,0 +1,18 @@
+{
+    "name": "notes-build",
+    "private": true,
+    "type": "module",
+    "dependencies": {
+        "@primer/octicons": "19.42.0",
+        "@tiptap/core": "3.33.0",
+        "@tiptap/extension-list": "3.33.0",
+        "@tiptap/extension-table": "3.33.0",
+        "@tiptap/pm": "3.33.0",
+        "@tiptap/starter-kit": "3.33.0",
+        "remark-gfm": "4.0.1",
+        "remark-parse": "11.0.0",
+        "remark-stringify": "11.0.0",
+        "unified": "11.0.5",
+        "yaml": "2.9.1"
+    }
+}

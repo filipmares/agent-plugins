@@ -89,24 +89,32 @@ A starter is provided in [`.templates/skill-template/`](./.templates/skill-templ
 
 ## Validation Tools
 
-This repo uses [Bun](https://bun.sh) for its TypeScript scripts. No build step is required.
+This repo uses [Bun](https://bun.sh) for its TypeScript scripts. Skill scripts need
+no build step; Notes dependencies are bundled for offline distribution.
 
 ```bash
 bun run scripts/validate-skill.ts skills/<name>   # Validate a single skill
 bun run scripts/list-skills.ts                    # List all skills + status
 bun run validate:copilot-plugin                   # Validate the Copilot marketplace + plugin packages
-bun run test:canvas                               # Run the canvas companion's test suite
+bun run test:canvas                               # Run RPI Artifact Navigator tests
+bun run build:notes                               # Rebuild Notes client, dependencies and manifest
+bun run test:notes                                # Run Notes storage, server, client, sync and fidelity tests
 ```
 
 CI runs the same checks against every skill in `skills/`.
 
-## Copilot Canvas Extension
+## Copilot Canvas Extensions
 
-`extensions/rpi-artifact-navigator/` is a separate, opt-in GitHub Copilot
-canvas extension. It is deliberately outside the skills.sh distribution: root
-`skills/` and the `agent-plugins` marketplace entry are unaffected by it.
+Canvases live in `extensions/<name>/` and are registered in the
+`extensions` array of `.github/plugin/plugin.json`. They ship with the
+`agent-plugins` plugin, not the skills.sh installation. Runtime modules use the
+Node standard library, the host-resolved `@github/copilot-sdk`, and committed
+offline bundles where needed. Keep dependency versions, hashes and verbatim
+licenses together; users should not need a package install.
 
-Working rules for that extension:
+### RPI Artifact Navigator
+
+Working rules for `extensions/rpi-artifact-navigator/`:
 
 - The canvas is **read-only**. Do not add a write, edit, delete, rename, or move path.
 - Reads stay inside the approved `.copilot-tracking` roots enforced in `artifact-index.mjs`. Widening that allowlist is a security change, not a convenience change.
@@ -134,6 +142,47 @@ Run `bun run test:canvas` before opening a PR that touches the canvas. Rendering
 changes also require a macOS GitHub Copilot canvas check for supported Markdown,
 hostile input, missing or throwing libraries, focus and refresh behavior, and
 narrow and wide layouts; Bun assertions do not execute or attest the final DOM.
+
+## Notes Extension
+
+`extensions/notes/` ships the global Markdown library, `notes_manage`, and a
+rich/plain editor with live sync and Ask Copilot. See its
+[guide](./extensions/notes/README.md) for the storage contract, upstream credits,
+screenshots and verified setups.
+
+- Runtime modules use Node's standard library, the host's `@github/copilot-sdk`,
+  and committed bundles under `vendor/`. Build-only dependencies live in
+  `client/package.json` with exact pins and `client/bun.lock`.
+- Run `bun install --cwd extensions/notes/client --frozen-lockfile --ignore-scripts`
+  before `bun run build:notes`. Commit the generated bundles, manifest, and
+  verbatim licences together. `test:notes` rejects stale sources or altered
+  bundles/licences without requiring a dependency install.
+- Note writes stay inside the resolved Documents/Copilot Notes library.
+  Keep path confinement, cross-process locking, content-version checks,
+  malformed-frontmatter warnings, and preservation of custom YAML intact.
+- Deletes use OS trash. Permanent deletion requires explicit confirmation,
+  including for agent calls in allow-all/autopilot mode. Tests mock trash unless
+  a developer explicitly enables `NOTES_TEST_REAL_TRASH=1`.
+- Run `bun run test:notes` for Notes changes. Do not claim browser, in-app,
+  sync-provider, or OS trash support solely from model tests.
+- The panel client (`client/app.ts`, `client/app.css`) is bundled into
+  `vendor/notes-client.*`; rebuild after any `client/` change. The server's
+  CSP forbids inline scripts and styles, so set dynamic styles through CSSOM
+  only. Keep the token path, exact Host/Origin checks, and JSON-only POSTs.
+- Keep frontmatter outside the editor. Preserve unchanged Markdown spelling
+  and the semantic round-trip guard; unsupported content must retain its plain
+  fallback rather than silently lose content. Add fidelity regressions to the
+  existing corpus when changing the editor or serializer.
+- Keep recovery claims exclusive and version checks inside retried filesystem
+  mutations. A stale save or unresolved recovered draft must never implicitly
+  choose Keep Mine.
+- Use disposable libraries for browser checks and screenshots, never the real
+  Documents library. Check 390/780/1200 px in light and dark modes. Screenshots
+  must use synthetic content and identify simulated themes or mocked callbacks.
+  Native-app shortcut handling, queued attachment consumption and real OS
+  integration need separate checks; browser fixtures do not establish support.
+- Maintain plugin/marketplace version parity and the Notes entry in
+  `CHANGELOG.md`. Run `bun run validate:copilot-plugin` after manifest changes.
 
 ## Code of Conduct
 

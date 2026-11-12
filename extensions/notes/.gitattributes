@@ -1,0 +1,5 @@
+# Preserve fingerprinted outputs and verbatim upstream licences on every OS.
+vendor/** -text
+# Bundled template literals include significant Markdown hard-break whitespace.
+vendor/notes-client.js -whitespace
+third-party-licenses/** -text -whitespace
