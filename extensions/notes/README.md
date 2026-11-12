@@ -1,9 +1,38 @@
 # Notes
 
-Markdown notes for the GitHub Copilot app. **Phases 1–3 implement storage,
-`notes_manage`, and the notes panel with rich and plain Markdown editing,
-live sync, and Ask Copilot.** The plugin manifest registers it as of 2.2.0;
-native-app verification and documentation polish remain Phase 4.
+Markdown notes for the GitHub Copilot app, with rich and plain editing,
+session provenance, live sync, and Ask Copilot. Shipped with the
+`agent-plugins` plugin as of 2.2.0.
+
+## Installation
+
+Register the marketplace once, then install the plugin:
+
+```shell
+copilot plugin marketplace add filipmares/agent-plugins
+copilot plugin install agent-plugins@agent-plugins
+```
+
+Update with `copilot plugin update agent-plugins`. Ask Copilot to open the
+**Notes** canvas; installing the plugin also makes `notes_manage` available.
+For a standalone copy, use **Customize → Extensions → Import canvas from repo**
+and choose `filipmares/agent-plugins`, then `extensions/notes/`. Manual imports
+do not receive plugin updates; re-import to update that copy.
+
+Native-app interactions remain unverified. See [Verification limits](#verification-limits)
+before using the experimental extension for important notes.
+
+## Screenshots
+
+Headless Microsoft Edge on Windows, using synthetic notes in a disposable
+library. These show the standalone light/dark fallback colors, not the native
+app's chrome or its injected theme. No real notes, chat turns or OS trash were used.
+
+![Light theme at 1200 px: folders and a pinned note list beside a rich project notebook.](docs/notes-light.png)
+
+![Dark theme at 1200 px: the same notebook with headings and task checkboxes.](docs/notes-dark.png)
+
+![Narrow layout at 390 px: the notebook fills the panel, with Back to notes navigation.](docs/notes-narrow.png)
 
 ## Panel
 
@@ -201,13 +230,13 @@ writes and deletions, asset and folder moves, the lock file, and the UI-state an
 recovery files retry a create, rename or unlink that fails with `EPERM`,
 `EACCES` or `EBUSY` for about 1.3 seconds before the error is surfaced. Recovery
 entries are best-effort instead: their reads are retried, but a read or cleanup
-that still fails is skipped rather than surfaced, and claiming an entry is not
-retried because a failure there only means another panel owns it. Ordinary note
-and UI-state reads and the confirmed permanent-deletion fallback are not
-retried. A retried note replacement or deletion re-checks the content hash on
-every attempt, so a
-change that check can observe is never overwritten or deleted by a retry; an
-edit landing after the last check is the race described below. A lock that
+that still fails is skipped rather than surfaced. Claims are not retried;
+an entry that cannot be claimed is skipped, including when another panel owns
+it. Ordinary note and UI-state reads and the confirmed permanent-deletion
+fallback are not retried. A retried note replacement or deletion re-checks the
+content hash on every attempt, so a change that check can observe is never
+overwritten or deleted by a retry; an edit landing after the last check is the
+race described below. A lock that
 already exists (`EEXIST`) is ordinary contention and is not retried that way: it
 waits up to 30 seconds. A crashed writer can leave the lock behind;
 requests fail with `library_busy` rather than guessing that another writer is
@@ -228,6 +257,7 @@ From the repository root on Windows:
 bun install --cwd extensions\notes\client --frozen-lockfile --ignore-scripts
 bun run build:notes
 bun run test:notes
+bun run validate:copilot-plugin
 ```
 
 Only the maintainer build needs Bun and dependencies. Runtime code is `.mjs`,
@@ -270,13 +300,18 @@ Deferred features are tracked in
 
 ### Verification limits
 
-Phase 3 was exercised in headless Microsoft Edge on Windows using a disposable
+The panel was exercised in headless Microsoft Edge on Windows using a disposable
 library: rich/plain no-write toggles, autosave, undo/redo, checkbox input,
 table Tab, conflict resolution, clean live reload, link/image privacy, scoped
 keyboard navigation, and the Ask Copilot save/send/focus boundary. Layouts were
 checked at 390, 780 and 1200 px, with light and simulated host dark tokens.
 The send and OS-browser-opening callbacks were mocked, not real chat turns or
 browser launches. No real notes or real OS trash were used.
+
+The screenshots above were captured from the release tree in headless Edge
+on Windows. A separate light/dark fallback-color pass covered 390, 780 and
+1200 px, including narrow back navigation and the medium folder overlay,
+without rewriting the displayed note.
 
 The installed SDK's `MessageOptions` and generated `AttachmentFile` contract
 specify queued sends and **absolute file paths**, with no workspace-relative
