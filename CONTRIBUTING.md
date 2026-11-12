@@ -89,13 +89,16 @@ A starter is provided in [`.templates/skill-template/`](./.templates/skill-templ
 
 ## Validation Tools
 
-This repo uses [Bun](https://bun.sh) for its TypeScript scripts. No build step is required.
+This repo uses [Bun](https://bun.sh) for its TypeScript scripts. Skill scripts need
+no build step; Notes dependencies are bundled for offline distribution.
 
 ```bash
 bun run scripts/validate-skill.ts skills/<name>   # Validate a single skill
 bun run scripts/list-skills.ts                    # List all skills + status
 bun run validate:copilot-plugin                   # Validate the Copilot marketplace + plugin packages
 bun run test:canvas                               # Run the canvas companion's test suite
+bun run build:notes                               # Rebuild committed Notes dependencies
+bun run test:notes                                # Run Notes storage and tool tests
 ```
 
 CI runs the same checks against every skill in `skills/`.
@@ -134,6 +137,27 @@ Run `bun run test:canvas` before opening a PR that touches the canvas. Rendering
 changes also require a macOS GitHub Copilot canvas check for supported Markdown,
 hostile input, missing or throwing libraries, focus and refresh behavior, and
 narrow and wide layouts; Bun assertions do not execute or attest the final DOM.
+
+## Notes Extension
+
+`extensions/notes/` is being developed in phases. Phase 1 provides storage and
+the `notes_manage` tool; plugin registration and the editor arrive later.
+
+- Runtime modules use Node's standard library, the host's `@github/copilot-sdk`,
+  and committed bundles under `vendor/`. Build-only dependencies live in
+  `client/package.json` with exact pins and `client/bun.lock`.
+- Run `bun install --cwd extensions/notes/client --frozen-lockfile --ignore-scripts`
+  before `bun run build:notes`. Commit the generated bundles, manifest, and
+  verbatim licences together. `test:notes` rejects stale sources or altered
+  bundles/licences without requiring a dependency install.
+- Note writes stay inside the resolved Documents/Copilot Notes library.
+  Keep path confinement, cross-process locking, content-version checks,
+  malformed-frontmatter warnings, and preservation of custom YAML intact.
+- Deletes use OS trash. Permanent deletion requires explicit confirmation,
+  including for agent calls in allow-all/autopilot mode. Tests mock trash unless
+  a developer explicitly enables `NOTES_TEST_REAL_TRASH=1`.
+- Run `bun run test:notes` for Notes changes. Do not claim browser, in-app,
+  sync-provider, or OS trash support solely from model tests.
 
 ## Code of Conduct
 

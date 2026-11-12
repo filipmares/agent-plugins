@@ -1,0 +1,3 @@
+# Preserve fingerprinted outputs and verbatim upstream licences on every OS.
+vendor/** -text
+third-party-licenses/** -text -whitespace
