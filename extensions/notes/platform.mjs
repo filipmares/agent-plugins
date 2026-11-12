@@ -99,10 +99,31 @@ export async function trashItem(path, { platform = process.platform, run = execu
         } else {
             throw new NotesError("trash_unavailable", "No OS trash adapter is available on this platform.");
         }
+
     } catch (error) {
         if (error instanceof NotesError) throw error;
         const failure = new NotesError("trash_unavailable", "The operating system could not move the item to its trash.");
         failure.cause = error;
         throw failure;
+    }
+}
+
+export async function openExternalLink(value, { platform = process.platform, run = execute } = {}) {
+    let url;
+    try { url = new URL(value); } catch { throw new NotesError("invalid_request", "The link URL is invalid."); }
+    if (typeof value !== "string" || /[\u0000-\u0020\u007f]/.test(value) || !["http:", "https:", "mailto:"].includes(url.protocol)) {
+        throw new NotesError("unsafe_url", "Only http, https and mailto links can be opened.");
+    }
+    try {
+        if (platform === "win32") {
+            const encoded = Buffer.from(value, "utf8").toString("base64");
+            await run(windowsShell(), ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command",
+                `$url = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encoded}')); Start-Process -FilePath $url`], commandOptions);
+        } else if (platform === "darwin") await run("/usr/bin/open", ["--", value], commandOptions);
+        else if (platform === "linux") await run("xdg-open", [value], commandOptions);
+        else throw new NotesError("platform_unsupported", "No browser opener is available on this platform.");
+    } catch (error) {
+        if (error instanceof NotesError) throw error;
+        throw new NotesError("open_failed", "The operating system could not open this link.");
     }
 }

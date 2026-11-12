@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { request } from "node:http";
-import { mkdir, mkdtemp, readFile, rename, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rename, rm, writeFile, symlink, link } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { MAX_REQUEST_BYTES, createNotesServer, resolveTarget } from "../server.mjs";
@@ -9,7 +9,7 @@ import { popRecovery, pushRecovery, recoveryPath } from "../ui-state.mjs";
 
 let fixture, library, server, statePath, changes;
 
-async function start(target) {
+async function start(target, options = {}) {
     server = await createNotesServer({
         getLibrary: async () => library,
         getContext: async () => ({ sessionId: "session-a", sessionName: "Panel session", project: "owner/repo" }),
@@ -17,6 +17,7 @@ async function start(target) {
         statePath,
         target,
         onChange: () => { changes += 1; },
+        ...options,
     });
     return server;
 }
@@ -102,6 +103,54 @@ function events(path = "api/events") {
 }
 
 describe("Notes panel server", () => {
+    test("image route confines real paths and returns only matching image types with isolated SVG policy", async () => {
+        await start();
+        const note = await library.create({ body: "# Images", folder: "Inner" }, { sessionId: "image-test", actor: "user" });
+        const root = join(fixture, "notes");
+        const image = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==", "base64");
+        await writeFile(join(root, "safe.png"), image);
+        await writeFile(join(root, "wrong.png"), "<html>not an image</html>");
+        await writeFile(join(root, "evil.svg"), '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script><image href="https://invalid.test/pixel"/></svg>');
+        const get = src => call(`api/image?noteId=${note.id}&src=${encodeURIComponent(src)}`);
+        const good = await get("../safe.png");
+        expect(good.status).toBe(200);
+        expect(good.headers["content-type"]).toBe("image/png");
+        expect((await get("../wrong.png")).status).toBe(415);
+        const svg = await get("../evil.svg");
+        expect(svg.headers["content-security-policy"]).toContain("sandbox");
+        expect(svg.headers["content-security-policy"]).toContain("script-src 'none'");
+        for (const path of ["../../outside.png", "%2e%2e/%2e%2e/outside.png", "https://invalid.test/img.png", "//invalid.test/img.png", "file:///C:/x.png", "C:\\x.png"]) {
+            expect((await get(path)).status).not.toBe(200);
+        }
+        await mkdir(join(fixture, "outside"));
+        await writeFile(join(fixture, "outside", "secret.png"), image);
+        await symlink(join(fixture, "outside"), join(root, "escape"), process.platform === "win32" ? "junction" : "dir");
+        expect((await get("../escape/secret.png")).status).toBe(403);
+        await link(join(fixture, "outside", "secret.png"), join(root, "hard.png"));
+        expect((await get("../hard.png")).status).toBe(403);
+    });
+
+    test("Ask Copilot uses the owning session, queued delivery and the saved absolute file attachment", async () => {
+        const sent = [];
+        await start(undefined, { sendMessage: async (options, sessionId) => { sent.push({ options, sessionId }); return "message-1"; } });
+        const note = await library.create({ body: "# Ask\nSaved text" }, { sessionId: "session-a", actor: "user" });
+        const ask = (expectedVersion = note.version) => call("api/ask", {
+            method: "POST", body: { id: note.id, expectedVersion, prompt: "Summarize this note" },
+        });
+        expect((await ask()).json).toEqual({ messageId: "message-1" });
+        expect(sent).toEqual([{ sessionId: "session-a", options: {
+            prompt: "Summarize this note", mode: "enqueue",
+            attachments: [{ type: "file", path: join(fixture, "notes", note.path), displayName: "ask.md" }],
+        } }]);
+        await library.update(note.id, { body: "# Ask\nChanged", expectedVersion: note.version }, { sessionId: "session-a", actor: "user" });
+        expect((await ask()).status).toBe(409);
+        expect(sent).toHaveLength(1);
+        await server.close();
+        await start(undefined, { sendMessage: async () => { throw new Error("Attachment refused by runtime"); } });
+        const current = await library.read(note.id);
+        expect((await ask(current.version)).status).toBe(500);
+    });
+
     test("serves the shell with a strict CSP behind a capability token, exact Host and same-origin POSTs", async () => {
         await start();
         const shell = await call("");

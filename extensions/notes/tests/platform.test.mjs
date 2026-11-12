@@ -2,13 +2,27 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { lstat, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { readSessionContext, resolveNotesDirectory, trashItem } from "../platform.mjs";
+import { openExternalLink, readSessionContext, resolveNotesDirectory, trashItem } from "../platform.mjs";
 
 let fixture;
 beforeEach(async () => { fixture = await mkdtemp(join(tmpdir(), "copilot-notes-platform-")); });
 afterEach(async () => { await rm(fixture, { recursive: true, force: true }); });
 
 describe("platform integration", () => {
+    test.each(["win32", "darwin", "linux"])("safe %s link opening never interpolates URL text into a shell command", async platform => {
+        const url = "https://example.com/a?text='$(calc)'&next=1";
+        const calls = [];
+        await openExternalLink(url, { platform, run: async (command, args, options) => { calls.push({ command, args, options }); } });
+        expect(calls).toHaveLength(1);
+        expect(calls[0].options.shell).toBeUndefined();
+        if (platform === "win32") {
+            expect(calls[0].args.at(-1)).not.toContain("$(calc)");
+            expect(calls[0].args.at(-1)).toContain(Buffer.from(url).toString("base64"));
+        } else expect(calls[0].args.at(-1)).toBe(url);
+        for (const unsafe of ["file:///tmp/x", "javascript:alert(1)", "data:text/html,bad", "//host", "https://x\nbad"]) {
+            await expect(openExternalLink(unsafe, { platform, run: async () => { throw new Error("Must not run"); } })).rejects.toBeDefined();
+        }
+    });
     test("resolves redirected Windows Documents without guessing the home-directory path", async () => {
         const result = await resolveNotesDirectory({ platform: "win32", run: async (command, args) => {
             expect(command).toMatch(/powershell\.exe$/i);

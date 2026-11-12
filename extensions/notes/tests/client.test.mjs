@@ -8,10 +8,10 @@ import { NotesLibrary } from "../storage.mjs";
 import { pushRecovery, recoveryPath } from "../ui-state.mjs";
 
 const source = await readFile(new URL("../client/app.ts", import.meta.url), "utf8");
-const instrumented = source.replace(/\bvoid start\(\);(?=\s*$)/, "globalThis.clientReady = start();");
+const instrumented = source.replace(/^import .+;$/gm, "").replace(/\bvoid start\(\);(?=\s*$)/, "globalThis.clientReady = start();");
 if (instrumented === source) throw new Error("Cannot await Notes client startup.");
 const script = new Bun.Transpiler({ loader: "ts" }).transformSync(instrumented + `
-globalThis.client = { state, textarea, toast, openNote, moveNote, save, resolveConflict };
+globalThis.client = { state, textarea, toast, openNote, moveNote, save, resolveConflict, refresh, askInput, askStatus, compose, toggleMarkdown };
 `);
 const context = { sessionId: "client-test", actor: "user" };
 let fixture, root, library, server, statePath, clients;
@@ -34,6 +34,7 @@ class Element extends EventTarget {
     append(...children) { this.children.push(...children); }
     replaceChildren(...children) { this.children = children; }
     contains() { return false; }
+    focus() {}
     querySelector() { return null; }
     querySelectorAll() { return []; }
 }
@@ -53,8 +54,12 @@ async function openClient() {
     const timers = new Map();
     const sandbox = {
         window, document, URLSearchParams, Event, crypto,
+        GUARD_MESSAGE: "This note uses Markdown the rich editor can't keep exactly.",
+        safeExternal: value => /^(https?:|mailto:)/.test(value),
+        // Only the rendered view is inert. Real codec/schema and browser tests cover the rich view separately.
+        createRichEditor: () => ({ safe: false, editor: { destroy() {}, isFocused: false, state: { selection: { from: 1 } } } }),
         matchMedia: () => Object.assign(new EventTarget(), { matches: false }),
-        EventSource: class extends EventTarget {},
+        EventSource: class extends EventTarget { close() {} },
         __ICONS__: new Proxy({}, { get: () => ({ width: 16, path: "" }) }),
         addEventListener: window.addEventListener.bind(window),
         setTimeout: callback => { timers.set(++timerId, callback); return timerId; },
@@ -110,6 +115,47 @@ afterEach(async () => {
 });
 
 describe("Notes client persistence", () => {
+    test("live sync silently reloads clean text but preserves dirty and unresolved drafts", async () => {
+        const note = await library.create({ body: "# Sync\noriginal" }, context);
+        const panel = await openClient();
+        await panel.openNote(note.id);
+        const first = await library.update(note.id, { body: "# Sync\nexternal 1", expectedVersion: note.version }, context);
+        await panel.refresh();
+        expect(panel.textarea.value).toBe(first.body);
+        expect(panel.state.conflict).toBe(false);
+        panel.textarea.value = "# Sync\nmy draft";
+        const second = await library.update(note.id, { body: "# Sync\nexternal 2", expectedVersion: first.version }, context);
+        await panel.refresh();
+        expect(panel.textarea.value).toBe("# Sync\nmy draft");
+        expect(panel.state.conflict).toBe(true);
+        // Undo is not an implicit conflict resolution; closing must still stash.
+        panel.textarea.value = first.body;
+        await panel.refresh();
+        expect(panel.textarea.value).toBe(first.body);
+        expect(panel.state.conflict).toBe(true);
+        await panel.close();
+        expect(panel.calls.at(-1).body.stash).toBe(true);
+        expect((await library.read(note.id)).body).toBe(second.body);
+    });
+
+    test("Ask Copilot flushes edits, leaves conflicts unsent, and reports a disconnected session", async () => {
+        const note = await library.create({ body: "# Ask\noriginal" }, context);
+        const panel = await openClient();
+        await panel.openNote(note.id);
+        panel.textarea.value = "# Ask\nsaved before sending";
+        panel.askInput.value = "Summarize";
+        panel.askInput.dispatchEvent(Object.assign(new Event("keydown"), { key: "Enter" }));
+        await panel.settle();
+        expect((await library.read(note.id)).body).toBe("# Ask\nsaved before sending");
+        expect(panel.calls.findLast(call => call.path === "api/ask").body).toMatchObject({ id: note.id, prompt: "Summarize" });
+        expect(panel.askStatus.textContent).toBe("Not sent");
+        const count = panel.calls.filter(call => call.path === "api/ask").length;
+        panel.state.conflict = true;
+        panel.askInput.dispatchEvent(Object.assign(new Event("keydown"), { key: "Enter" }));
+        await panel.settle();
+        expect(panel.calls.filter(call => call.path === "api/ask")).toHaveLength(count);
+    });
+
     test.each([false, true])("close/reopen preserves unresolved recovery until explicit resolution (keep mine: %s)", async keepMine => {
         const note = await library.create({ body: "# Shared\nCurrent external text" }, context);
         const recovery = { noteId: note.id, folder: "", body: "# Shared\nOlder recovered draft" };

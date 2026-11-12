@@ -1,6 +1,20 @@
 {
-  "sourceHash": "763628fba27582590c4f9feffb55f1f9ca6dec9d73840d74c6924e2401cdf30a",
+  "sourceHash": "8d7dca2355e41d2f1f0226449fcad5c0209b78f3bee9d0d8b55c17e1c2759009",
   "bunVersion": "1.4.4",
+  "adaptedSources": [
+    {
+      "repository": "https://github.com/bholmesdev/hubble.md",
+      "commit": "cf633b3221b9572f22604168ac77c1ffa921debe",
+      "files": [
+        "packages/editor/src/markdownToProsemirror.ts",
+        "packages/editor/src/prosemirrorToMarkdown.ts",
+        "packages/editor/src/List.ts",
+        "packages/ui/src/editor/EditorView.tsx"
+      ],
+      "licenseFile": "../third-party-licenses/hubble.md.txt",
+      "licenseSha256": "a55611973d7a198f322486fd8c941f32347b91d2d09f34a519b46ecd23d459d3"
+    }
+  ],
   "assets": [
     {
       "file": "yaml.mjs",
@@ -12,11 +26,11 @@
     },
     {
       "file": "notes-client.js",
-      "sha256": "238423e67e2ffceef714a2753ddf6d32e9dfb6424591cfce81572f17f83e7bec"
+      "sha256": "9d1776006f013b083995c80abcb7c36d945c3157559daf2ccc2b52e24b6f6d3a"
     },
     {
       "file": "notes-client.css",
-      "sha256": "c50016d3bddfe688e0ddef02c9db4f74ad55544bc985106d8019af880dcab658"
+      "sha256": "fbd852ca172b10ffaff6bc6c1d1697c9aa79faf6dfdba44c41d3d7e06e6d0edf"
     }
   ],
   "packages": [
@@ -28,6 +42,240 @@
       "licenseSource": "https://registry.npmjs.org/@primer/octicons/-/octicons-19.42.0.tgz#package/LICENSE",
       "licenseFile": "../third-party-licenses/primer__octicons.txt",
       "licenseSha256": "da259c8bd0de62713ccdcf88910aebca810644f98c2c912bad814fc79ea778df"
+    },
+    {
+      "name": "@tiptap/core",
+      "version": "3.33.0",
+      "source": "https://registry.npmjs.org/@tiptap/core/-/core-3.33.0.tgz",
+      "license": "MIT",
+      "licenseSource": "https://registry.npmjs.org/@tiptap/core/-/core-3.33.0.tgz#package/LICENSE.md",
+      "licenseFile": "../third-party-licenses/tiptap__core.txt",
+      "licenseSha256": "c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9"
+    },
+    {
+      "name": "@tiptap/extension-blockquote",
+      "version": "3.33.0",
+      "source": "https://registry.npmjs.org/@tiptap/extension-blockquote/-/extension-blockquote-3.33.0.tgz",
+      "license": "MIT",
+      "licenseSource": "https://registry.npmjs.org/@tiptap/extension-blockquote/-/extension-blockquote-3.33.0.tgz#package/LICENSE.md",
+      "licenseFile": "../third-party-licenses/tiptap__extension-blockquote.txt",
+      "licenseSha256": "c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9"
+    },
+    {
+      "name": "@tiptap/extension-bold",
+      "version": "3.33.0",
+      "source": "https://registry.npmjs.org/@tiptap/extension-bold/-/extension-bold-3.33.0.tgz",
+      "license": "MIT",
+      "licenseSource": "https://registry.npmjs.org/@tiptap/extension-bold/-/extension-bold-3.33.0.tgz#package/LICENSE.md",
+      "licenseFile": "../third-party-licenses/tiptap__extension-bold.txt",
+      "licenseSha256": "c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9"
+    },
+    {
+      "name": "@tiptap/extension-bullet-list",
+      "version": "3.33.0",
+      "source": "https://registry.npmjs.org/@tiptap/extension-bullet-list/-/extension-bullet-list-3.33.0.tgz",
+      "license": "MIT",
+      "licenseSource": "https://registry.npmjs.org/@tiptap/extension-bullet-list/-/extension-bullet-list-3.33.0.tgz#package/LICENSE.md",
+      "licenseFile": "../third-party-licenses/tiptap__extension-bullet-list.txt",
+      "licenseSha256": "c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9"
+    },
+    {
+      "name": "@tiptap/extension-code",
+      "version": "3.33.0",
+      "source": "https://registry.npmjs.org/@tiptap/extension-code/-/extension-code-3.33.0.tgz",
+      "license": "MIT",
+      "licenseSource": "https://registry.npmjs.org/@tiptap/extension-code/-/extension-code-3.33.0.tgz#package/LICENSE.md",
+      "licenseFile": "../third-party-licenses/tiptap__extension-code.txt",
+      "licenseSha256": "c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9"
+    },
+    {
+      "name": "@tiptap/extension-code-block",
+      "version": "3.33.0",
+      "source": "https://registry.npmjs.org/@tiptap/extension-code-block/-/extension-code-block-3.33.0.tgz",
+      "license": "MIT",
+      "licenseSource": "https://registry.npmjs.org/@tiptap/extension-code-block/-/extension-code-block-3.33.0.tgz#package/LICENSE.md",
+      "licenseFile": "../third-party-licenses/tiptap__extension-code-block.txt",
+      "licenseSha256": "c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9"
+    },
+    {
+      "name": "@tiptap/extension-document",
+      "version": "3.33.0",
+      "source": "https://registry.npmjs.org/@tiptap/extension-document/-/extension-document-3.33.0.tgz",
+      "license": "MIT",
+      "licenseSource": "https://registry.npmjs.org/@tiptap/extension-document/-/extension-document-3.33.0.tgz#package/LICENSE.md",
+      "licenseFile": "../third-party-licenses/tiptap__extension-document.txt",
+      "licenseSha256": "c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9"
+    },
+    {
+      "name": "@tiptap/extension-dropcursor",
+      "version": "3.33.0",
+      "source": "https://registry.npmjs.org/@tiptap/extension-dropcursor/-/extension-dropcursor-3.33.0.tgz",
+      "license": "MIT",
+      "licenseSource": "https://registry.npmjs.org/@tiptap/extension-dropcursor/-/extension-dropcursor-3.33.0.tgz#package/LICENSE.md",
+      "licenseFile": "../third-party-licenses/tiptap__extension-dropcursor.txt",
+      "licenseSha256": "c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9"
+    },
+    {
+      "name": "@tiptap/extension-gapcursor",
+      "version": "3.33.0",
+      "source": "https://registry.npmjs.org/@tiptap/extension-gapcursor/-/extension-gapcursor-3.33.0.tgz",
+      "license": "MIT",
+      "licenseSource": "https://registry.npmjs.org/@tiptap/extension-gapcursor/-/extension-gapcursor-3.33.0.tgz#package/LICENSE.md",
+      "licenseFile": "../third-party-licenses/tiptap__extension-gapcursor.txt",
+      "licenseSha256": "c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9"
+    },
+    {
+      "name": "@tiptap/extension-hard-break",
+      "version": "3.33.0",
+      "source": "https://registry.npmjs.org/@tiptap/extension-hard-break/-/extension-hard-break-3.33.0.tgz",
+      "license": "MIT",
+      "licenseSource": "https://registry.npmjs.org/@tiptap/extension-hard-break/-/extension-hard-break-3.33.0.tgz#package/LICENSE.md",
+      "licenseFile": "../third-party-licenses/tiptap__extension-hard-break.txt",
+      "licenseSha256": "c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9"
+    },
+    {
+      "name": "@tiptap/extension-heading",
+      "version": "3.33.0",
+      "source": "https://registry.npmjs.org/@tiptap/extension-heading/-/extension-heading-3.33.0.tgz",
+      "license": "MIT",
+      "licenseSource": "https://registry.npmjs.org/@tiptap/extension-heading/-/extension-heading-3.33.0.tgz#package/LICENSE.md",
+      "licenseFile": "../third-party-licenses/tiptap__extension-heading.txt",
+      "licenseSha256": "c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9"
+    },
+    {
+      "name": "@tiptap/extension-horizontal-rule",
+      "version": "3.33.0",
+      "source": "https://registry.npmjs.org/@tiptap/extension-horizontal-rule/-/extension-horizontal-rule-3.33.0.tgz",
+      "license": "MIT",
+      "licenseSource": "https://registry.npmjs.org/@tiptap/extension-horizontal-rule/-/extension-horizontal-rule-3.33.0.tgz#package/LICENSE.md",
+      "licenseFile": "../third-party-licenses/tiptap__extension-horizontal-rule.txt",
+      "licenseSha256": "c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9"
+    },
+    {
+      "name": "@tiptap/extension-italic",
+      "version": "3.33.0",
+      "source": "https://registry.npmjs.org/@tiptap/extension-italic/-/extension-italic-3.33.0.tgz",
+      "license": "MIT",
+      "licenseSource": "https://registry.npmjs.org/@tiptap/extension-italic/-/extension-italic-3.33.0.tgz#package/LICENSE.md",
+      "licenseFile": "../third-party-licenses/tiptap__extension-italic.txt",
+      "licenseSha256": "c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9"
+    },
+    {
+      "name": "@tiptap/extension-link",
+      "version": "3.33.0",
+      "source": "https://registry.npmjs.org/@tiptap/extension-link/-/extension-link-3.33.0.tgz",
+      "license": "MIT",
+      "licenseSource": "https://registry.npmjs.org/@tiptap/extension-link/-/extension-link-3.33.0.tgz#package/LICENSE.md",
+      "licenseFile": "../third-party-licenses/tiptap__extension-link.txt",
+      "licenseSha256": "c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9"
+    },
+    {
+      "name": "@tiptap/extension-list",
+      "version": "3.33.0",
+      "source": "https://registry.npmjs.org/@tiptap/extension-list/-/extension-list-3.33.0.tgz",
+      "license": "MIT",
+      "licenseSource": "https://registry.npmjs.org/@tiptap/extension-list/-/extension-list-3.33.0.tgz#package/LICENSE.md",
+      "licenseFile": "../third-party-licenses/tiptap__extension-list.txt",
+      "licenseSha256": "c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9"
+    },
+    {
+      "name": "@tiptap/extension-list-item",
+      "version": "3.33.0",
+      "source": "https://registry.npmjs.org/@tiptap/extension-list-item/-/extension-list-item-3.33.0.tgz",
+      "license": "MIT",
+      "licenseSource": "https://registry.npmjs.org/@tiptap/extension-list-item/-/extension-list-item-3.33.0.tgz#package/LICENSE.md",
+      "licenseFile": "../third-party-licenses/tiptap__extension-list-item.txt",
+      "licenseSha256": "c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9"
+    },
+    {
+      "name": "@tiptap/extension-list-keymap",
+      "version": "3.33.0",
+      "source": "https://registry.npmjs.org/@tiptap/extension-list-keymap/-/extension-list-keymap-3.33.0.tgz",
+      "license": "MIT",
+      "licenseSource": "https://registry.npmjs.org/@tiptap/extension-list-keymap/-/extension-list-keymap-3.33.0.tgz#package/LICENSE.md",
+      "licenseFile": "../third-party-licenses/tiptap__extension-list-keymap.txt",
+      "licenseSha256": "c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9"
+    },
+    {
+      "name": "@tiptap/extension-ordered-list",
+      "version": "3.33.0",
+      "source": "https://registry.npmjs.org/@tiptap/extension-ordered-list/-/extension-ordered-list-3.33.0.tgz",
+      "license": "MIT",
+      "licenseSource": "https://registry.npmjs.org/@tiptap/extension-ordered-list/-/extension-ordered-list-3.33.0.tgz#package/LICENSE.md",
+      "licenseFile": "../third-party-licenses/tiptap__extension-ordered-list.txt",
+      "licenseSha256": "c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9"
+    },
+    {
+      "name": "@tiptap/extension-paragraph",
+      "version": "3.33.0",
+      "source": "https://registry.npmjs.org/@tiptap/extension-paragraph/-/extension-paragraph-3.33.0.tgz",
+      "license": "MIT",
+      "licenseSource": "https://registry.npmjs.org/@tiptap/extension-paragraph/-/extension-paragraph-3.33.0.tgz#package/LICENSE.md",
+      "licenseFile": "../third-party-licenses/tiptap__extension-paragraph.txt",
+      "licenseSha256": "c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9"
+    },
+    {
+      "name": "@tiptap/extension-strike",
+      "version": "3.33.0",
+      "source": "https://registry.npmjs.org/@tiptap/extension-strike/-/extension-strike-3.33.0.tgz",
+      "license": "MIT",
+      "licenseSource": "https://registry.npmjs.org/@tiptap/extension-strike/-/extension-strike-3.33.0.tgz#package/LICENSE.md",
+      "licenseFile": "../third-party-licenses/tiptap__extension-strike.txt",
+      "licenseSha256": "c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9"
+    },
+    {
+      "name": "@tiptap/extension-table",
+      "version": "3.33.0",
+      "source": "https://registry.npmjs.org/@tiptap/extension-table/-/extension-table-3.33.0.tgz",
+      "license": "MIT",
+      "licenseSource": "https://registry.npmjs.org/@tiptap/extension-table/-/extension-table-3.33.0.tgz#package/LICENSE.md",
+      "licenseFile": "../third-party-licenses/tiptap__extension-table.txt",
+      "licenseSha256": "c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9"
+    },
+    {
+      "name": "@tiptap/extension-text",
+      "version": "3.33.0",
+      "source": "https://registry.npmjs.org/@tiptap/extension-text/-/extension-text-3.33.0.tgz",
+      "license": "MIT",
+      "licenseSource": "https://registry.npmjs.org/@tiptap/extension-text/-/extension-text-3.33.0.tgz#package/LICENSE.md",
+      "licenseFile": "../third-party-licenses/tiptap__extension-text.txt",
+      "licenseSha256": "c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9"
+    },
+    {
+      "name": "@tiptap/extension-underline",
+      "version": "3.33.0",
+      "source": "https://registry.npmjs.org/@tiptap/extension-underline/-/extension-underline-3.33.0.tgz",
+      "license": "MIT",
+      "licenseSource": "https://registry.npmjs.org/@tiptap/extension-underline/-/extension-underline-3.33.0.tgz#package/LICENSE.md",
+      "licenseFile": "../third-party-licenses/tiptap__extension-underline.txt",
+      "licenseSha256": "c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9"
+    },
+    {
+      "name": "@tiptap/extensions",
+      "version": "3.33.0",
+      "source": "https://registry.npmjs.org/@tiptap/extensions/-/extensions-3.33.0.tgz",
+      "license": "MIT",
+      "licenseSource": "https://registry.npmjs.org/@tiptap/extensions/-/extensions-3.33.0.tgz#package/LICENSE.md",
+      "licenseFile": "../third-party-licenses/tiptap__extensions.txt",
+      "licenseSha256": "c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9"
+    },
+    {
+      "name": "@tiptap/pm",
+      "version": "3.33.0",
+      "source": "https://registry.npmjs.org/@tiptap/pm/-/pm-3.33.0.tgz",
+      "license": "MIT",
+      "licenseSource": "https://registry.npmjs.org/@tiptap/pm/-/pm-3.33.0.tgz#package/LICENSE",
+      "licenseFile": "../third-party-licenses/tiptap__pm.txt",
+      "licenseSha256": "c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9"
+    },
+    {
+      "name": "@tiptap/starter-kit",
+      "version": "3.33.0",
+      "source": "https://registry.npmjs.org/@tiptap/starter-kit/-/starter-kit-3.33.0.tgz",
+      "license": "MIT",
+      "licenseSource": "https://registry.npmjs.org/@tiptap/starter-kit/-/starter-kit-3.33.0.tgz#package/LICENSE.md",
+      "licenseFile": "../third-party-licenses/tiptap__starter-kit.txt",
+      "licenseSha256": "c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9"
     },
     {
       "name": "@types/debug",
@@ -154,6 +402,15 @@
       "licenseSource": "https://registry.npmjs.org/is-plain-obj/-/is-plain-obj-4.1.0.tgz#package/license",
       "licenseFile": "../third-party-licenses/is-plain-obj.txt",
       "licenseSha256": "5c932d88256b4ab958f64a856fa48e8bd1f55bc1d96b8149c65689e0c61789d3"
+    },
+    {
+      "name": "linkifyjs",
+      "version": "4.4.0",
+      "source": "https://registry.npmjs.org/linkifyjs/-/linkifyjs-4.4.0.tgz",
+      "license": "MIT",
+      "licenseSource": "https://registry.npmjs.org/linkifyjs/-/linkifyjs-4.4.0.tgz#package/LICENSE",
+      "licenseFile": "../third-party-licenses/linkifyjs.txt",
+      "licenseSha256": "58e6f3677452cca096ce5328ebf7de37a1406bbeeb2f263c1b2ededc8c7d0228"
     },
     {
       "name": "longest-streak",
@@ -552,6 +809,132 @@
       "licenseSha256": "6fb9754611c20f6649f68805e8c990e83261f29316e29de9e6cedae607b8634c"
     },
     {
+      "name": "orderedmap",
+      "version": "2.1.1",
+      "source": "https://registry.npmjs.org/orderedmap/-/orderedmap-2.1.1.tgz",
+      "license": "MIT",
+      "licenseSource": "https://registry.npmjs.org/orderedmap/-/orderedmap-2.1.1.tgz#package/LICENSE",
+      "licenseFile": "../third-party-licenses/orderedmap.txt",
+      "licenseSha256": "869c30f368eb08735e779027b9f4bc9fea2f39624351856aebe42741f0bc0884"
+    },
+    {
+      "name": "prosemirror-changeset",
+      "version": "2.4.6",
+      "source": "https://registry.npmjs.org/prosemirror-changeset/-/prosemirror-changeset-2.4.6.tgz",
+      "license": "MIT",
+      "licenseSource": "https://registry.npmjs.org/prosemirror-changeset/-/prosemirror-changeset-2.4.6.tgz#package/LICENSE",
+      "licenseFile": "../third-party-licenses/prosemirror-changeset.txt",
+      "licenseSha256": "7543dfe82fa61d5bb2478c78cbd9dfb2cbd500b6ac2893b24ed925773b67fb70"
+    },
+    {
+      "name": "prosemirror-commands",
+      "version": "1.7.2",
+      "source": "https://registry.npmjs.org/prosemirror-commands/-/prosemirror-commands-1.7.2.tgz",
+      "license": "MIT",
+      "licenseSource": "https://registry.npmjs.org/prosemirror-commands/-/prosemirror-commands-1.7.2.tgz#package/LICENSE",
+      "licenseFile": "../third-party-licenses/prosemirror-commands.txt",
+      "licenseSha256": "ef0b452ced6304db2ce78ca66de1fc7b97bab05bc1750c95df359ed3fe1d65c8"
+    },
+    {
+      "name": "prosemirror-dropcursor",
+      "version": "1.8.4",
+      "source": "https://registry.npmjs.org/prosemirror-dropcursor/-/prosemirror-dropcursor-1.8.4.tgz",
+      "license": "MIT",
+      "licenseSource": "https://registry.npmjs.org/prosemirror-dropcursor/-/prosemirror-dropcursor-1.8.4.tgz#package/LICENSE",
+      "licenseFile": "../third-party-licenses/prosemirror-dropcursor.txt",
+      "licenseSha256": "ef0b452ced6304db2ce78ca66de1fc7b97bab05bc1750c95df359ed3fe1d65c8"
+    },
+    {
+      "name": "prosemirror-gapcursor",
+      "version": "1.4.1",
+      "source": "https://registry.npmjs.org/prosemirror-gapcursor/-/prosemirror-gapcursor-1.4.1.tgz",
+      "license": "MIT",
+      "licenseSource": "https://registry.npmjs.org/prosemirror-gapcursor/-/prosemirror-gapcursor-1.4.1.tgz#package/LICENSE",
+      "licenseFile": "../third-party-licenses/prosemirror-gapcursor.txt",
+      "licenseSha256": "ef0b452ced6304db2ce78ca66de1fc7b97bab05bc1750c95df359ed3fe1d65c8"
+    },
+    {
+      "name": "prosemirror-history",
+      "version": "1.5.1",
+      "source": "https://registry.npmjs.org/prosemirror-history/-/prosemirror-history-1.5.1.tgz",
+      "license": "MIT",
+      "licenseSource": "https://registry.npmjs.org/prosemirror-history/-/prosemirror-history-1.5.1.tgz#package/LICENSE",
+      "licenseFile": "../third-party-licenses/prosemirror-history.txt",
+      "licenseSha256": "ef0b452ced6304db2ce78ca66de1fc7b97bab05bc1750c95df359ed3fe1d65c8"
+    },
+    {
+      "name": "prosemirror-inputrules",
+      "version": "1.5.1",
+      "source": "https://registry.npmjs.org/prosemirror-inputrules/-/prosemirror-inputrules-1.5.1.tgz",
+      "license": "MIT",
+      "licenseSource": "https://registry.npmjs.org/prosemirror-inputrules/-/prosemirror-inputrules-1.5.1.tgz#package/LICENSE",
+      "licenseFile": "../third-party-licenses/prosemirror-inputrules.txt",
+      "licenseSha256": "ef0b452ced6304db2ce78ca66de1fc7b97bab05bc1750c95df359ed3fe1d65c8"
+    },
+    {
+      "name": "prosemirror-keymap",
+      "version": "1.2.3",
+      "source": "https://registry.npmjs.org/prosemirror-keymap/-/prosemirror-keymap-1.2.3.tgz",
+      "license": "MIT",
+      "licenseSource": "https://registry.npmjs.org/prosemirror-keymap/-/prosemirror-keymap-1.2.3.tgz#package/LICENSE",
+      "licenseFile": "../third-party-licenses/prosemirror-keymap.txt",
+      "licenseSha256": "ef0b452ced6304db2ce78ca66de1fc7b97bab05bc1750c95df359ed3fe1d65c8"
+    },
+    {
+      "name": "prosemirror-model",
+      "version": "1.25.12",
+      "source": "https://registry.npmjs.org/prosemirror-model/-/prosemirror-model-1.25.12.tgz",
+      "license": "MIT",
+      "licenseSource": "https://registry.npmjs.org/prosemirror-model/-/prosemirror-model-1.25.12.tgz#package/LICENSE",
+      "licenseFile": "../third-party-licenses/prosemirror-model.txt",
+      "licenseSha256": "ef0b452ced6304db2ce78ca66de1fc7b97bab05bc1750c95df359ed3fe1d65c8"
+    },
+    {
+      "name": "prosemirror-schema-list",
+      "version": "1.6.0",
+      "source": "https://registry.npmjs.org/prosemirror-schema-list/-/prosemirror-schema-list-1.6.0.tgz",
+      "license": "MIT",
+      "licenseSource": "https://registry.npmjs.org/prosemirror-schema-list/-/prosemirror-schema-list-1.6.0.tgz#package/LICENSE",
+      "licenseFile": "../third-party-licenses/prosemirror-schema-list.txt",
+      "licenseSha256": "ef0b452ced6304db2ce78ca66de1fc7b97bab05bc1750c95df359ed3fe1d65c8"
+    },
+    {
+      "name": "prosemirror-state",
+      "version": "1.4.4",
+      "source": "https://registry.npmjs.org/prosemirror-state/-/prosemirror-state-1.4.4.tgz",
+      "license": "MIT",
+      "licenseSource": "https://registry.npmjs.org/prosemirror-state/-/prosemirror-state-1.4.4.tgz#package/LICENSE",
+      "licenseFile": "../third-party-licenses/prosemirror-state.txt",
+      "licenseSha256": "ef0b452ced6304db2ce78ca66de1fc7b97bab05bc1750c95df359ed3fe1d65c8"
+    },
+    {
+      "name": "prosemirror-tables",
+      "version": "1.8.5",
+      "source": "https://registry.npmjs.org/prosemirror-tables/-/prosemirror-tables-1.8.5.tgz",
+      "license": "MIT",
+      "licenseSource": "https://registry.npmjs.org/prosemirror-tables/-/prosemirror-tables-1.8.5.tgz#package/LICENSE",
+      "licenseFile": "../third-party-licenses/prosemirror-tables.txt",
+      "licenseSha256": "d1d2046ebbe6362f9ad8fd4d62e9074f2553f289c0e1de895a650f10ba5f4239"
+    },
+    {
+      "name": "prosemirror-transform",
+      "version": "1.12.5",
+      "source": "https://registry.npmjs.org/prosemirror-transform/-/prosemirror-transform-1.12.5.tgz",
+      "license": "MIT",
+      "licenseSource": "https://registry.npmjs.org/prosemirror-transform/-/prosemirror-transform-1.12.5.tgz#package/LICENSE",
+      "licenseFile": "../third-party-licenses/prosemirror-transform.txt",
+      "licenseSha256": "ef0b452ced6304db2ce78ca66de1fc7b97bab05bc1750c95df359ed3fe1d65c8"
+    },
+    {
+      "name": "prosemirror-view",
+      "version": "1.42.9",
+      "source": "https://registry.npmjs.org/prosemirror-view/-/prosemirror-view-1.42.9.tgz",
+      "license": "MIT",
+      "licenseSource": "https://registry.npmjs.org/prosemirror-view/-/prosemirror-view-1.42.9.tgz#package/LICENSE",
+      "licenseFile": "../third-party-licenses/prosemirror-view.txt",
+      "licenseSha256": "ef0b452ced6304db2ce78ca66de1fc7b97bab05bc1750c95df359ed3fe1d65c8"
+    },
+    {
       "name": "remark-gfm",
       "version": "4.0.1",
       "source": "https://registry.npmjs.org/remark-gfm/-/remark-gfm-4.0.1.tgz",
@@ -577,6 +960,15 @@
       "licenseSource": "https://registry.npmjs.org/remark-stringify/-/remark-stringify-11.0.0.tgz#package/license",
       "licenseFile": "../third-party-licenses/remark-stringify.txt",
       "licenseSha256": "413654b0a78b98661dce96d2aff2e4d075603d220b8483e28b1aa010ccc138b4"
+    },
+    {
+      "name": "rope-sequence",
+      "version": "1.3.4",
+      "source": "https://registry.npmjs.org/rope-sequence/-/rope-sequence-1.3.4.tgz",
+      "license": "MIT",
+      "licenseSource": "https://registry.npmjs.org/rope-sequence/-/rope-sequence-1.3.4.tgz#package/LICENSE",
+      "licenseFile": "../third-party-licenses/rope-sequence.txt",
+      "licenseSha256": "530424aebdd0e73f53238d1f89df250057bc8d8ce090cf5954197fadce5bf226"
     },
     {
       "name": "trough",
@@ -649,6 +1041,15 @@
       "licenseSource": "https://registry.npmjs.org/vfile-message/-/vfile-message-4.0.3.tgz#package/license",
       "licenseFile": "../third-party-licenses/vfile-message.txt",
       "licenseSha256": "dd1081884a92952802f4803110a6bb543acea9a814c786d58605b4c1219b5ebb"
+    },
+    {
+      "name": "w3c-keyname",
+      "version": "2.2.8",
+      "source": "https://registry.npmjs.org/w3c-keyname/-/w3c-keyname-2.2.8.tgz",
+      "license": "MIT",
+      "licenseSource": "https://registry.npmjs.org/w3c-keyname/-/w3c-keyname-2.2.8.tgz#package/LICENSE",
+      "licenseFile": "../third-party-licenses/w3c-keyname.txt",
+      "licenseSha256": "869c30f368eb08735e779027b9f4bc9fea2f39624351856aebe42741f0bc0884"
     },
     {
       "name": "yaml",

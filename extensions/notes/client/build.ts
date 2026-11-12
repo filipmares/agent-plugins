@@ -7,7 +7,7 @@ const client = dirname(fileURLToPath(import.meta.url));
 const root = dirname(client);
 const digest = (content: string | Buffer) => createHash("sha256").update(content).digest("hex");
 const ICONS = [
-    "alert", "chevron-down", "chevron-left", "chevron-right", "comment-discussion", "compose", "copilot",
+    "alert", "chevron-down", "chevron-left", "chevron-right", "code", "comment-discussion", "compose", "copilot",
     "file-directory", "file-moved", "note", "pencil", "pin", "pin-slash", "plus", "repo",
     "search", "sidebar-collapse", "sidebar-expand", "trash", "x",
 ];
@@ -109,6 +109,14 @@ async function build() {
     await writeFile(join(vendor, "manifest.json"), JSON.stringify({
         sourceHash: await sourceHash(),
         bunVersion: Bun.version,
+        adaptedSources: [{
+            repository: "https://github.com/bholmesdev/hubble.md",
+            commit: "cf633b3221b9572f22604168ac77c1ffa921debe",
+            files: ["packages/editor/src/markdownToProsemirror.ts", "packages/editor/src/prosemirrorToMarkdown.ts",
+                "packages/editor/src/List.ts", "packages/ui/src/editor/EditorView.tsx"],
+            licenseFile: "../third-party-licenses/hubble.md.txt",
+            licenseSha256: digest(await readFile(join(licenses, "hubble.md.txt"))),
+        }],
         assets,
         packages,
     }, null, 2) + "\n");

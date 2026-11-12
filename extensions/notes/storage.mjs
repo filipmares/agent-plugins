@@ -6,10 +6,11 @@ import {
     newId, newNoteBody, parseNote, renameAssetLinks, serializeNote, slug, titleOf, ULID,
 } from "./note-format.mjs";
 import {
-    readNoteFile, relativePath, removeNoteFile, requireVersion, resolveInside,
+    readLibraryFile, readNoteFile, relativePath, removeNoteFile, requireVersion, resolveInside,
     visiblePath, withLibraryLock, writeNoteFile,
 } from "./filesystem.mjs";
 import { trashItem } from "./platform.mjs";
+import { watchLibrary } from "./watcher.mjs";
 
 const nameKey = name => name.normalize("NFC").toLowerCase();
 const inFolder = (path, folder) => folder === "" || path === folder || path.startsWith(`${folder}/`);
@@ -75,6 +76,11 @@ export class NotesLibrary {
     #root;
     #trash;
     #now;
+    #snapshot;
+    #watching = false;
+    #stopWatch;
+    #onChange;
+    #signature;
 
     constructor(directory, { trash = trashItem, now = () => new Date() } = {}) {
         if (typeof directory !== "string" || !isAbsolute(directory)) {
@@ -85,7 +91,7 @@ export class NotesLibrary {
         this.#now = now;
     }
 
-    async #locked(operation) {
+    async #locked(operation, { readOnly = false } = {}) {
         if (!this.#root) {
             await mkdir(this.#directory, { recursive: true });
         }
@@ -96,7 +102,16 @@ export class NotesLibrary {
         const canonical = await realpath(this.#directory);
         if (this.#root && canonical !== this.#root) throw new NotesError("unsafe_path", "The Notes library was redirected.");
         this.#root = canonical;
-        return withLibraryLock(this.#root, () => operation(this.#root));
+        return withLibraryLock(this.#root, async () => {
+            if (!readOnly) this.#snapshot = undefined;
+            try { return await operation(this.#root); }
+            finally {
+                if (!readOnly) {
+                    this.#snapshot = undefined;
+                    if (this.#watching) await this.#scan(this.#root);
+                }
+            }
+        });
     }
 
     async #read(root, path) {
@@ -104,7 +119,8 @@ export class NotesLibrary {
         return { ...file, ...parseNote(file.raw), path };
     }
 
-    async #scan(root) {
+    async #scan(root, fresh = false) {
+        if (this.#watching && this.#snapshot && !fresh) return this.#snapshot;
         const notes = [];
         const folders = [""];
         const warnings = [];
@@ -165,7 +181,33 @@ export class NotesLibrary {
                 }
             }
         }
-        return { notes: notes.filter(Boolean), folders, warnings };
+        const snapshot = { notes: notes.filter(Boolean), folders, warnings };
+        const signature = contentHash(JSON.stringify({
+            notes: snapshot.notes.map(note => [note.path, note.version, note.stats.mtimeMs]),
+            folders, warnings,
+        }));
+        const changed = this.#signature !== undefined && this.#signature !== signature;
+        this.#snapshot = snapshot;
+        this.#signature = signature;
+        if (changed) this.#onChange?.();
+        return snapshot;
+    }
+
+    async startWatching(onChange, options = {}) {
+        if (this.#watching) throw new NotesError("invalid_request", "This library is already watched.");
+        await this.#locked(root => this.#scan(root, true), { readOnly: true });
+        this.#onChange = onChange;
+        this.#watching = true;
+        this.#stopWatch = watchLibrary(this.#root,
+            () => this.#locked(root => this.#scan(root, true), { readOnly: true }), options);
+    }
+
+    close() {
+        this.#stopWatch?.();
+        this.#stopWatch = undefined;
+        this.#watching = false;
+        this.#onChange = undefined;
+        this.#snapshot = undefined;
     }
 
     #find(snapshot, target) {
@@ -298,7 +340,38 @@ export class NotesLibrary {
     }
 
     async read(noteId) {
-        return this.#locked(async root => payload(this.#find(await this.#scan(root), noteId)));
+        return this.#locked(async root => payload(this.#find(await this.#scan(root, true), noteId)), { readOnly: true });
+    }
+
+    async attachment(noteId, expectedVersion) {
+        return this.#locked(async root => {
+            const note = this.#find(await this.#scan(root, true), noteId);
+            requireVersion(expectedVersion, note.version);
+            return { type: "file", path: (await resolveInside(root, note.path)).path, displayName: posix.basename(note.path) };
+        }, { readOnly: true });
+    }
+
+    async image(noteId, src) {
+        requireString(src, "src");
+        return this.#locked(async root => {
+            const note = this.#find(await this.#scan(root), noteId);
+            let decoded;
+            try { decoded = decodeURIComponent(src); } catch { throw new NotesError("invalid_path", "The image path is not valid URL encoding."); }
+            if (/^(?:[a-z][a-z\d+.-]*:|[\\/])/i.test(decoded) || /[?#]/.test(decoded)) {
+                throw new NotesError("unsafe_path", "Only relative Notes-library image paths are supported.");
+            }
+            const path = relativePath(posix.normalize(posix.join(folderOf(note.path), decoded.replaceAll("\\", "/"))));
+            const { bytes } = await readLibraryFile(root, path);
+            const ext = posix.extname(path).toLowerCase();
+            const text = bytes.subarray(0, 1024).toString("utf8").replace(/^\uFEFF/, "");
+            const type = ext === ".png" && bytes.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10])) ? "image/png"
+                : [".jpg", ".jpeg"].includes(ext) && bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255 ? "image/jpeg"
+                : ext === ".gif" && /^GIF8[79]a/.test(text) ? "image/gif"
+                : ext === ".webp" && text.startsWith("RIFF") && text.slice(8, 12) === "WEBP" ? "image/webp"
+                : ext === ".svg" && /^\s*(?:<\?xml[^?]*\?>\s*)?<svg[\s>]/i.test(text) ? "image/svg+xml" : null;
+            if (!type) throw new NotesError("unsupported_media_type", "Only PNG, JPEG, GIF, WebP and SVG images with matching contents can be displayed.");
+            return { bytes, type };
+        }, { readOnly: true });
     }
 
     async search({ query = "", project, session, folder, limit = 50, offset = 0 } = {}) {
@@ -344,7 +417,7 @@ export class NotesLibrary {
                 notes: matches.map(({ titleMatch, ...item }) => item),
                 warnings: snapshot.warnings,
             };
-        });
+        }, { readOnly: true });
     }
 
     async #edit(noteId, expectedVersion, context, transform) {
@@ -507,6 +580,7 @@ export class NotesLibrary {
     async folders() {
         return this.#locked(async root => {
             const snapshot = await this.#scan(root);
+            const warnings = [...snapshot.warnings];
             const nodes = new Map(snapshot.folders.map(path => [path, {
                 path, name: path ? posix.basename(path) : "Notes",
                 count: snapshot.notes.filter(note => folderOf(note.path) === path).length,
@@ -520,14 +594,14 @@ export class NotesLibrary {
                         if (!(error instanceof NotesError)) throw error;
                         node.version = null;
                         node.warning = { code: error.code, message: error.message };
-                        snapshot.warnings.push({ path, ...node.warning });
+                        warnings.push({ path, ...node.warning });
                     }
                     nodes.get(folderOf(path)).children.push(node);
                 }
             }
             for (const node of nodes.values()) node.children.sort((a, b) => compareNames(a.name, b.name));
-            return { folders: nodes.get(""), warnings: snapshot.warnings };
-        });
+            return { folders: nodes.get(""), warnings };
+        }, { readOnly: true });
     }
 
     async createFolder(name, parent = "") {

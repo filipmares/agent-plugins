@@ -5,6 +5,7 @@ import { randomBytes, timingSafeEqual } from "node:crypto";
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { NotesError } from "./errors.mjs";
+import { openExternalLink } from "./platform.mjs";
 import { loadUiState, popRecovery, pushRecovery, recoveryPath, saveUiState } from "./ui-state.mjs";
 
 const [CLIENT_SCRIPT, CLIENT_STYLES] = await Promise.all([
@@ -20,8 +21,8 @@ const CONTENT_SECURITY_POLICY = [
     "script-src 'self'",
     "style-src 'self'",
     "connect-src 'self'",
-    "img-src 'self' data:",
-    "font-src 'self' data:",
+    "img-src 'self'",
+    "font-src 'self'",
     "base-uri 'none'",
     "form-action 'none'",
     "object-src 'none'",
@@ -59,6 +60,8 @@ const ROUTES = {
     "/api/folder/rename": { folder: "string", name: "string", expectedVersion: "string" },
     "/api/folder/delete": { folder: "string", expectedVersion: "string", confirmed: "boolean", permanent: "boolean?" },
     "/api/ui": { state: "object" },
+    "/api/open-link": { url: "string" },
+    "/api/ask": { id: "string", expectedVersion: "string", prompt: "string" },
 };
 
 function fields(body, spec) {
@@ -140,7 +143,7 @@ export async function resolveTarget(library, target = {}) {
     return resolved;
 }
 
-export async function createNotesServer({ getLibrary, getContext, sessionId, statePath, target, onChange, log }) {
+export async function createNotesServer({ getLibrary, getContext, sessionId, statePath, target, onChange, log, sendMessage, openLink = openExternalLink }) {
     const token = randomBytes(32).toString("hex");
     const base = `/${token}`;
     const streams = new Set();
@@ -271,6 +274,14 @@ export async function createNotesServer({ getLibrary, getContext, sessionId, sta
                     if (!id) throw new NotesError("invalid_request", "id is required.");
                     return sendJson(res, 200, await (await getLibrary()).read(id));
                 }
+                case "/api/image": {
+                    const image = await (await getLibrary()).image(url.searchParams.get("noteId"), url.searchParams.get("src"));
+                    headers(res, image.type);
+                    if (image.type === "image/svg+xml") {
+                        res.setHeader("Content-Security-Policy", "default-src 'none'; script-src 'none'; style-src 'none'; sandbox; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
+                    }
+                    return res.end(image.bytes);
+                }
                 case "/api/events": {
                     headers(res, "text/event-stream; charset=utf-8");
                     res.statusCode = 200;
@@ -289,6 +300,20 @@ export async function createNotesServer({ getLibrary, getContext, sessionId, sta
             if (requestOrigin !== origin) throw new NotesError("not_found", "Not found.");
             const body = fields(await readJson(req), ROUTES[route]);
             if (route === "/api/ui") return sendJson(res, 200, await saveUiState(statePath, body.state));
+            if (route === "/api/open-link") {
+                await openLink(body.url);
+                return sendJson(res, 200, { opened: true });
+            }
+            if (route === "/api/ask") {
+                if (!body.prompt.trim() || body.prompt.length > 16000) throw new NotesError("invalid_request", "Enter a prompt of up to 16000 characters.");
+                if (!sendMessage) throw new NotesError("chat_unavailable", "This panel is not connected to its Copilot session.");
+                await writes;
+                const attachment = await (await getLibrary()).attachment(body.id, body.expectedVersion);
+                // SDK MessageOptions: enqueue is the documented busy-session delivery mode; never drop the file on failure.
+                const messageId = await sendMessage({ prompt: body.prompt, attachments: [attachment], mode: "enqueue" }, sessionId);
+                if (typeof messageId !== "string" || !messageId) throw new NotesError("chat_unavailable", "Copilot did not acknowledge the message.");
+                return sendJson(res, 200, { messageId });
+            }
             const run = writes.then(() => post(route, body));
             writes = run.catch(() => {});
             const result = await run;

@@ -9,9 +9,15 @@ import { uiStatePath } from "./ui-state.mjs";
 
 let session;
 let library;
+let activeLibrary;
 async function getLibrary() {
     if (!library) {
-        library = resolveNotesDirectory().then(directory => new NotesLibrary(directory));
+        library = resolveNotesDirectory().then(async directory => {
+            const notes = new NotesLibrary(directory);
+            await notes.startWatching(notifyPanels, { log });
+            activeLibrary = notes;
+            return notes;
+        });
         library.catch(() => { library = undefined; });
     }
     return library;
@@ -48,7 +54,10 @@ async function openPanel(ctx) {
                 sessionId: ctx.sessionId,
                 statePath: uiStatePath(),
                 target,
-                onChange: notifyPanels,
+                sendMessage: (options, sessionId) => {
+                    if (sessionId !== session.sessionId) throw new NotesError("chat_unavailable", "The owning session changed. Reopen this Notes panel.");
+                    return session.send(options);
+                },
                 log,
             }),
         );
@@ -64,7 +73,6 @@ session = await joinSession({
         getContext: readSessionContext,
         confirmPermanent: message => session.ui.confirm(message),
         log,
-        onChange: notifyPanels,
     })],
     canvases: [
         createCanvas({
@@ -95,3 +103,6 @@ session = await joinSession({
         }),
     ],
 });
+
+process.once("exit", () => activeLibrary?.close());
+session.on("session.shutdown", () => { void library?.then(notes => notes.close(), () => {}); });

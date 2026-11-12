@@ -1,4 +1,7 @@
 // Notes panel client. Served same-origin by server.mjs; every request goes to the capability-scoped API.
+import { createRichEditor, safeExternal } from "./rich-editor";
+import { GUARD_MESSAGE } from "./rich-codec";
+import type { Editor } from "@tiptap/core";
 declare const __ICONS__: Record<string, { width: number; path: string }>;
 
 type Warning = { code: string; message: string };
@@ -99,7 +102,22 @@ const search = h("input", { type: "search", class: "search-input", placeholder: 
 const rows = h("div", { class: "rows", role: "listbox", "aria-label": "Notes", tabindex: "0" });
 const dateLine = h("p", { class: "date-line" });
 const banner = h("div", { class: "banner", role: "status", hidden: true });
+const fidelityBanner = h("div", { class: "banner", role: "status", hidden: true });
 const textarea = h("textarea", { class: "note-text", "aria-label": "Note", spellcheck: "true", hidden: true });
+const richElement = h("div", { class: "rich-note", hidden: true });
+let rich: Editor | null = null;
+let plain = false;
+let guarded = false;
+let editorError = false;
+const markdownButton = iconButton("code", "View as Markdown", () => toggleMarkdown());
+const copilotButton = iconButton("copilot", "Ask Copilot about this note", () => {
+    askPanel.hidden = !askPanel.hidden;
+    copilotButton.setAttribute("aria-expanded", String(!askPanel.hidden));
+    if (!askPanel.hidden) askInput.focus();
+}, { "aria-expanded": "false", "aria-controls": "ask-note" });
+const askInput = h("input", { type: "text", class: "text-input", "aria-label": "Ask Copilot about this note", placeholder: "Ask about this note", maxlength: "16000" });
+const askStatus = h("span", { role: "status", class: "ask-status" });
+const askPanel = h("div", { id: "ask-note", class: "ask-note", hidden: true }, askInput, askStatus);
 const emptyEditor = h("div", { class: "empty-editor" }, icon("note"), h("p", {}, "No note selected"));
 const pinButton = iconButton("pin", "Pin note", () => state.note && void togglePin(state.note));
 const moveButton = iconButton("file-moved", "Move note to folder", () => state.note && void moveDialog(state.note));
@@ -126,9 +144,9 @@ const listPane = h("section", { class: "list-pane", "aria-label": "Note list" },
 const editorPane = h("main", { class: "editor-pane", "aria-label": "Editor" },
     h("header", { class: "pane-header editor-toolbar" },
         iconButton("chevron-left", "Back to notes", () => void backToList(), { class: "icon-button narrow-only" }),
-        h("span", { class: "spacer" }), pinButton, moveButton, trashButton),
-    banner,
-    h("div", { class: "editor-scroll" }, dateLine, textarea, emptyEditor),
+        h("span", { class: "spacer" }), markdownButton, copilotButton, pinButton, moveButton, trashButton),
+    askPanel, banner, fidelityBanner,
+    h("div", { class: "editor-scroll" }, dateLine, textarea, richElement, emptyEditor),
 );
 app.append(sidebar, h("div", { class: "backdrop", onclick: () => setOverlay(false) }), listPane, editorPane);
 document.body.append(toast);
@@ -242,11 +260,123 @@ const dirty = () => (state.draft ? /[^#\s]/.test(textarea.value) : state.note !=
 
 function setText(body: string) {
     const { selectionStart, selectionEnd, scrollTop } = textarea;
+    const focused = rich?.isFocused;
+    const position = rich?.state.selection.from;
     textarea.value = body;
     state.sent = textarea.value;
     if (document.activeElement === textarea) textarea.setSelectionRange(selectionStart, selectionEnd);
     textarea.scrollTop = scrollTop;
+    prepareEditor();
+    if (focused && rich && !plain) rich.commands.focus(Math.min(position ?? 1, rich.state.doc.content.size));
 }
+
+function prepareEditor() {
+    editorPane.querySelector(".link-popover")?.remove();
+    rich?.destroy();
+    rich = null;
+    richElement.replaceChildren();
+    editorError = false;
+    guarded = false;
+    plain = !!state.note?.warning;
+    if (plain || (!state.note && !state.draft)) return;
+    try {
+        const result = createRichEditor({
+            element: richElement, body: textarea.value, noteKey: openKey,
+            change: body => { textarea.value = body; editorError = false; changedText(); },
+            blur: () => void save(),
+            error: text => { editorError = true; clearTimeout(saveTimer); showToast(text); },
+            notice: showToast,
+            link: () => editLink(), open: url => void openExternal(url),
+        });
+        rich = result.editor;
+        guarded = !result.safe;
+        plain = guarded;
+    } catch (error) {
+        rich?.destroy();
+        rich = null;
+        plain = true;
+        showToast(`Rich editing is unavailable. Your Markdown is unchanged. ${message(error)}`);
+    }
+}
+
+function focusEditor() {
+    if (plain || !rich) textarea.focus();
+    else rich.commands.focus("end");
+}
+
+function toggleMarkdown(forceRich = false) {
+    if (!state.note && !state.draft) return;
+    if (editorError) { showToast("Resolve the rich-editor error before changing views; your rich text is still in the panel."); return; }
+    if (!plain) plain = true;
+    else {
+        prepareEditor();
+        if (forceRich && rich && !state.note?.warning) { guarded = false; plain = false; }
+    }
+    renderEditor();
+    focusEditor();
+}
+
+async function openExternal(url: string) {
+    try {
+        if (!safeExternal(url)) throw new Error("Only http, https and mailto links can be opened.");
+        await request("api/open-link", { url });
+    } catch (error) { showToast(message(error)); }
+}
+
+function editLink() {
+    if (!rich || plain) return;
+    const editor = rich;
+    const gen = navGen;
+    const selection = editor.state.selection;
+    const href = String(editor.getAttributes("link").href ?? "");
+    const panel = h("div", { class: "link-popover", role: "dialog", "aria-label": "Edit link" });
+    const input = h("input", { type: "url", class: "text-input", "aria-label": "Link URL", value: href, placeholder: "https://example.com" });
+    const errorLine = h("p", { class: "link-error", role: "alert" });
+    const close = () => { panel.remove(); if (gen === navGen && rich === editor) editor.commands.focus(); };
+    const apply = (remove: boolean) => {
+        if (gen !== navGen || rich !== editor) return panel.remove();
+        if (!remove && !safeExternal(input.value)) { errorLine.textContent = "Use an http, https or mailto URL."; return; }
+        const chain = editor.chain().focus().setTextSelection({ from: selection.from, to: selection.to }).extendMarkRange("link");
+        if (remove) chain.unsetLink().run();
+        else if (selection.empty && !href) chain.insertContent({ type: "text", text: input.value, marks: [{ type: "link", attrs: { href: input.value } }] }).run();
+        else chain.setLink({ href: input.value }).run();
+        close();
+    };
+    panel.append(input, errorLine, h("div", { class: "link-actions" },
+        h("button", { type: "button", class: "button", onclick: () => void openExternal(input.value) }, "Open"),
+        h("button", { type: "button", class: "button", onclick: () => apply(true), disabled: !href }, "Remove"),
+        h("button", { type: "button", class: "button", onclick: close }, "Cancel"),
+        h("button", { type: "button", class: "button primary", onclick: () => apply(false) }, "Apply")));
+    panel.addEventListener("keydown", event => {
+        if (event.key === "Escape") { event.preventDefault(); close(); }
+        if (event.key === "Enter" && event.target === input) { event.preventDefault(); apply(false); }
+    });
+    editorPane.querySelector(".link-popover")?.remove();
+    editorPane.append(panel);
+    input.focus();
+    input.select();
+}
+
+let asking = false;
+askInput.addEventListener("keydown", async event => {
+    if (event.key !== "Enter" || event.isComposing || asking || !askInput.value.trim()) return;
+    event.preventDefault();
+    const prompt = askInput.value;
+    const gen = navGen;
+    asking = true;
+    askInput.readOnly = true;
+    askStatus.textContent = "Saving...";
+    try {
+        if (!(await flush({ keepDraft: true })) || gen !== navGen) { askStatus.textContent = "Not sent"; return; }
+        if (!state.note) throw new Error("Write some note text before asking Copilot.");
+        await request("api/ask", { id: keyOf(state.note), expectedVersion: state.note.version, prompt });
+        if (gen !== navGen) return;
+        askStatus.textContent = "Sent to chat";
+        askInput.value = "";
+        window.setTimeout(() => { if (gen === navGen && askStatus.textContent === "Sent to chat") askStatus.textContent = ""; }, 3000);
+    } catch (error) { askStatus.textContent = "Not sent"; showToast(message(error)); }
+    finally { asking = false; askInput.readOnly = false; }
+});
 
 function scheduleSave() {
     clearTimeout(saveTimer);
@@ -256,7 +386,7 @@ function scheduleSave() {
 async function save(): Promise<boolean> {
     clearTimeout(saveTimer);
     while (inflight) await inflight;
-    if (state.conflict) return false;
+    if (state.conflict || editorError) return false;
     if (!dirty()) return true;
     const text = textarea.value;
     inflight = (async () => {
@@ -305,6 +435,7 @@ async function flush({ keepDraft = false } = {}) {
     clearTimeout(saveTimer);
     for (;;) {
         while (inflight) await inflight;
+        if (editorError) { showToast("The rich text could not be saved. Keep this panel open and resolve the editor error."); return false; }
         if (state.conflict) {
             showToast("Choose Reload or Keep Mine before leaving this note.");
             return false;
@@ -329,22 +460,27 @@ function discardEditor() {
     state.recovered = false;
     state.sent = "";
     textarea.value = "";
+    rich?.destroy();
+    rich = null;
     state.ui.noteId = null;
+    askPanel.hidden = true;
+    copilotButton.setAttribute("aria-expanded", "false");
     persistUi();
 }
 
-textarea.addEventListener("input", () => {
+function changedText() {
     const row = rows.querySelector(".row[aria-selected='true'] .row-title-text");
     if (row) row.textContent = titleFromText(textarea.value);
     if (!state.conflict) scheduleSave();
-});
+}
+textarea.addEventListener("input", changedText);
 textarea.addEventListener("blur", () => void save());
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") void save(); });
 // The server finishes any in-flight save first, then saves this text or keeps it for recovery on the next open.
 // An unresolved conflict is only kept, never saved: closing must not choose Keep Mine for the user.
 // Browsers cap keepalive bodies at about 64 KB, so larger unsaved text can still be lost when the panel closes.
 addEventListener("pagehide", () => {
-    if (!dirty()) return;
+    if (!dirty() && !state.conflict) return;
     const body = state.draft
         ? { draft: state.draft.key, folder: state.draft.folder, body: textarea.value }
         : { id: keyOf(state.note!), folder: state.note!.folder, body: textarea.value, expectedVersion: state.note!.version,
@@ -358,7 +494,7 @@ addEventListener("pagehide", () => {
 async function openNote(key: string, { focus = false } = {}) {
     if (key === openKey() && !state.draft) {
         if (narrow.matches) setPane("note");
-        if (focus) textarea.focus();
+        if (focus) focusEditor();
         return;
     }
     if (!(await flush({ keepDraft: true }))) return;
@@ -372,15 +508,17 @@ async function openNote(key: string, { focus = false } = {}) {
         state.draft = null;
         state.conflict = false;
         state.recovered = false;
-        textarea.value = note.body;
-        state.sent = textarea.value;
+        setText(note.body);
+        askPanel.hidden = true;
+        askStatus.textContent = "";
+        editorPane.querySelector(".link-popover")?.remove();
         textarea.scrollTop = 0;
         state.ui.noteId = keyOf(note);
         persistUi();
         renderEditor();
         renderList();
         if (narrow.matches) setPane("note");
-        if (focus) textarea.focus();
+        if (focus) focusEditor();
     } catch (error) {
         showToast(message(error));
         void refreshLists();
@@ -390,6 +528,9 @@ async function openNote(key: string, { focus = false } = {}) {
 async function compose() {
     if (!(await flush())) return;
     navGen++;
+    askPanel.hidden = true;
+    askStatus.textContent = "";
+    copilotButton.setAttribute("aria-expanded", "false");
     const selection = state.ui.selection;
     state.note = null;
     state.conflict = false;
@@ -397,13 +538,14 @@ async function compose() {
     state.draft = newDraft("folder" in selection && !state.query.trim() ? selection.folder : "");
     textarea.value = "# ";
     state.sent = "";
+    prepareEditor();
     state.ui.noteId = null;
     persistUi();
     renderEditor();
     renderList();
     if (narrow.matches) setPane("note");
-    textarea.focus();
-    textarea.setSelectionRange(2, 2);
+    focusEditor();
+    if (plain) textarea.setSelectionRange(2, 2);
 }
 
 async function select(selection: Selection) {
@@ -453,7 +595,7 @@ async function refresh() {
         if (stale()) return;
         if (fresh.version === state.note.version) {
             state.note = { ...fresh, body: state.note.body };
-        } else if (!dirty()) {
+        } else if (!dirty() && !state.conflict) {
             state.note = fresh;
             setText(fresh.body);
         } else {
@@ -480,8 +622,11 @@ async function refresh() {
 
 async function resolveConflict(keepMine: boolean) {
     if (!state.note) return;
+    const gen = navGen;
+    const text = textarea.value;
     try {
         const fresh = await request<Note>(`api/note?id=${encodeURIComponent(keyOf(state.note))}`);
+        if (gen !== navGen || (!keepMine && text !== textarea.value)) return;
         state.note = fresh;
         state.conflict = false;
         state.recovered = false;
@@ -857,6 +1002,18 @@ function renderSidebar() {
     }
 }
 
+sidebar.addEventListener("keydown", event => {
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+    if (!(event.target instanceof HTMLElement) || !event.target.matches("button")) return;
+    const buttons = [...sidebar.querySelectorAll<HTMLButtonElement>(".folder-button")];
+    const index = buttons.indexOf(event.target as HTMLButtonElement);
+    if (index < 0) return;
+    const next = event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1
+        : Math.max(0, Math.min(buttons.length - 1, index + (event.key === "ArrowDown" ? 1 : -1)));
+    event.preventDefault();
+    buttons[next]?.focus();
+});
+
 function selectionName() {
     const selection = state.ui.selection;
     if ("view" in selection) return { all: "All Notes", project: "This Project", session: "This Session" }[selection.view];
@@ -987,6 +1144,11 @@ function renderList() {
 }
 
 rows.addEventListener("keydown", event => {
+    if (event.key === "Enter" && (document.activeElement as HTMLElement)?.classList.contains("draft")) {
+        event.preventDefault();
+        focusEditor();
+        return;
+    }
     const options = [...rows.querySelectorAll<HTMLElement>(".row:not(.draft)")];
     const index = options.indexOf(document.activeElement as HTMLElement);
     const note = state.notes.find(item => keyOf(item) === (document.activeElement as HTMLElement)?.dataset.key);
@@ -998,7 +1160,7 @@ rows.addEventListener("keydown", event => {
         }
     } else if (event.key === "Enter" && note) {
         void openNote(keyOf(note), { focus: true });
-    } else if ((event.key === "Delete" || event.key === "Backspace") && note) {
+    } else if (event.key === "Delete" && note) {
         void deleteNote(note);
     } else if ((event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) && note) {
         noteMenu(note, ...menuAt(event, document.activeElement as HTMLElement));
@@ -1010,7 +1172,16 @@ rows.addEventListener("keydown", event => {
 
 function renderEditor() {
     const active = state.note !== null || state.draft !== null;
-    textarea.hidden = !active;
+    textarea.hidden = !active || !plain;
+    richElement.hidden = !active || plain;
+    markdownButton.disabled = !active || !!state.note?.warning;
+    markdownButton.setAttribute("aria-pressed", String(plain));
+    markdownButton.setAttribute("aria-label", plain ? "View as rich text" : "View as Markdown");
+    markdownButton.title = plain ? "View as rich text" : "View as Markdown";
+    copilotButton.disabled = !active;
+    fidelityBanner.hidden = !active || !guarded;
+    if (guarded) fidelityBanner.replaceChildren(h("span", {}, GUARD_MESSAGE),
+        h("button", { type: "button", class: "button", onclick: () => toggleMarkdown(true) }, "Edit rich anyway"));
     emptyEditor.hidden = active;
     dateLine.textContent = state.draft
         ? "New Note"
@@ -1023,7 +1194,7 @@ function renderEditor() {
     if (state.conflict) {
         banner.className = "banner conflict";
         banner.replaceChildren(icon("alert"),
-            h("span", {}, state.recovered ? "Recovered unsaved text from when Notes last closed." : "This note changed elsewhere."),
+            h("span", {}, state.recovered ? "Recovered unsaved text from when Notes last closed." : "Changed elsewhere"),
             h("button", { type: "button", class: "button", onclick: () => void resolveConflict(false) }, "Reload"),
             h("button", { type: "button", class: "button primary", onclick: () => void resolveConflict(true) }, "Keep Mine"));
         banner.hidden = false;
@@ -1071,6 +1242,7 @@ function connectEvents() {
     });
     events.addEventListener("changed", () => void refresh());
     events.addEventListener("reveal", event => void applyTarget(JSON.parse((event as MessageEvent).data)));
+    addEventListener("pagehide", () => { events.close(); rich?.destroy(); }, { once: true });
 }
 
 // The user moved on before recovered text could be shown; keep it for the next load rather than replacing their editor.
@@ -1095,6 +1267,7 @@ async function recover(recovery: Recovery) {
     state.conflict = note !== null;
     state.recovered = note !== null;
     textarea.value = body;
+    prepareEditor();
     state.ui.noteId = state.note ? keyOf(state.note) : null;
     persistUi();
     renderEditor();
@@ -1135,8 +1308,7 @@ async function start() {
                 const note = await request<Note>(`api/note?id=${encodeURIComponent(key)}`);
                 if (gen !== navGen) return connectEvents();
                 state.note = note;
-                textarea.value = note.body;
-                state.sent = textarea.value;
+                setText(note.body);
                 renderEditor();
                 renderList();
             } catch {

@@ -67,7 +67,7 @@ function sameFile(a, b) {
         && a.mtimeNs === b.mtimeNs && a.ctimeNs === b.ctimeNs;
 }
 
-export async function readNoteFile(root, path) {
+export async function readLibraryFile(root, path) {
     const target = await resolveInside(root, path);
     if (!target.stats.isFile() || target.stats.nlink !== 1n) {
         throw new NotesError("unsafe_path", "Notes must be regular files without hard links.");
@@ -92,15 +92,19 @@ export async function readNoteFile(root, path) {
         if (!sameFile(before, after) || !sameIdentity(after, resolved.stats) || BigInt(length) !== before.size) {
             throw new NotesError("conflict", "The note changed while reading it.");
         }
-        let raw;
-        try {
-            raw = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(buffer.subarray(0, length));
-        } catch {
-            throw new NotesError("invalid_encoding", "Notes supports UTF-8 Markdown; this file was not modified.");
-        }
-        return { raw, stats: await handle.stat(), version: contentHash(buffer.subarray(0, length)) };
+        const bytes = buffer.subarray(0, length);
+        return { bytes, stats: await handle.stat(), version: contentHash(bytes) };
     } finally {
         await handle.close();
+    }
+}
+
+export async function readNoteFile(root, path) {
+    const { bytes, ...file } = await readLibraryFile(root, path);
+    try {
+        return { ...file, raw: new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes) };
+    } catch {
+        throw new NotesError("invalid_encoding", "Notes supports UTF-8 Markdown; this file was not modified.");
     }
 }
 

@@ -12,7 +12,7 @@ test("committed bundles and licences match the pinned build sources", async () =
     for (const asset of manifest.assets) {
         expect(digest(await readFile(new URL(asset.file, directory)))).toBe(asset.sha256);
     }
-    for (const pkg of manifest.packages) {
+    for (const pkg of [...manifest.packages, ...manifest.adaptedSources ?? []]) {
         expect(digest(await readFile(new URL(pkg.licenseFile, directory)))).toBe(pkg.licenseSha256);
     }
 });
