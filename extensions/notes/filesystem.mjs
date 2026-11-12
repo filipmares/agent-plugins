@@ -9,6 +9,25 @@ import { NotesError, requireString } from "./errors.mjs";
 
 export const MAX_NOTE_BYTES = 8 * 1024 * 1024;
 const LOCK_NAME = ".notes-write.lock";
+const TRANSIENT_CODES = new Set(["EPERM", "EACCES", "EBUSY"]);
+const TRANSIENT_DELAYS_MS = [10, 20, 40, 80, 160, 320, 640];
+
+// Windows sync clients, antivirus and indexers briefly hold files that were just written or released, so create,
+// rename and unlink can fail with these codes and then succeed. Elsewhere they are genuine permission errors.
+export function isTransientFsError(error, platform = process.platform) {
+    return platform === "win32" && TRANSIENT_CODES.has(error?.code);
+}
+
+export async function retryTransient(operation, { platform = process.platform, delays = TRANSIENT_DELAYS_MS } = {}) {
+    for (let attempt = 0; ; attempt++) {
+        try {
+            return await operation();
+        } catch (error) {
+            if (attempt >= delays.length || !isTransientFsError(error, platform)) throw error;
+            await delay(delays[attempt]);
+        }
+    }
+}
 
 export function relativePath(value, { root = false } = {}) {
     requireString(value, "Path", { empty: root });
@@ -116,7 +135,7 @@ export function requireVersion(expected, actual) {
 }
 
 async function removeTemporary(path) {
-    try { await unlink(path); } catch (error) { if (error.code !== "ENOENT") throw error; }
+    try { await retryTransient(() => unlink(path)); } catch (error) { if (error.code !== "ENOENT") throw error; }
 }
 
 // Callers hold the library lock. The hash check also catches changes by external editors.
@@ -146,10 +165,13 @@ export async function writeNoteFile(root, path, raw, expectedVersion, { preserve
         await resolveInside(root, path, { missing: expectedVersion === null });
         if (expectedVersion === null) {
             // link is a no-clobber publication; unlike rename it cannot replace an external file.
-            await link(temporary, target.path);
+            await retryTransient(() => link(temporary, target.path));
         } else {
-            requireVersion(expectedVersion, (await readNoteFile(root, path)).version);
-            await rename(temporary, target.path);
+            // Re-checked on every attempt, so a retry never replaces a note that changed in the meantime.
+            await retryTransient(async () => {
+                requireVersion(expectedVersion, (await readNoteFile(root, path)).version);
+                await rename(temporary, target.path);
+            });
         }
     } finally {
         await removeTemporary(temporary);
@@ -157,9 +179,11 @@ export async function writeNoteFile(root, path, raw, expectedVersion, { preserve
 }
 
 export async function removeNoteFile(root, path, expectedVersion) {
-    requireVersion(expectedVersion, (await readNoteFile(root, path)).version);
-    const target = await resolveInside(root, path);
-    await unlink(target.path);
+    // Re-checked on every attempt, so a retry never deletes a note that changed in the meantime.
+    await retryTransient(async () => {
+        requireVersion(expectedVersion, (await readNoteFile(root, path)).version);
+        await unlink((await resolveInside(root, path)).path);
+    });
 }
 
 export async function withLibraryLock(root, operation, { timeoutMs = 30000 } = {}) {
@@ -170,7 +194,7 @@ export async function withLibraryLock(root, operation, { timeoutMs = 30000 } = {
     let handle;
     while (!handle) {
         try {
-            handle = await open(lockPath, "wx", 0o600);
+            handle = await retryTransient(() => open(lockPath, "wx", 0o600));
         } catch (error) {
             if (error.code !== "EEXIST") throw error;
             if (Date.now() >= deadline) {
@@ -185,10 +209,13 @@ export async function withLibraryLock(root, operation, { timeoutMs = 30000 } = {
         return await operation();
     } finally {
         await handle.close();
-        const lock = await lstat(lockPath);
-        if (lock.isSymbolicLink() || await readFile(lockPath, "utf8") !== owner) {
-            throw new NotesError("lock_changed", "The Notes write lock changed unexpectedly; it was not removed.");
-        }
-        await unlink(lockPath);
+        // A lock left behind blocks every writer, so release is retried as a whole, ownership check included.
+        await retryTransient(async () => {
+            const lock = await lstat(lockPath);
+            if (lock.isSymbolicLink() || await readFile(lockPath, "utf8") !== owner) {
+                throw new NotesError("lock_changed", "The Notes write lock changed unexpectedly; it was not removed.");
+            }
+            await unlink(lockPath);
+        });
     }
 }

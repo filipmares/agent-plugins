@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rename, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { NotesError } from "../errors.mjs";
+import { retryTransient } from "../filesystem.mjs";
 import { createNotesTool } from "../notes-tool.mjs";
 import { NotesLibrary } from "../storage.mjs";
 
@@ -12,7 +13,7 @@ beforeEach(async () => {
     fixture = await mkdtemp(join(tmpdir(), "copilot-notes-tool-"));
     library = new NotesLibrary(join(fixture, "notes"), { trash: async path => {
         await mkdir(join(fixture, "trash"), { recursive: true });
-        await rename(path, join(fixture, "trash", basename(path)));
+        await retryTransient(() => rename(path, join(fixture, "trash", basename(path))));
     } });
     calls = [];
     confirmations = [];
@@ -80,7 +81,8 @@ describe("notes_manage", () => {
     test("reports stale writes as structured failures instead of apparent success", async () => {
         const created = await call({ operation: "create", body: "# Stale" });
         const note = created.data;
-        await call({ operation: "append", noteId: note.id, text: "Newer", expectedVersion: note.version });
+        const appended = await call({ operation: "append", noteId: note.id, text: "Newer", expectedVersion: note.version });
+        expect(appended.resultType).toBe("success");
         const failed = await call({ operation: "update", noteId: note.id, body: "# Old", expectedVersion: note.version });
         expect(failed.resultType).toBe("failure");
         expect(failed.data.error.code).toBe("conflict");

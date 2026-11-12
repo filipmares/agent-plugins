@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { request } from "node:http";
-import { mkdir, mkdtemp, readFile, rename, rm, writeFile, symlink, link } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile, symlink, link } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
+import { retryTransient } from "../filesystem.mjs";
 import { MAX_REQUEST_BYTES, createNotesServer, resolveTarget } from "../server.mjs";
 import { NotesLibrary } from "../storage.mjs";
 import { popRecovery, pushRecovery, recoveryPath } from "../ui-state.mjs";
@@ -26,7 +27,7 @@ beforeEach(async () => {
     fixture = await mkdtemp(join(tmpdir(), "copilot-notes-server-"));
     library = new NotesLibrary(join(fixture, "notes"), { trash: async path => {
         await mkdir(join(fixture, "trash"), { recursive: true });
-        await rename(path, join(fixture, "trash", basename(path)));
+        await retryTransient(() => rename(path, join(fixture, "trash", basename(path))));
     } });
     statePath = join(fixture, "state", "ui-state.json");
     changes = 0;
@@ -267,11 +268,50 @@ describe("Notes panel server", () => {
         expect((await rescue({ id: own.id, folder: "", body: "# Plan\nolder", stash: true })).json).toEqual({ recovered: true });
         expect((await library.read(own.id)).body).toContain("newest");
         expect((await call("api/state")).json.recovery.body).toBe("# Plan\nolder");
+    });
 
+    test("delivers each queued recovery entry exactly once to panels loading at the same time", async () => {
+        for (let round = 0; round < 25; round++) {
+            const dir = join(fixture, `recovery-${round}`);
+            await Promise.all(["a", "b", "c"].map(body => pushRecovery(dir, { folder: "", body })));
+            const popped = await Promise.all(Array.from({ length: 6 }, () => popRecovery(dir)));
+            expect(popped.filter(Boolean).map(entry => entry.body).sort()).toEqual(["a", "b", "c"]);
+            expect(await readdir(dir)).toEqual([]);
+        }
+    });
+
+    test("a recovery entry another panel has claimed is not delivered a second time", async () => {
         const dir = recoveryPath(statePath);
-        await Promise.all(["a", "b", "c"].map(body => pushRecovery(dir, { folder: "", body })));
-        const popped = await Promise.all([1, 2, 3, 4].map(() => popRecovery(dir)));
-        expect(popped.filter(Boolean).map(entry => entry.body).sort()).toEqual(["a", "b", "c"]);
+        await pushRecovery(dir, { folder: "", body: "mine" });
+        const [entry] = await readdir(dir);
+        await writeFile(join(dir, `${entry}.claim`), "");
+        expect(await popRecovery(dir)).toBeNull();
+        await rm(join(dir, `${entry}.claim`));
+        expect(await popRecovery(dir)).toEqual({ noteId: null, folder: "", body: "mine" });
+        expect(await readdir(dir)).toEqual([]);
+    });
+
+    test("trimming old recovery entries skips one another panel has claimed", async () => {
+        const dir = recoveryPath(statePath);
+        for (let i = 0; i < 20; i++) await pushRecovery(dir, { folder: "", body: `draft ${i}` });
+        const [oldest, second] = (await readdir(dir)).sort();
+        await writeFile(join(dir, `${oldest}.claim`), "");
+        await pushRecovery(dir, { folder: "", body: "newest" });
+        await pushRecovery(dir, { folder: "", body: "newer" });
+        const entries = (await readdir(dir)).filter(name => name.endsWith(".json"));
+        expect(entries).toContain(oldest);
+        expect(entries).not.toContain(second);
+        expect(entries).toHaveLength(21);
+    });
+
+    test("a recovery entry that cannot be read or removed does not stop later entries from loading", async () => {
+        const dir = recoveryPath(statePath);
+        const stuck = join(dir, "000000000000001-aaaaaaaaaaaa.json");
+        await mkdir(stuck, { recursive: true });
+        await writeFile(join(stuck, "keep"), "");
+        await pushRecovery(dir, { folder: "", body: "mine" });
+        expect(await popRecovery(dir)).toEqual({ noteId: null, folder: "", body: "mine" });
+        expect(await popRecovery(dir)).toBeNull();
     });
 
     test("keeps unresolved recovery across closes without overwriting the fresh version", async () => {

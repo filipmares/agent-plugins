@@ -2,7 +2,8 @@
 
 Markdown notes for the GitHub Copilot app. **Phases 1–3 implement storage,
 `notes_manage`, and the notes panel with rich and plain Markdown editing,
-live sync, and Ask Copilot.** Plugin registration remains Phase 4.
+live sync, and Ask Copilot.** The plugin manifest registers it as of 2.2.0;
+native-app verification and documentation polish remain Phase 4.
 
 ## Panel
 
@@ -194,7 +195,21 @@ Writers across sessions serialize through a short-lived `.notes-write.lock`
 in the library. Files use same-directory temporary writes, no-clobber publication
 for new names, and content-hash checks before replacing existing notes.
 The filesystem must support hard links and atomic renames (normal local NTFS,
-APFS, and Linux filesystems do). A crashed writer can leave the lock behind;
+APFS, and Linux filesystems do). On Windows, sync clients, antivirus and
+indexers can briefly hold a file that was just written or released, so note
+writes and deletions, asset and folder moves, the lock file, and the UI-state and
+recovery files retry a create, rename or unlink that fails with `EPERM`,
+`EACCES` or `EBUSY` for about 1.3 seconds before the error is surfaced. Recovery
+entries are best-effort instead: their reads are retried, but a read or cleanup
+that still fails is skipped rather than surfaced, and claiming an entry is not
+retried because a failure there only means another panel owns it. Ordinary note
+and UI-state reads and the confirmed permanent-deletion fallback are not
+retried. A retried note replacement or deletion re-checks the content hash on
+every attempt, so a
+change that check can observe is never overwritten or deleted by a retry; an
+edit landing after the last check is the race described below. A lock that
+already exists (`EEXIST`) is ordinary contention and is not retried that way: it
+waits up to 30 seconds. A crashed writer can leave the lock behind;
 requests fail with `library_busy` rather than guessing that another writer is
 dead. **Only after stopping all Notes processes**, inspect its `pid`/`host` and
 remove that exact lock file. Never delete notes to resolve a lock.
@@ -274,7 +289,25 @@ can affect what the runtime reads. Runtime rejection is surfaced as Not sent,
 never silently retried without the note. The close-time ~64 KB recovery limit
 above still applies.
 
-Windows validation also reproduced intermittent `EPERM` failures while opening
-the library lock or atomically renaming a note, including unchanged storage
-tests and the new live-sync checks. A passing run does not establish that
-these filesystem failures are resolved; they are surfaced, not silently retried.
+Windows validation previously reproduced intermittent `EPERM` failures, most
+often when opening the library lock under several concurrent writers (about
+0.4–0.5% of acquisitions in a four-writer stress loop), and also when renaming
+a note. Those operations now retry as described above. The same stress loop,
+which also ran concurrent recovery loads, then reported no errors (four runs of
+400 rounds under Node, three under Bun), and ten consecutive full test runs
+passed after seven of seven had failed.
+That is statistical evidence from one machine, not proof: a client that holds
+a file for longer than the retry budget still produces a surfaced error (recovery
+reads and cleanup excepted, which are skipped), and passing once does not
+establish otherwise.
+
+The same loop exposed a real defect in the recovery queue: claiming an entry
+by renaming it could deliver one unsaved draft to two panels on Windows when
+six loads ran at once (6–11% of stress rounds under Node, about 18–20% under
+Bun). An entry is now claimed by creating an exclusive marker file, so only one
+panel receives it, and trimming to the newest 20 entries claims an entry the
+same way, so it cannot remove a draft another panel is delivering. A draft that
+was read is delivered even if removing its files then fails; the marker left
+behind prevents a second delivery. A panel that crashes mid-claim leaves that
+entry and its marker in the recovery folder; it is not delivered again, as
+before.

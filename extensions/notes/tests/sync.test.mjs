@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { mkdtemp, mkdir, writeFile, rm, rename } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { retryTransient } from "../filesystem.mjs";
 import { NotesLibrary } from "../storage.mjs";
 
 let fixture, library;
@@ -29,7 +30,7 @@ test("recursive watcher refreshes nested notes, moves, search, and folders witho
     expect(changes).toBe(1);
     await writeFile(join(fixture, "Nested", "Deep", "added.md"), "# External\nfreshness");
     await waitFor(async () => (await library.search({ query: "freshness" })).total === 1);
-    await rename(join(fixture, "Nested", "Deep", "added.md"), join(fixture, "Nested", "moved.md"));
+    await retryTransient(() => rename(join(fixture, "Nested", "Deep", "added.md"), join(fixture, "Nested", "moved.md")));
     await waitFor(async () => (await library.search({ query: "freshness" })).notes[0]?.path === "Nested/moved.md");
     expect((await library.folders()).folders.children[0].count).toBe(1);
     await writeFile(join(fixture, ...note.path.split("/")), "# Replaced\nnew text");

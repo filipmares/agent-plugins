@@ -6,7 +6,7 @@ import { basename, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 import { NotesError } from "../errors.mjs";
-import { MAX_NOTE_BYTES, withLibraryLock, writeNoteFile } from "../filesystem.mjs";
+import { MAX_NOTE_BYTES, readNoteFile, retryTransient, withLibraryLock, writeNoteFile } from "../filesystem.mjs";
 import { ULID } from "../note-format.mjs";
 import { NotesLibrary } from "../storage.mjs";
 
@@ -24,7 +24,7 @@ async function write(path, content) {
 async function recycle(path) {
     const destination = join(fixture, "trash", basename(path));
     await mkdir(join(fixture, "trash"), { recursive: true });
-    await rename(path, destination);
+    await retryTransient(() => rename(path, destination));
 }
 
 beforeEach(async () => {
@@ -280,7 +280,7 @@ describe("names, folders, and assets", () => {
 
     test("an external filename is retained when the title changes", async () => {
         const note = await library.create({ body: "# Original" }, author);
-        await rename(join(root, note.path), join(root, "Custom Filename.md"));
+        await retryTransient(() => rename(join(root, note.path), join(root, "Custom Filename.md")));
         const opened = await library.read(note.id);
         const edited = await library.update(note.id, { body: "# Renamed title", expectedVersion: opened.version }, author);
         expect(edited.path).toBe("Custom Filename.md");
@@ -358,7 +358,7 @@ describe("search and filesystem boundaries", () => {
         await symlink(outside, redirected, process.platform === "win32" ? "junction" : "dir");
         await expect(new NotesLibrary(redirected).search()).rejects.toMatchObject({ code: "unsafe_path" });
         await library.search();
-        await rename(root, join(fixture, "original"));
+        await retryTransient(() => rename(root, join(fixture, "original")));
         await symlink(outside, root, process.platform === "win32" ? "junction" : "dir");
         await expect(library.search()).rejects.toMatchObject({ code: "unsafe_path" });
         expect(await readFile(join(outside, "private.md"), "utf8")).toBe("# Outside");
@@ -434,6 +434,22 @@ describe("search and filesystem boundaries", () => {
         expect(await readFile(join(root, ".notes-write.lock"), "utf8")).toBe("other writer");
     });
 
+    test("writers contending for the library lock each apply their update exactly once", async () => {
+        await withLibraryLock(root, () => writeNoteFile(root, "counter.md", "0", null));
+        const writers = 3;
+        const rounds = 10;
+        await Promise.all(Array.from({ length: writers }, async () => {
+            for (let round = 0; round < rounds; round++) {
+                await withLibraryLock(root, async () => {
+                    const current = await readNoteFile(root, "counter.md");
+                    await writeNoteFile(root, "counter.md", `${current.raw}.`, current.version);
+                });
+            }
+        }));
+        expect((await readFile(join(root, "counter.md"), "utf8")).length).toBe(1 + writers * rounds);
+        expect(await readdir(root)).toEqual(["counter.md"]);
+    }, 15000);
+
     test("cleans temporary files after a failed final version check without altering the note", async () => {
         const note = await library.create({ body: "# Original" }, author);
         const original = await readFile(join(root, note.path), "utf8");
@@ -453,6 +469,34 @@ describe("search and filesystem boundaries", () => {
         expect(result.warnings).toContainEqual(expect.objectContaining({ code: "note_too_large" }));
         expect((await lstat(join(root, "huge.md"))).size).toBe(MAX_NOTE_BYTES + 1);
     });
+});
+
+describe("transient Windows filesystem errors", () => {
+    const fail = code => Object.assign(new Error(code), { code });
+
+    test.each(["EPERM", "EACCES", "EBUSY"])("%s is retried on Windows until the operation succeeds", async code => {
+        let calls = 0;
+        const result = await retryTransient(async () => {
+            if (++calls <= 3) throw fail(code);
+            return calls;
+        }, { platform: "win32", delays: [0, 0, 0] });
+        expect(result).toBe(4);
+    });
+
+    test("a persistent error is rethrown unchanged once the delays are spent", async () => {
+        const error = fail("EPERM");
+        let calls = 0;
+        await expect(retryTransient(async () => { calls++; throw error; }, { platform: "win32", delays: [0, 0] })).rejects.toBe(error);
+        expect(calls).toBe(3);
+    });
+
+    test.each([["linux", "EPERM"], ["darwin", "EACCES"], ["win32", "ENOENT"], ["win32", "EEXIST"]])(
+        "%s %s is a real failure and is not retried", async (platform, code) => {
+            let calls = 0;
+            await expect(retryTransient(async () => { calls++; throw fail(code); }, { platform, delays: [0, 0] }))
+                .rejects.toMatchObject({ code });
+            expect(calls).toBe(1);
+        });
 });
 
 describe("trash and explicit permanent-deletion confirmation", () => {

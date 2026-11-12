@@ -7,7 +7,7 @@ import {
 } from "./note-format.mjs";
 import {
     readLibraryFile, readNoteFile, relativePath, removeNoteFile, requireVersion, resolveInside,
-    visiblePath, withLibraryLock, writeNoteFile,
+    retryTransient, visiblePath, withLibraryLock, writeNoteFile,
 } from "./filesystem.mjs";
 import { trashItem } from "./platform.mjs";
 import { watchLibrary } from "./watcher.mjs";
@@ -292,7 +292,7 @@ export class NotesLibrary {
                 const from = await resolveInside(root, assets);
                 const to = await resolveInside(root, newAssets, { missing: true });
                 if (to.stats) throw new NotesError("already_exists", "The destination assets directory already exists.");
-                await rename(from.path, to.path);
+                await retryTransient(() => rename(from.path, to.path));
                 assetsMoved = true;
             }
             await removeNoteFile(root, note.path, note.version);
@@ -302,7 +302,7 @@ export class NotesLibrary {
                     const from = await resolveInside(root, newAssets);
                     const to = await resolveInside(root, assets, { missing: true });
                     if (to.stats) throw new NotesError("already_exists", "Cannot restore the original asset directory.");
-                    await rename(from.path, to.path);
+                    await retryTransient(() => rename(from.path, to.path));
                 }
                 await removeNoteFile(root, destination, contentHash(raw));
             } catch (rollbackError) {
@@ -631,7 +631,8 @@ export class NotesLibrary {
             if (names.some(entry => entry !== currentName && nameKey(entry) === nameKey(cleaned))) {
                 throw new NotesError("already_exists", "A folder or file already uses this name ignoring case.");
             }
-            await rename((await resolveInside(root, path)).path, join(root, ...destination.split("/")));
+            const source = (await resolveInside(root, path)).path;
+            await retryTransient(() => rename(source, join(root, ...destination.split("/"))));
             return { path: destination };
         });
     }

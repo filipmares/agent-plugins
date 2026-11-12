@@ -7,6 +7,13 @@ and plugin versioning follows [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## [Unreleased]
 
+### Added — Notes canvas
+- New `extensions/notes` canvas extension: global Markdown notes for the Copilot app, stored as plain `.md` files in the OS Documents `Copilot Notes` folder. Each note's YAML frontmatter records a stable id, timestamps, and the creating session, project and branch; custom fields are preserved and origin fields never change.
+- Apple Notes-style panel (folders, grouped note list, editor) with smart views, search across every folder, pinning, drag-to-folder, keyboard navigation, and colors that follow the Copilot app's light/dark theme. The rich editor is a non-React port of [bholmesdev/hubble.md](https://github.com/bholmesdev/hubble.md) (MIT) with a plain Markdown view; notes the rich editor cannot round-trip exactly open as plain Markdown. **Copilot** saves the note and queues a prompt with it attached to the owning session.
+- The `notes_manage` tool lets agents create, search, read, append to, update, move and delete notes and list folders. Every write is version-checked and serialized across processes, deletion goes to the OS trash, and edits made elsewhere reload live. A stale save shows a Reload / Keep Mine choice, and text left unsaved when the panel closes is recovered instead of overwriting a newer note.
+- On Windows, a transient `EPERM`, `EACCES` or `EBUSY` from a sync client, antivirus or indexer is retried for about 1.3 seconds before it surfaces, re-checking the note's content version on every attempt. Recovered drafts are claimed with an exclusive marker so two panels cannot restore the same draft.
+- Registered `extensions/notes` in the plugin manifest and bumped the plugin and marketplace manifests to `2.2.0`. Deferred features are tracked in [#60](https://github.com/filipmares/agent-plugins/issues/60).
+
 ### Added — RPI Artifact Navigator plugin distribution
 - The `agent-plugins` plugin manifest now declares `extensions: ["extensions/rpi-artifact-navigator"]`, so installing the plugin installs the canvas and `copilot plugin update agent-plugins` delivers canvas updates. Previously the canvas was reachable only through a manual **Import canvas from repo** copy, which had no update channel — a plugin version bump did not reach it. Unlike the removed `hve-core-canvas` package, this needs no second plugin and no `../../extensions` symlink, because the repo root is already the plugin source.
 - Bumped the plugin and marketplace manifests to `2.1.0`.
