@@ -493,13 +493,15 @@ function focusEditor() {
 function toggleMarkdown(forceRich = false) {
     if (!state.note && !state.draft) return;
     if (editorError) { showToast("Resolve the rich-editor error before changing views; your rich text is still in the panel."); return; }
+    heldFrontmatterFocus = frontmatterFocus();
+    const keepPropertyFocus = heldFrontmatterFocus !== null;
     if (!plain) plain = true;
     else {
         prepareEditor();
         if (forceRich && rich && !state.note?.warning) { guarded = false; plain = false; }
     }
     renderEditor();
-    focusEditor();
+    if (!keepPropertyFocus) focusEditor();
 }
 
 async function openExternal(url: string) {

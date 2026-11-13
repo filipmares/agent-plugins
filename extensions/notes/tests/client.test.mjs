@@ -731,10 +731,14 @@ describe("Notes client persistence", () => {
         const slot = panel.richHeader();
         expect(slot.getAttribute("class")).toBe("frontmatter-slot");
         expect(panel.frontmatterView.parentNode).toBe(slot);
+        property(panel, "project").focus();
         panel.toggleMarkdown();
         expect(panel.frontmatterView.nextSibling).toBe(panel.textarea);
+        expect(panel.activeElement).toBe(property(panel, "project"));
         // Returning to rich view, or reloading after an external change, rebuilds the editor and its slot.
+        panel.frontmatterMore.focus();
         panel.toggleMarkdown();
+        expect(panel.activeElement).toBe(panel.frontmatterMore);
         const rebuilt = panel.richHeader();
         expect(rebuilt).not.toBe(slot);
         expect(panel.frontmatterView.parentNode).toBe(rebuilt);
