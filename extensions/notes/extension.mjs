@@ -50,7 +50,7 @@ async function openPanel(ctx) {
             async () => resolveTarget(await getLibrary(), ctx.input ?? {}),
             target => createNotesServer({
                 getLibrary,
-                getContext: () => readSessionContext(ctx.sessionId),
+                getContext: () => readSessionContext(ctx.sessionId, { allowMissing: true }),
                 sessionId: ctx.sessionId,
                 statePath: uiStatePath(),
                 target,
@@ -78,7 +78,7 @@ session = await joinSession({
         createCanvas({
             id: "notes",
             displayName: "Notes",
-            description: "Apple Notes-style Markdown notes stored in Documents/Copilot Notes, with session provenance.",
+            description: "Apple Notes-style Markdown notes stored in Documents/Copilot Notes, with session provenance when opened from a session.",
             inputSchema: targetSchema,
             actions: [
                 {

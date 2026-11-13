@@ -27,14 +27,18 @@ function hasAutomaticName(note) {
         && (stem === base || (suffix && stem === Array.from(base).slice(0, 40 - suffix.length).join("") + suffix));
 }
 
+// A panel opened without a session edits as the user with nothing to attribute; agents always act from a real session.
 function assertContext(context) {
-    if (!context || typeof context.sessionId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(context.sessionId)) {
+    const sessionless = context?.actor === "user" && context.sessionId === undefined;
+    if (!context || (!sessionless && (typeof context.sessionId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(context.sessionId)))) {
         throw new NotesError("invalid_session", "A valid calling session is required for note edits.");
     }
     if (!["user", "agent"].includes(context.actor)) {
         throw new NotesError("invalid_request", "The author must be user or agent.");
     }
 }
+
+const sessionsWith = (sessions, { sessionId }) => sessionId ? [...new Set([...(sessions ?? []), sessionId])] : (sessions ?? []);
 
 function summary(note) {
     return {
@@ -329,9 +333,9 @@ export class NotesLibrary {
                 created_by: context.actor,
                 ...(context.project ? { project: context.project } : {}),
                 ...(context.branch ? { branch: context.branch } : {}),
-                session_id: context.sessionId,
+                ...(context.sessionId ? { session_id: context.sessionId } : {}),
                 ...(context.sessionName ? { session_name: context.sessionName } : {}),
-                sessions: [context.sessionId],
+                sessions: sessionsWith([], context),
             };
             const raw = serializeNote(parseNote(""), content, metadata);
             await writeNoteFile(root, path, raw, null);
@@ -430,7 +434,7 @@ export class NotesLibrary {
             if (body === note.body) return payload(note);
             const changes = {
                 updated: localTimestamp(this.#now()),
-                sessions: [...new Set([...(note.metadata.sessions ?? []), context.sessionId])],
+                sessions: sessionsWith(note.metadata.sessions, context),
             };
             const oldSlug = slug(titleOf(note.body));
             if (hasAutomaticName(note) && slug(titleOf(body)) !== oldSlug) {
@@ -444,7 +448,7 @@ export class NotesLibrary {
                     id: repaired.metadata.id ?? adoptionId(note.path, note.stats.birthtimeMs || note.stats.mtimeMs),
                     created: repaired.metadata.created ?? localTimestamp(note.stats.birthtimeMs || note.stats.mtimeMs),
                     ...changes,
-                    sessions: [...new Set([...(repaired.metadata.sessions ?? []), context.sessionId])],
+                    sessions: sessionsWith(repaired.metadata.sessions, context),
                 });
             } else {
                 raw = serializeNote(note, body, changes);

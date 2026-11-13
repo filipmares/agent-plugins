@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile, symlink, link
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { retryTransient } from "../filesystem.mjs";
+import { NotesError } from "../errors.mjs";
 import { MAX_REQUEST_BYTES, createNotesServer, resolveTarget } from "../server.mjs";
 import { NotesLibrary } from "../storage.mjs";
 import { popRecovery, pushRecovery, recoveryPath } from "../ui-state.mjs";
@@ -204,6 +205,41 @@ describe("Notes panel server", () => {
         expect((await call("api/notes")).status).toBe(400);
         expect((await call(`api/note?id=${encodeURIComponent(created.json.id)}`)).json.title).toBe("Groceries");
         expect((await call("api/note?id=missing.md")).status).toBe(404);
+    });
+
+    test("a panel opened without a session saves notes without provenance and has no session view or Ask Copilot", async () => {
+        const sent = [];
+        // The app still hands a sessionless panel a synthetic session ID, but nothing is known about that session.
+        await start(undefined, {
+            getContext: async () => ({}),
+            sessionId: "app-control-session",
+            sendMessage: async (...args) => { sent.push(args); return "message-1"; },
+        });
+        expect((await call("api/state")).json.context).toEqual({ sessionId: null, project: null, sessionName: null });
+
+        const created = await call("api/note/create", { method: "POST", body: { body: "# Loose\nIdea", folder: "" } });
+        expect(created.status).toBe(200);
+        expect(created.json.frontmatter).toMatchObject({ created_by: "user", sessions: [] });
+        expect(created.json.frontmatter).not.toHaveProperty("session_id");
+        const updated = await call("api/note/update", { method: "POST", body: { id: created.json.id, body: "# Loose\nIdea\nMore", expectedVersion: created.json.version } });
+        expect(updated.status).toBe(200);
+        expect(updated.json.frontmatter.sessions).toEqual([]);
+
+        expect((await call("api/notes?view=session")).json.notes).toEqual([]);
+        expect((await call("api/notes?view=all")).json.notes.map(note => note.title)).toEqual(["Loose"]);
+        const ask = await call("api/ask", { method: "POST", body: { id: created.json.id, expectedVersion: updated.json.version, prompt: "Summarize" } });
+        expect(ask.json.error.code).toBe("chat_unavailable");
+        expect(sent).toEqual([]);
+    });
+
+    test("a session panel whose metadata is unreadable keeps its session for browsing but refuses edits that would lose provenance", async () => {
+        await start(undefined, { getContext: async () => { throw new NotesError("session_metadata_unavailable", "Unreadable."); } });
+        expect((await call("api/state")).json.context).toEqual({ sessionId: "session-a", project: null, sessionName: null });
+        await library.create({ body: "# Mine" }, { sessionId: "session-a", actor: "agent" });
+        expect((await call("api/notes?view=session")).json.notes.map(note => note.title)).toEqual(["Mine"]);
+        const refused = await call("api/note/create", { method: "POST", body: { body: "# Not saved", folder: "" } });
+        expect(refused.json.error.code).toBe("session_metadata_unavailable");
+        expect(await library.list()).toMatchObject({ notes: [expect.objectContaining({ title: "Mine" })] });
     });
 
     test("persists valid UI state and rejects malformed state", async () => {

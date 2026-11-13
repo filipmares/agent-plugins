@@ -7,6 +7,12 @@ and plugin versioning follows [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## [Unreleased]
 
+### Fixed — Notes without a session
+- The Notes canvas now opens and saves notes when the Copilot app opens it without a session. It previously refused with "Cannot read this session's workspace.yaml; no provenance was guessed", because the app runs a sessionless canvas under a stand-in session that has no `workspace.yaml` in the Copilot home.
+- Notes written from a sessionless panel carry no session origin: no `session_id` or `session_name`, and edits do not add to `sessions`. The stand-in session is never recorded. Only an absent `workspace.yaml` counts as no session; unreadable, oversized, malformed or mismatched session metadata is still refused.
+- The panel hides This Session and Ask Copilot when there is no session. The `notes_manage` agent tool is unchanged and still requires its session's provenance.
+- Bumped the plugin and marketplace manifests to `2.2.2`.
+
 ### Fixed — bundled canvas discovery
 - Register the parent `extensions/` discovery directory instead of individual extension folders so Copilot discovers both Notes and RPI Artifact Navigator through the existing `agent-plugins` plugin. No separate plugin, manual import, or Agent Plugins format migration is required.
 - Match plugin validation to Copilot's immediate-subdirectory discovery and add regression tests for bundled canvases, incorrect leaf paths, duplicate canvas ids, and missing entry points.

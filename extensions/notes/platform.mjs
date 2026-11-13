@@ -41,8 +41,12 @@ export async function resolveNotesDirectory({ platform = process.platform, home 
     return paths.join(documents, "Copilot Notes");
 }
 
-export async function readSessionContext(sessionId, { home = copilotHome() } = {}) {
+// `allowMissing` is for panels the app opens without a session: they run under a synthetic session whose
+// workspace.yaml is not in this Copilot home, so absent metadata means "no session" and resolves to `{}`.
+// Metadata that exists but cannot be read or trusted still fails, because provenance is never guessed.
+export async function readSessionContext(sessionId, { home = copilotHome(), allowMissing = false } = {}) {
     if (typeof sessionId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(sessionId)) {
+        if (allowMissing) return {};
         throw new NotesError("invalid_session", "The calling session ID is invalid.");
     }
     const path = join(home, "session-state", sessionId, "workspace.yaml");
@@ -54,6 +58,7 @@ export async function readSessionContext(sessionId, { home = copilotHome() } = {
         }
         source = await readFile(path, "utf8");
     } catch (error) {
+        if (allowMissing && error?.code === "ENOENT") return {};
         if (error instanceof NotesError) throw error;
         throw new NotesError("session_metadata_unavailable", "Cannot read this session's workspace.yaml; no provenance was guessed.");
     }
