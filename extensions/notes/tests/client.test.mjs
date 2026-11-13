@@ -11,10 +11,11 @@ const source = await readFile(new URL("../client/app.ts", import.meta.url), "utf
 const instrumented = source.replace(/^import .+;$/gm, "").replace(/\bvoid start\(\);(?=\s*$)/, "globalThis.clientReady = start();");
 if (instrumented === source) throw new Error("Cannot await Notes client startup.");
 const script = new Bun.Transpiler({ loader: "ts" }).transformSync(instrumented + `
-globalThis.client = { state, textarea, toast, openNote, moveNote, save, resolveConflict, refresh, askInput, askStatus, askPanel, copilotButton, compose, toggleMarkdown, isPlain: () => plain };
+globalThis.client = { state, textarea, toast, openNote, moveNote, save, resolveConflict, refresh, select, askInput, askStatus, askPanel, copilotButton, compose, toggleMarkdown, rows, isPlain: () => plain };
 `);
 const context = { sessionId: "client-test", actor: "user" };
 let fixture, root, library, server, statePath, clients;
+let scrollIntoViewTotal = 0;
 
 // Execute the entire client, including event listeners, without a browser dependency.
 // DOM/layout are inert: these tests exercise controller state and real server/storage effects.
@@ -26,6 +27,8 @@ class Element extends EventTarget {
     attributes = new Map();
     classList = { add() {}, remove() {}, toggle() {} };
     style = { setProperty() {} };
+    scrollTop = 0;
+    lastFocusOptions;
     setAttribute(name, value) {
         this.attributes.set(name, value);
         if (name === "hidden") this.hidden = true;
@@ -34,10 +37,24 @@ class Element extends EventTarget {
     append(...children) { this.children.push(...children); }
     replaceChildren(...children) { this.children = children; }
     contains() { return false; }
-    focus() {}
+    focus(options) { this.lastFocusOptions = options; }
+    scrollIntoView() { scrollIntoViewTotal++; }
     setSelectionRange() {}
     querySelector() { return null; }
-    querySelectorAll() { return []; }
+    querySelectorAll(selector) {
+        const match = selector.match(/\.([\w-]+)(?::not\(\.([\w-]+)\))?/);
+        if (!match) return [];
+        const [, className, exclusion] = match;
+        const result = [];
+        const visit = child => {
+            if (!(child instanceof Element)) return;
+            const classes = child.getAttribute("class")?.split(/\s+/) ?? [];
+            if (classes.includes(className) && (!exclusion || !classes.includes(exclusion))) result.push(child);
+            child.children.forEach(visit);
+        };
+        this.children.forEach(visit);
+        return result;
+    }
 }
 
 async function openClient({ richSafe = false } = {}) {
@@ -51,6 +68,7 @@ async function openClient({ richSafe = false } = {}) {
     const pending = new Set();
     const calls = [];
     let afterMove;
+    let afterNotes;
     let timerId = 0;
     const timers = new Map();
     const sandbox = {
@@ -72,6 +90,7 @@ async function openClient({ richSafe = false } = {}) {
                     ...options, headers: { ...options.headers, Origin: new URL(server.url).origin },
                 });
                 if (path === "api/note/move") await afterMove?.();
+                if (path.startsWith("api/notes?")) await afterNotes?.();
                 return response;
             })();
             pending.add(result);
@@ -85,7 +104,9 @@ async function openClient({ richSafe = false } = {}) {
     const panel = {
         ...sandbox.client,
         calls,
+        scrollCalls: () => scrollIntoViewTotal,
         delayMove(handler) { afterMove = handler; },
+        delayNotes(handler) { afterNotes = handler; },
         async settle() { while (pending.size) await Promise.all([...pending]); },
         async close() {
             window.dispatchEvent(new Event("pagehide"));
@@ -118,6 +139,53 @@ afterEach(async () => {
 });
 
 describe("Notes client persistence", () => {
+    test("a background refresh preserves pending navigation scroll when it supersedes a folder selection", async () => {
+        await library.create({ body: "# Folder note", folder: "Folder" }, context);
+        const panel = await openClient();
+        let release, started;
+        const waiting = new Promise(resolve => { started = resolve; });
+        const gate = new Promise(resolve => { release = resolve; });
+        panel.delayNotes(async () => {
+            panel.delayNotes(null);
+            started();
+            await gate;
+        });
+        const before = panel.scrollCalls();
+        const selection = panel.select({ folder: "Folder" });
+        await waiting;
+        try {
+            await panel.refresh();
+            expect(panel.state.notes).toHaveLength(1);
+            expect(panel.state.notes[0].folder).toBe("Folder");
+            expect(panel.scrollCalls()).toBe(before + 1);
+        } finally {
+            release();
+        }
+        await selection;
+        expect(panel.scrollCalls()).toBe(before + 1);
+        await panel.refresh();
+        expect(panel.scrollCalls()).toBe(before + 1);
+    });
+
+    test("background refresh preserves list scroll while explicit note navigation still scrolls", async () => {
+        const note = await library.create({ body: "# Scroll\noriginal" }, context);
+        const other = await library.create({ body: "# Other\nsecond" }, context);
+        const panel = await openClient();
+        await panel.openNote(note.id);
+        panel.rows.scrollTop = 120;
+        const before = panel.scrollCalls();
+        await library.update(note.id, { body: "# Scroll\nexternal", expectedVersion: note.version }, context);
+        panel.rows.contains = () => true;
+        await panel.refresh();
+        expect(panel.rows.scrollTop).toBe(120);
+        expect(panel.scrollCalls()).toBe(before);
+        expect(panel.rows.querySelectorAll(".row").find(row => row.getAttribute("aria-selected") === "true").lastFocusOptions)
+            .toMatchObject({ preventScroll: true });
+        panel.rows.contains = () => false;
+        await panel.openNote(other.id);
+        expect(panel.scrollCalls()).toBe(before + 1);
+    });
+
     test("same-note sync retains Markdown view while a different note chooses its own mode", async () => {
         const note = await library.create({ body: "# Plain view\noriginal" }, context);
         const other = await library.create({ body: "# Other\nrich" }, context);
