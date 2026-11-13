@@ -7,6 +7,9 @@ and plugin versioning follows [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## [Unreleased]
 
+### Fixed — Notes scrolling
+- Keep the Notes panel's grid row within its available height so the folder list, note list, and editor scroll inside their panes instead of expanding the panel; background refreshes preserve list scroll and focus.
+
 ### Fixed — Notes without a session
 - The Notes canvas now opens and saves notes when the Copilot app opens it without a session. It previously refused with "Cannot read this session's workspace.yaml; no provenance was guessed", because the app runs a sessionless canvas under a stand-in session that has no `workspace.yaml` in the Copilot home.
 - Notes written from a sessionless panel carry no session origin: no `session_id` or `session_name`, and edits do not add to `sessions`. The stand-in session is never recorded. Only an absent `workspace.yaml` counts as no session; unreadable, oversized, malformed or mismatched session metadata is still refused.

@@ -231,7 +231,9 @@ function listParams() {
 }
 
 let listSequence = 0;
-async function refreshLists(): Promise<void> {
+let listScrollPending = false;
+async function refreshLists(preserveScroll = false): Promise<void> {
+    if (!preserveScroll) listScrollPending = true;
     const sequence = ++listSequence;
     try {
         const [folders, notes] = await Promise.all([
@@ -242,13 +244,14 @@ async function refreshLists(): Promise<void> {
         state.folders = folders.folders;
         state.notes = notes.notes;
         renderSidebar();
-        renderList();
+        renderList(!listScrollPending);
+        listScrollPending = false;
     } catch (error) {
         if (sequence !== listSequence) return;
         if (error instanceof ApiError && error.code === "not_found" && "folder" in state.ui.selection) {
             state.ui.selection = { view: "all" };
             persistUi();
-            return refreshLists();
+            return refreshLists(preserveScroll);
         }
         showToast(message(error));
     }
@@ -607,7 +610,7 @@ async function refresh() {
         refreshPending = true;
         return;
     }
-    await refreshLists();
+    await refreshLists(true);
     if (!state.note) return;
     const key = keyOf(state.note);
     const gen = navGen;
@@ -639,7 +642,7 @@ async function refresh() {
             discardEditor();
         }
         renderEditor();
-        renderList();
+        renderList(true);
     }
 }
 
@@ -1128,7 +1131,7 @@ function noteRow(note: Summary, words: string[], searching: boolean) {
     return row;
 }
 
-function renderList() {
+function renderList(preserveScroll = false) {
     const searching = state.query.trim() !== "";
     const words = state.query.toLowerCase().split(/\s+/).filter(Boolean);
     listTitle.textContent = searching ? "Search" : selectionName();
@@ -1164,8 +1167,8 @@ function renderList() {
     const current = options.find(row => row.getAttribute("aria-selected") === "true") ?? options[0];
     current?.setAttribute("tabindex", "0");
     rows.setAttribute("tabindex", current ? "-1" : "0");
-    if (hadFocus) (current ?? rows).focus();
-    current?.scrollIntoView({ block: "nearest" });
+    if (hadFocus) (current ?? rows).focus({ preventScroll: preserveScroll });
+    if (!preserveScroll) current?.scrollIntoView({ block: "nearest" });
 }
 
 rows.addEventListener("keydown", event => {
