@@ -11,7 +11,8 @@ const source = await readFile(new URL("../client/app.ts", import.meta.url), "utf
 const instrumented = source.replace(/^import .+;$/gm, "").replace(/\bvoid start\(\);(?=\s*$)/, "globalThis.clientReady = start();");
 if (instrumented === source) throw new Error("Cannot await Notes client startup.");
 const script = new Bun.Transpiler({ loader: "ts" }).transformSync(instrumented + `
-globalThis.client = { state, textarea, toast, openNote, moveNote, save, resolveConflict, refresh, select, askInput, askStatus, askPanel, copilotButton, compose, toggleMarkdown, rows, isPlain: () => plain };
+globalThis.client = { state, textarea, toast, openNote, moveNote, save, resolveConflict, refresh, select, askInput, askStatus, askPanel, copilotButton, compose, toggleMarkdown, rows, isPlain: () => plain,
+    app, sidebar, listPane, editorPane, sidebarToggle, showFoldersButton, backToNotesButton, backdrop, setOverlay, rememberFocus, closeOverlayOnEscape, overlayOpen: () => overlay };
 `);
 const context = { sessionId: "client-test", actor: "user" };
 let fixture, root, library, server, statePath, clients;
@@ -20,8 +21,11 @@ let scrollIntoViewTotal = 0;
 // Execute the entire client, including event listeners, without a browser dependency.
 // DOM/layout are inert: these tests exercise controller state and real server/storage effects.
 class Element extends EventTarget {
+    constructor(tagName = "div") { super(); this.tagName = tagName; }
     value = "";
     hidden = false;
+    disabled = false;
+    inert = false;
     dataset = {};
     children = [];
     attributes = new Map();
@@ -29,55 +33,99 @@ class Element extends EventTarget {
     style = { setProperty() {} };
     scrollTop = 0;
     lastFocusOptions;
+    ownerDocument;
+    parentElement;
+    returnFocus;
     setAttribute(name, value) {
         this.attributes.set(name, value);
         if (name === "hidden") this.hidden = true;
+        if (name === "disabled") this.disabled = true;
     }
     getAttribute(name) { return this.attributes.get(name) ?? null; }
-    append(...children) { this.children.push(...children); }
-    replaceChildren(...children) { this.children = children; }
-    contains() { return false; }
-    focus(options) { this.lastFocusOptions = options; }
+    hasAttribute(name) { return this.attributes.has(name); }
+    append(...children) {
+        for (const child of children) {
+            if (child instanceof Element) {
+                child.parentElement = this;
+                child.ownerDocument = this.ownerDocument;
+            }
+            this.children.push(child);
+        }
+    }
+    replaceChildren(...children) { this.children = []; this.append(...children); }
+    contains(target) { return target === this || this.children.some(child => child instanceof Element && child.contains(target)); }
+    focus(options) {
+        for (let element = this; element; element = element.parentElement) {
+            if (element.hidden || element.inert) return;
+        }
+        this.lastFocusOptions = options;
+        if (this.ownerDocument) this.ownerDocument.activeElement = this;
+    }
     scrollIntoView() { scrollIntoViewTotal++; }
     setSelectionRange() {}
-    querySelector() { return null; }
+    select() {}
+    getClientRects() { return [{}]; }
+    showModal() { this.returnFocus = this.ownerDocument.activeElement; this.setAttribute("open", ""); }
+    close() {
+        this.attributes.delete("open");
+        this.dispatchEvent(new Event("close"));
+        this.returnFocus?.focus();
+    }
+    remove() {
+        const index = this.parentElement?.children.indexOf(this) ?? -1;
+        if (index >= 0) this.parentElement.children.splice(index, 1);
+        this.parentElement = null;
+    }
+    closest(selector) {
+        for (let element = this; element; element = element.parentElement) {
+            if (selector === "dialog[open]" && element.tagName === "dialog" && element.hasAttribute("open")) return element;
+        }
+        return null;
+    }
+    querySelector(selector) { return this.querySelectorAll(selector)[0] ?? null; }
     querySelectorAll(selector) {
+        const descendants = this.children.flatMap(child => child instanceof Element ? [child, ...child.querySelectorAll("*")] : []);
+        if (selector === "*") return descendants;
+        if (selector === "[aria-current='true']") return descendants.filter(element => element.getAttribute("aria-current") === "true");
+        if (selector === "button" || selector.startsWith("button")) return descendants.filter(element => element.tagName === "button");
+        if (selector === "input" || selector === "dialog") return descendants.filter(element => element.tagName === selector);
         const match = selector.match(/\.([\w-]+)(?::not\(\.([\w-]+)\))?/);
         if (!match) return [];
         const [, className, exclusion] = match;
-        const result = [];
-        const visit = child => {
-            if (!(child instanceof Element)) return;
+        return descendants.filter(child => {
             const classes = child.getAttribute("class")?.split(/\s+/) ?? [];
-            if (classes.includes(className) && (!exclusion || !classes.includes(exclusion))) result.push(child);
-            child.children.forEach(visit);
-        };
-        this.children.forEach(visit);
-        return result;
+            return classes.includes(className) && (!exclusion || !classes.includes(exclusion));
+        });
     }
 }
 
 async function openClient({ richSafe = false } = {}) {
     const window = new EventTarget();
     const document = Object.assign(new EventTarget(), {
-        body: new Element(), activeElement: null,
-        createElement: () => new Element(),
-        createElementNS: () => new Element(),
+        body: new Element("body"), activeElement: null,
+        createElement: tag => Object.assign(new Element(tag), { ownerDocument: document }),
+        createElementNS: () => Object.assign(new Element("svg"), { ownerDocument: document }),
         getElementById: () => new Element(),
     });
+    document.body.ownerDocument = document;
     const pending = new Set();
     const calls = [];
     let afterMove;
     let afterNotes;
     let timerId = 0;
     const timers = new Map();
+    const media = new Map();
     const sandbox = {
-        window, document, URLSearchParams, Event, crypto,
+        window, document, URLSearchParams, Event, crypto, queueMicrotask,
         GUARD_MESSAGE: "This note uses Markdown the rich editor can't keep exactly.",
         safeExternal: value => /^(https?:|mailto:)/.test(value),
         // Only the rendered view is inert. Real codec/schema and browser tests cover the rich view separately.
         createRichEditor: () => ({ safe: richSafe, editor: { destroy() {}, isFocused: false, state: { selection: { from: 1 } } } }),
-        matchMedia: () => Object.assign(new EventTarget(), { matches: false }),
+        matchMedia: query => {
+            const result = Object.assign(new EventTarget(), { matches: false });
+            media.set(query, result);
+            return result;
+        },
         EventSource: class extends EventTarget { close() {} },
         __ICONS__: new Proxy({}, { get: () => ({ width: 16, path: "" }) }),
         addEventListener: window.addEventListener.bind(window),
@@ -105,6 +153,30 @@ async function openClient({ richSafe = false } = {}) {
         ...sandbox.client,
         calls,
         scrollCalls: () => scrollIntoViewTotal,
+        document,
+        app: sandbox.client.app,
+        sidebar: sandbox.client.sidebar,
+        listPane: sandbox.client.listPane,
+        editorPane: sandbox.client.editorPane,
+        sidebarToggle: sandbox.client.sidebarToggle,
+        showFoldersButton: sandbox.client.showFoldersButton,
+        backToNotesButton: sandbox.client.backToNotesButton,
+        backdrop: sandbox.client.backdrop,
+        rememberFocus: sandbox.client.rememberFocus,
+        closeOverlayOnEscape: sandbox.client.closeOverlayOnEscape,
+        media,
+        get activeElement() { return document.activeElement; },
+        get overlayOpen() { return sandbox.client.overlayOpen(); },
+        async setViewport({ wide, narrow }) {
+            const wideMedia = media.get("(min-width: 960px)");
+            const narrowMedia = media.get("(max-width: 639.98px)");
+            const changedWide = wideMedia.matches !== wide;
+            const changedNarrow = narrowMedia.matches !== narrow;
+            wideMedia.matches = wide;
+            narrowMedia.matches = narrow;
+            if (changedWide) wideMedia.dispatchEvent(new Event("change"));
+            if (changedNarrow) narrowMedia.dispatchEvent(new Event("change"));
+        },
         delayMove(handler) { afterMove = handler; },
         delayNotes(handler) { afterNotes = handler; },
         async settle() { while (pending.size) await Promise.all([...pending]); },
@@ -136,6 +208,131 @@ afterEach(async () => {
     await Promise.all(clients.map(panel => panel.settle()));
     await server.close();
     await rm(fixture, { recursive: true, force: true });
+});
+
+describe("medium drawer focus", () => {
+    test("closed drawer is inert; open drawer traps Tab and every close path restores its opener", async () => {
+        const panel = await openClient();
+        const buttons = panel.sidebar.querySelectorAll("button");
+        const first = buttons[0];
+        const last = buttons.at(-1);
+        expect(panel.sidebar.inert).toBe(true);
+        expect(panel.listPane.inert).toBe(false);
+        expect(panel.editorPane.inert).toBe(false);
+        first.focus();
+        expect(panel.activeElement).not.toBe(first);
+
+        panel.setOverlay(true);
+        expect(panel.overlayOpen).toBe(true);
+        expect(panel.sidebar.inert).toBe(false);
+        expect(panel.listPane.inert).toBe(true);
+        expect(panel.editorPane.inert).toBe(true);
+
+        first.focus();
+        const shiftTab = Object.assign(new Event("keydown", { cancelable: true }), { key: "Tab", shiftKey: true });
+        panel.sidebar.dispatchEvent(shiftTab);
+        expect(shiftTab.defaultPrevented).toBe(true);
+        expect(panel.activeElement).toBe(last);
+        const tab = Object.assign(new Event("keydown", { cancelable: true }), { key: "Tab", shiftKey: false });
+        panel.sidebar.dispatchEvent(tab);
+        expect(tab.defaultPrevented).toBe(true);
+        expect(panel.activeElement).toBe(first);
+
+        const closePaths = [
+            () => panel.backdrop.dispatchEvent(new Event("click")),
+            () => panel.sidebar.querySelector("button").dispatchEvent(new Event("click")),
+            () => panel.document.dispatchEvent(Object.assign(new Event("keydown"), { key: "Escape" })),
+        ];
+        for (const close of closePaths) {
+            panel.setOverlay(true);
+            close();
+            expect(panel.overlayOpen).toBe(false);
+            expect(panel.activeElement).toBe(panel.sidebarToggle);
+            expect(panel.sidebar.inert).toBe(true);
+            expect(panel.listPane.inert).toBe(false);
+            expect(panel.editorPane.inert).toBe(false);
+        }
+    });
+
+    test("breakpoint changes clear inertness and move focus to the visible navigation control", async () => {
+        const panel = await openClient();
+        panel.setOverlay(true);
+        await panel.setViewport({ wide: true, narrow: false });
+        expect(panel.overlayOpen).toBe(false);
+        expect(panel.sidebar.inert).toBe(false);
+        expect(panel.listPane.inert).toBe(false);
+        expect(panel.editorPane.inert).toBe(false);
+        expect(panel.activeElement).toBe(panel.sidebarToggle);
+
+        await panel.setViewport({ wide: false, narrow: false });
+        expect(panel.sidebar.inert).toBe(true);
+        panel.setOverlay(true);
+        await panel.setViewport({ wide: false, narrow: true });
+        expect(panel.overlayOpen).toBe(false);
+        expect(panel.sidebar.inert).toBe(false);
+        expect(panel.listPane.inert).toBe(false);
+        expect(panel.editorPane.inert).toBe(false);
+        expect(panel.activeElement).toBe(panel.showFoldersButton);
+        expect(panel.app.dataset.pane).toBe("list");
+
+        await panel.setViewport({ wide: false, narrow: false });
+        expect(panel.sidebar.inert).toBe(true);
+        expect(panel.activeElement).toBe(panel.sidebarToggle);
+
+        await panel.setViewport({ wide: false, narrow: true });
+        expect(panel.activeElement).toBe(panel.showFoldersButton);
+        panel.showFoldersButton.dispatchEvent(new Event("click"));
+        const selected = panel.sidebar.querySelector("[aria-current='true']");
+        selected.focus();
+        await panel.setViewport({ wide: false, narrow: false });
+        expect(panel.activeElement).toBe(panel.sidebarToggle);
+        panel.rememberFocus(panel.sidebarToggle);
+        panel.document.activeElement = panel.document.body;
+        await panel.setViewport({ wide: false, narrow: true });
+        expect(panel.activeElement).toBe(selected);
+        expect(panel.app.dataset.pane).toBe("folders");
+    });
+
+    test("returning to folders focuses a visible control when no folder is selected", async () => {
+        const panel = await openClient();
+        await panel.setViewport({ wide: false, narrow: true });
+        panel.showFoldersButton.dispatchEvent(new Event("click"));
+        const folderControl = panel.sidebar.querySelector("[aria-current='true']");
+        expect(folderControl).not.toBeNull();
+        folderControl.focus();
+
+        await panel.setViewport({ wide: false, narrow: false });
+        expect(panel.activeElement).toBe(panel.sidebarToggle);
+        folderControl.attributes.delete("aria-current");
+        panel.rememberFocus(panel.sidebarToggle);
+        panel.document.activeElement = panel.document.body;
+        await panel.setViewport({ wide: false, narrow: true });
+
+        expect(panel.activeElement).toBe(folderControl);
+    });
+
+    test("Escape closes a drawer-opened native dialog before closing the drawer", async () => {
+        const panel = await openClient();
+        panel.setOverlay(true);
+        const newFolder = panel.sidebar.querySelectorAll("button").at(-1);
+        newFolder.focus();
+        newFolder.dispatchEvent(new Event("click"));
+        const dialog = panel.document.body.querySelector("dialog");
+        const input = dialog.querySelector("input");
+        expect(dialog.hasAttribute("open")).toBe(true);
+        expect(panel.activeElement).toBe(input);
+
+        panel.closeOverlayOnEscape(input);
+        expect(panel.overlayOpen).toBe(true);
+        dialog.close();
+        await Promise.resolve();
+        expect(panel.activeElement).toBe(newFolder);
+        expect(panel.overlayOpen).toBe(true);
+
+        panel.closeOverlayOnEscape(newFolder);
+        expect(panel.overlayOpen).toBe(false);
+        expect(panel.activeElement).toBe(panel.sidebarToggle);
+    });
 });
 
 describe("Notes client persistence", () => {

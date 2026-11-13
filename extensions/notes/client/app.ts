@@ -41,6 +41,11 @@ const state = {
 };
 let pane: "folders" | "list" | "note" = "list";
 let overlay = false;
+let overlayOpener: HTMLElement | null = null;
+type Viewport = "wide" | "medium" | "narrow";
+const viewport = (): Viewport => wide.matches ? "wide" : narrow.matches ? "narrow" : "medium";
+let viewportMode = viewport();
+let lastFocused: HTMLElement | null = null;
 
 // A panel the app opened without a session has no session notes, and no project either.
 function viewAvailable(view: "all" | "project" | "session") {
@@ -131,6 +136,8 @@ const moveButton = iconButton("file-moved", "Move note to folder", () => state.n
 const trashButton = iconButton("trash", "Delete note", () => state.note && void deleteNote(state.note));
 const sidebarToggle = iconButton("sidebar-collapse", "Hide folders", toggleSidebar, { class: "icon-button hide-narrow" });
 const toast = h("div", { class: "toast", role: "alert", hidden: true });
+const showFoldersButton = iconButton("chevron-left", "Show folders", () => setPane("folders"), { class: "icon-button narrow-only" });
+const backToNotesButton = iconButton("chevron-left", "Back to notes", () => void backToList(), { class: "icon-button narrow-only" });
 
 sidebar.append(
     h("header", { class: "pane-header" }, h("h2", { class: "sidebar-title" }, "Folders"),
@@ -141,7 +148,7 @@ sidebar.append(
 );
 const listPane = h("section", { class: "list-pane", "aria-label": "Note list" },
     h("header", { class: "pane-header" },
-        iconButton("chevron-left", "Show folders", () => setPane("folders"), { class: "icon-button narrow-only" }),
+        showFoldersButton,
         sidebarToggle,
         h("div", { class: "list-heading" }, listTitle, listCount),
         iconButton("compose", "New note", () => void compose())),
@@ -150,18 +157,38 @@ const listPane = h("section", { class: "list-pane", "aria-label": "Note list" },
 );
 const editorPane = h("main", { class: "editor-pane", "aria-label": "Editor" },
     h("header", { class: "pane-header editor-toolbar" },
-        iconButton("chevron-left", "Back to notes", () => void backToList(), { class: "icon-button narrow-only" }),
+        backToNotesButton,
         h("span", { class: "spacer" }), askStatus, markdownButton, copilotButton, pinButton, moveButton, trashButton),
     askPanel, banner, fidelityBanner,
     h("div", { class: "editor-scroll" }, dateLine, textarea, richElement, emptyEditor),
 );
-app.append(sidebar, h("div", { class: "backdrop", onclick: () => setOverlay(false) }), listPane, editorPane);
+const backdrop = h("div", { class: "backdrop", onclick: () => setOverlay(false) });
+app.append(sidebar, backdrop, listPane, editorPane);
 document.body.append(toast);
+
+function rememberFocus(target: EventTarget | null) {
+    if (target && target !== document.body) lastFocused = target as HTMLElement;
+}
+
+function selectedFolderButton() {
+    const selected = sidebar.querySelector<HTMLButtonElement>("[aria-current='true']");
+    return selected?.getClientRects().length
+        ? selected
+        : [...sidebar.querySelectorAll<HTMLButtonElement>(".folder-button")]
+            .find(button => !button.disabled && !button.hidden && button.getClientRects().length > 0);
+}
+
+document.addEventListener("focusin", event => rememberFocus(event.target));
+document.addEventListener("focusout", event => rememberFocus(event.target));
 
 function layout() {
     app.classList.toggle("sidebar-hidden", !state.ui.sidebar);
     app.classList.toggle("overlay-open", overlay);
     app.dataset.pane = pane;
+    const medium = viewport() === "medium";
+    sidebar.inert = medium && !overlay;
+    listPane.inert = medium && overlay;
+    editorPane.inert = medium && overlay;
     const shown = wide.matches && state.ui.sidebar;
     sidebarToggle.replaceChildren(icon(shown ? "sidebar-collapse" : "sidebar-expand"));
     sidebarToggle.setAttribute("aria-label", shown ? "Hide folders" : "Show folders");
@@ -180,9 +207,17 @@ function toggleSidebar() {
 }
 
 function setOverlay(open: boolean) {
+    if (open === overlay || (open && viewport() !== "medium")) return;
+    if (open) overlayOpener = sidebarToggle;
     overlay = open;
     layout();
-    if (open) sidebar.querySelector<HTMLElement>("[aria-current='true']")?.focus();
+    if (open) {
+        const selected = sidebar.querySelector<HTMLElement>("[aria-current='true']");
+        (selected ?? [...sidebar.querySelectorAll<HTMLButtonElement>("button")].find(button => !button.disabled && !button.hidden))?.focus();
+    } else {
+        overlayOpener?.focus();
+        overlayOpener = null;
+    }
 }
 
 function setPane(next: typeof pane) {
@@ -190,8 +225,50 @@ function setPane(next: typeof pane) {
     layout();
 }
 
-wide.addEventListener("change", () => { overlay = false; layout(); });
-narrow.addEventListener("change", layout);
+function reconcileViewport() {
+    const next = viewport();
+    if (next === viewportMode) return layout();
+    const wasOpen = overlay;
+    const active = document.activeElement === document.body ? lastFocused : document.activeElement;
+    const focusedSidebar = !!active && sidebar.contains(active);
+    const focusedNarrowControl = active === showFoldersButton || active === backToNotesButton;
+    const focusedSidebarToggle = active === sidebarToggle;
+    viewportMode = next;
+    overlay = false;
+    layout();
+    if (next === "medium" && (wasOpen || focusedSidebar || focusedNarrowControl)) {
+        sidebarToggle.focus();
+    } else if (next === "wide" && (wasOpen || focusedNarrowControl)) {
+        sidebarToggle.focus();
+    } else if (next === "narrow" && (wasOpen || focusedSidebar || focusedSidebarToggle)) {
+        const target = pane === "folders"
+            ? selectedFolderButton()
+            : pane === "list" ? showFoldersButton : backToNotesButton;
+        target?.focus();
+    }
+    if (!overlay) overlayOpener = null;
+}
+
+wide.addEventListener("change", reconcileViewport);
+narrow.addEventListener("change", reconcileViewport);
+
+sidebar.addEventListener("keydown", event => {
+    if (viewport() !== "medium" || !overlay) return;
+    if (event.key !== "Tab") return;
+    const buttons = [...sidebar.querySelectorAll<HTMLButtonElement>("button")].filter(button => !button.disabled && !button.hidden);
+    if (!buttons.length) {
+        event.preventDefault();
+        return;
+    }
+    const active = document.activeElement;
+    if (event.shiftKey && active === buttons[0]) {
+        event.preventDefault();
+        buttons.at(-1)?.focus();
+    } else if (!event.shiftKey && active === buttons.at(-1)) {
+        event.preventDefault();
+        buttons[0].focus();
+    }
+});
 
 let toastTimer = 0;
 function showToast(text: string) {
@@ -1257,8 +1334,12 @@ search.addEventListener("keydown", event => {
     }
 });
 
+function closeOverlayOnEscape(target: EventTarget | null) {
+    if (overlay && !(target as Element | null)?.closest?.("dialog[open]")) setOverlay(false);
+}
+
 document.addEventListener("keydown", event => {
-    if (event.key === "Escape" && overlay) setOverlay(false);
+    if (event.key === "Escape") closeOverlayOnEscape(event.target);
 });
 
 function connectEvents() {
