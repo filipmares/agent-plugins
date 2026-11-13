@@ -119,6 +119,20 @@ let rich: Editor | null = null;
 let plain = false;
 let guarded = false;
 let editorError = false;
+let editorErrorText = "";
+let saveFailure: string | null = null;
+let saveDetailsOpen = false;
+let lastSaveAttention = "";
+const saveDetails = h("div", { id: "save-details", class: "save-details", hidden: true });
+const saveAnnouncement = h("span", { class: "save-announcement", role: "status", "aria-live": "polite", "aria-atomic": "true" });
+const saveSeparator = h("span", { class: "toolbar-separator", "aria-hidden": "true", hidden: true });
+const saveButton = iconButton("check", "Saved", () => {
+    if (saveFailure && !inflight && !state.conflict && !editorError) void save();
+    else {
+        saveDetailsOpen = !saveDetailsOpen;
+        renderSaveStatus();
+    }
+}, { class: "icon-button save-button", "aria-controls": "save-details", "aria-expanded": "false", hidden: true });
 const markdownButton = iconButton("code", "View as Markdown", () => toggleMarkdown());
 const copilotButton = iconButton("copilot", "Ask Copilot about this note", () => {
     if (!askPanel.hidden) return hideAsk();
@@ -127,7 +141,7 @@ const copilotButton = iconButton("copilot", "Ask Copilot about this note", () =>
     askInput.focus();
 }, { "aria-expanded": "false", "aria-controls": "ask-note" });
 const askInput = h("input", { type: "text", class: "text-input", "aria-label": "Ask Copilot about this note", placeholder: "Ask about this note", maxlength: "16000" });
-// Lives in the toolbar so "Sent to chat" stays visible after the prompt hides.
+// Stays visible below the toolbar after the prompt hides, without crowding the action buttons.
 const askStatus = h("span", { role: "status", class: "ask-status" });
 const askPanel = h("div", { id: "ask-note", class: "ask-note", hidden: true }, askInput);
 const emptyEditor = h("div", { class: "empty-editor" }, icon("note"), h("p", {}, "No note selected"));
@@ -158,7 +172,8 @@ const listPane = h("section", { class: "list-pane", "aria-label": "Note list" },
 const editorPane = h("main", { class: "editor-pane", "aria-label": "Editor" },
     h("header", { class: "pane-header editor-toolbar" },
         backToNotesButton,
-        h("span", { class: "spacer" }), askStatus, markdownButton, copilotButton, pinButton, moveButton, trashButton),
+        h("span", { class: "spacer" }), saveButton, saveSeparator, markdownButton, copilotButton, pinButton, moveButton, trashButton),
+    h("div", { class: "editor-feedback" }, saveDetails, askStatus, saveAnnouncement),
     askPanel, banner, fidelityBanner,
     h("div", { class: "editor-scroll" }, dateLine, textarea, richElement, emptyEditor),
 );
@@ -352,6 +367,54 @@ let navGen = 0;
 const newDraft = (folder: string) => ({ folder, key: crypto.randomUUID() });
 const dirty = () => (state.draft ? /[^#\s]/.test(textarea.value) : state.note !== null && textarea.value !== state.sent);
 
+function resetSaveStatus() {
+    saveFailure = null;
+    saveDetailsOpen = false;
+    lastSaveAttention = "";
+    saveAnnouncement.textContent = "";
+}
+
+function renderSaveStatus() {
+    const active = state.note !== null || state.draft !== null;
+    const unsaved = dirty();
+    const paused = state.conflict || editorError;
+    const saving = inflight !== null && !paused;
+    const failed = saveFailure !== null && !paused && !saving;
+    const label = state.conflict ? "Save paused - conflict"
+        : editorError ? "Save paused - editor error"
+        : saving ? "Saving..."
+        : failed ? "Save failed - Retry save"
+        : unsaved ? "Unsaved changes"
+        : state.draft ? "New note - not saved yet" : "Saved";
+    const detail = state.conflict ? "Save paused. Choose Reload or Keep Mine in the conflict banner."
+        : editorError ? `Save paused. ${editorErrorText} Keep this panel open and resolve the editor error before saving.`
+        : saveFailure ? `${saving ? "Retrying save. Previous save failed:" : "Save failed:"} ${saveFailure} Your text is still in the editor.${saving ? "" : " Use Retry save in the toolbar."}`
+        : saving ? "Saving changes. Text typed during this save will still need to be saved."
+        : unsaved ? "Unsaved changes. Notes saves automatically after you stop typing."
+        : state.draft ? "New note. Start writing to save it to your library."
+        : "Saved. Your current text is saved to the note.";
+    saveButton.hidden = saveSeparator.hidden = !active;
+    saveButton.setAttribute("aria-label", label);
+    saveButton.title = label;
+    saveButton.className = `icon-button save-button${saving ? " saving" : ""}${failed || paused ? " attention" : ""}`;
+    saveButton.replaceChildren(icon(paused || failed ? "alert" : saving ? "sync" : unsaved || state.draft ? "circle" : "check"));
+    const showDetails = active && (saveDetailsOpen || !!saveFailure || editorError);
+    saveDetails.hidden = !showDetails;
+    saveDetails.textContent = active ? detail : "";
+    saveButton.setAttribute("aria-expanded", String(showDetails));
+    // Conflict and fidelity banners announce themselves; only errors and recovery need a separate save announcement.
+    const attention = active && !state.conflict
+        ? editorError ? `Save paused. ${editorErrorText}` : saveFailure ? `Save failed. ${saveFailure} Your text is still in the editor. Use Retry save in the toolbar.` : ""
+        : "";
+    if (attention !== lastSaveAttention && (attention || !saving)) {
+        const recovered = lastSaveAttention.startsWith("Save failed.") && active && !paused;
+        saveAnnouncement.textContent = attention || (recovered
+            ? unsaved ? "The save error is resolved. Newer changes still need saving." : "Your changes are saved."
+            : "");
+        lastSaveAttention = attention;
+    }
+}
+
 function setText(body: string, { resetView = false } = {}) {
     const { selectionStart, selectionEnd, scrollTop } = textarea;
     const focused = document.activeElement === textarea || rich?.isFocused;
@@ -359,6 +422,8 @@ function setText(body: string, { resetView = false } = {}) {
     const position = rich?.state.selection.from;
     textarea.value = body;
     state.sent = textarea.value;
+    saveFailure = null;
+    if (resetView) resetSaveStatus();
     if (document.activeElement === textarea) textarea.setSelectionRange(selectionStart, selectionEnd);
     textarea.scrollTop = scrollTop;
     prepareEditor();
@@ -378,15 +443,16 @@ function prepareEditor() {
     rich = null;
     richElement.replaceChildren();
     editorError = false;
+    editorErrorText = "";
     guarded = false;
     plain = !!state.note?.warning;
     if (plain || (!state.note && !state.draft)) return;
     try {
         const result = createRichEditor({
             element: richElement, body: textarea.value, noteKey: openKey,
-            change: body => { textarea.value = body; editorError = false; changedText(); },
+            change: body => { textarea.value = body; editorError = false; editorErrorText = ""; changedText(); },
             blur: () => void save(),
-            error: text => { editorError = true; clearTimeout(saveTimer); showToast(text); },
+            error: text => { editorError = true; editorErrorText = text; clearTimeout(saveTimer); renderSaveStatus(); },
             notice: showToast,
             link: () => editLink(), open: url => void openExternal(url),
         });
@@ -498,8 +564,8 @@ function scheduleSave() {
 async function save(): Promise<boolean> {
     clearTimeout(saveTimer);
     while (inflight) await inflight;
-    if (state.conflict || editorError) return false;
-    if (!dirty()) return true;
+    if (state.conflict || editorError) { renderSaveStatus(); return false; }
+    if (!dirty()) { saveFailure = null; renderSaveStatus(); return true; }
     const text = textarea.value;
     inflight = (async () => {
         try {
@@ -510,6 +576,7 @@ async function save(): Promise<boolean> {
             state.draft = null;
             state.note = note;
             state.sent = text;
+            saveFailure = null;
             // The library may canonicalise the title or rewrite asset links; adopt that unless the user kept typing.
             if (note.body !== text) {
                 if (textarea.value === text) setText(note.body);
@@ -524,13 +591,15 @@ async function save(): Promise<boolean> {
                 state.conflict = true;
                 renderEditor();
             } else {
-                showToast(message(error));
+                saveFailure = message(error);
             }
             return false;
         } finally {
             inflight = null;
+            renderSaveStatus();
         }
     })();
+    renderSaveStatus();
     const saved = await inflight;
     if (refreshPending) {
         refreshPending = false;
@@ -570,6 +639,9 @@ function discardEditor() {
     state.draft = null;
     state.conflict = false;
     state.recovered = false;
+    editorError = false;
+    editorErrorText = "";
+    resetSaveStatus();
     state.sent = "";
     textarea.value = "";
     rich?.destroy();
@@ -582,6 +654,8 @@ function discardEditor() {
 function changedText() {
     const row = rows.querySelector(".row[aria-selected='true'] .row-title-text");
     if (row) row.textContent = titleFromText(textarea.value);
+    if (!dirty()) saveFailure = null;
+    renderSaveStatus();
     if (!state.conflict) scheduleSave();
 }
 textarea.addEventListener("input", changedText);
@@ -645,6 +719,7 @@ async function compose() {
     state.note = null;
     state.conflict = false;
     state.recovered = false;
+    resetSaveStatus();
     state.draft = newDraft("folder" in selection && !state.query.trim() ? selection.folder : "");
     textarea.value = "# ";
     state.sent = "";
@@ -1292,6 +1367,7 @@ rows.addEventListener("keydown", event => {
 
 function renderEditor() {
     const active = state.note !== null || state.draft !== null;
+    renderSaveStatus();
     textarea.hidden = !active || !plain;
     richElement.hidden = !active || plain;
     markdownButton.disabled = !active || !!state.note?.warning;
@@ -1390,6 +1466,7 @@ async function recover(recovery: Recovery) {
     state.sent = note?.body ?? "";
     state.conflict = note !== null;
     state.recovered = note !== null;
+    resetSaveStatus();
     textarea.value = body;
     prepareEditor();
     state.ui.noteId = state.note ? keyOf(state.note) : null;

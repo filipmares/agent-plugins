@@ -7,6 +7,10 @@ and plugin versioning follows [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## [Unreleased]
 
+### Added — Notes save-state icon
+- Added a save-state icon in the editor action toolbar, with readable status details, a persistent save-failure explanation, and Retry save. Conflicts and Markdown fidelity warnings retain their separate resolution paths.
+- Moved Ask Copilot feedback below the toolbar to keep action buttons available in narrow layouts; save errors and recovery are announced without narrating routine autosaves.
+
 ### Added — Notes in-context screenshots
 - The Notes guide now opens its Screenshots section with four scenes that show the panel beside a chat: the agent saving a decision, Ask Copilot, recalling a decision from another session, and the expanded project view. The three panel-only screenshots remain under "The panel on its own".
 - Notes stays docked in one continuous app frame, with faded surrounding context and reconstructed composer controls matching the product reference.

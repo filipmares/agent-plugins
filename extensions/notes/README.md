@@ -102,6 +102,14 @@ and background tokens rather than depending on app-internal variables.
   Edits save after one second, on
   blur, and when the panel is hidden. Stale saves show a conflict banner
   (Reload / Keep Mine); nothing is overwritten silently.
+- A save-state icon beside the editor actions shows a check when Saved, a
+  circle for unsaved text or an untouched new note, rotating arrows while
+  Saving, and a warning when saving fails or is paused. Select the icon to
+  read its status; after a save failure it becomes **Retry save**, with a
+  persistent explanation below the toolbar. Failures do not discard editor
+  text. Conflicts still require Reload / Keep Mine; Markdown fidelity
+  warnings remain separate from save state. Error and recovery announcements
+  are polite; routine autosaves are not announced.
 - Closing the panel mid-edit saves the text. If the note changed elsewhere in
   the meantime, the text is kept in
   `$COPILOT_HOME/extensions/notes/artifacts/recovery/` (the only place
@@ -140,7 +148,7 @@ then sends the prompt with the note's absolute file path attached to this panel'
 owning session. Conflicts or save failures block sending. The SDK's
 `session.send({ prompt, attachments: [{ type: "file", path, displayName }],
 mode: "enqueue" })` queues behind a busy turn; a returned message ID hides the
-prompt, returns focus to the Copilot button, and shows "Sent to chat" in the
+prompt, returns focus to the Copilot button, and shows "Sent to chat" below the
 toolbar. Escape also hides the prompt; a failed send keeps it open with the
 text. There is no Ask Copilot shortcut and no retry that drops the attachment.
 The button is hidden when the panel was opened without a session, because
