@@ -7,6 +7,10 @@ and plugin versioning follows [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## [Unreleased]
 
+### Fixed — Notes drawer focus
+- Keep focus in the Notes drawer while it is open and restore it to the trigger when closed, including after sidebar resizing.
+- Bumped the plugin and marketplace manifests to `2.2.3` for the Notes scrolling and drawer-focus fixes.
+
 ### Added — Notes in-context screenshots
 - The Notes guide now opens its Screenshots section with four scenes that show the panel beside a chat: the agent saving a decision, Ask Copilot, recalling a decision from another session, and the expanded project view. The three panel-only screenshots remain under "The panel on its own".
 - Notes stays docked in one continuous app frame, with faded surrounding context and reconstructed composer controls matching the product reference.
