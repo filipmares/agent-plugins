@@ -1,7 +1,7 @@
 {
   "name": "agent-plugins",
   "description": "Developer skills, Copilot canvas extensions, and agents.",
-  "version": "2.2.0",
+  "version": "2.2.1",
   "author": {
     "name": "filipmares"
   },
@@ -25,7 +25,6 @@
     ".github/agents/copilot-code-review.agent.md"
   ],
   "extensions": [
-    "extensions/rpi-artifact-navigator",
-    "extensions/notes"
+    "extensions"
   ]
 }

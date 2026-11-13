@@ -7,6 +7,11 @@ and plugin versioning follows [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## [Unreleased]
 
+### Fixed — bundled canvas discovery
+- Register the parent `extensions/` discovery directory instead of individual extension folders so Copilot discovers both Notes and RPI Artifact Navigator through the existing `agent-plugins` plugin. No separate plugin, manual import, or Agent Plugins format migration is required.
+- Match plugin validation to Copilot's immediate-subdirectory discovery and add regression tests for bundled canvases, incorrect leaf paths, duplicate canvas ids, and missing entry points.
+- Bumped the plugin and marketplace manifests to `2.2.1`.
+
 ### Added — Notes canvas
 - New `extensions/notes` canvas extension: global Markdown notes for the Copilot app, stored as plain `.md` files in the OS Documents `Copilot Notes` folder. Each note's YAML frontmatter records a stable id, timestamps, and the creating session, project and branch; custom fields are preserved and origin fields never change.
 - Apple Notes-style panel (folders, grouped note list, editor) with smart views, search across every folder, pinning, drag-to-folder, keyboard navigation, and colors that follow the Copilot app's light/dark theme. The rich editor is a non-React port of [bholmesdev/hubble.md](https://github.com/bholmesdev/hubble.md) (MIT) with a plain Markdown view; notes the rich editor cannot round-trip exactly open as plain Markdown. **Copilot** saves the note and queues a prompt with it attached to the owning session.

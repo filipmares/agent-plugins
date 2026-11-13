@@ -96,6 +96,7 @@ no build step; Notes dependencies are bundled for offline distribution.
 bun run scripts/validate-skill.ts skills/<name>   # Validate a single skill
 bun run scripts/list-skills.ts                    # List all skills + status
 bun run validate:copilot-plugin                   # Validate the Copilot marketplace + plugin packages
+bun run test:copilot-plugin                       # Run plugin discovery regression tests
 bun run test:canvas                               # Run RPI Artifact Navigator tests
 bun run build:notes                               # Rebuild Notes client, dependencies and manifest
 bun run test:notes                                # Run Notes storage, server, client, sync and fidelity tests
@@ -105,12 +106,17 @@ CI runs the same checks against every skill in `skills/`.
 
 ## Copilot Canvas Extensions
 
-Canvases live in `extensions/<name>/` and are registered in the
-`extensions` array of `.github/plugin/plugin.json`. They ship with the
-`agent-plugins` plugin, not the skills.sh installation. Runtime modules use the
+Canvases live in `extensions/<name>/`. The `extensions` array of
+`.github/plugin/plugin.json` declares their parent discovery directory:
+`"extensions": ["extensions"]`. Copilot scans its immediate subdirectories
+for extension entry points; do not list individual extension folders. They ship
+with the `agent-plugins` plugin, not the skills.sh installation. Runtime modules use the
 Node standard library, the host-resolved `@github/copilot-sdk`, and committed
 offline bundles where needed. Keep dependency versions, hashes and verbatim
 licenses together; users should not need a package install.
+
+Run `bun run validate:copilot-plugin` and `bun run test:copilot-plugin` after
+changing plugin manifests or discovery validation.
 
 ### RPI Artifact Navigator
 

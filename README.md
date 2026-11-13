@@ -32,6 +32,8 @@ Installing the plugin installs both canvases, so
 `copilot plugin update agent-plugins` also delivers canvas updates. They load
 only while the `agent-plugins` plugin is enabled and can be disabled individually.
 They are not project-scoped or activated just by opening this repository.
+Start a new session after installing or updating to discover the canvases;
+no separate canvas import is needed.
 
 To take one canvas without the plugin, open **Customize → Extensions → Import
 canvas from repo** in the GitHub Copilot app, choose `filipmares/agent-plugins`,
