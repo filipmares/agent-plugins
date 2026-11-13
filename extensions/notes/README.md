@@ -24,6 +24,43 @@ before using the experimental extension for important notes.
 
 ## Screenshots
 
+### In context
+
+Notes beside a chat, in four scenes. These are **illustrations**, not captures
+of the native app: the window frame, sessions sidebar, chat transcript and
+tool-call rows are a mock-up (a fictional `storefront` project) built around
+the real Notes panel running in headless Microsoft Edge on Windows. Every note
+is synthetic, in a disposable library, and the panel shows its standalone
+light/dark fallback colors, not the app's injected theme. In the Ask Copilot
+scene the send was a mocked callback: the prompt and attached note shown in the
+chat are what the panel sent, while the agent's reply is scripted. No real
+notes, sessions, chat turns or OS trash were used.
+
+**Capture decisions while you work.** The agent saves the decision from the
+conversation with `notes_manage`. It appears under This Session with a Copilot
+mark, with its backoff table ready to read.
+
+![Light theme: in a "Checkout retries" chat the agent saves a "Decision: checkout retry policy" note, which is open in the Notes panel under This Session.](docs/notes-in-context-capture.png)
+
+**Ask Copilot about the note you are reading.** The prompt is queued to the
+session's chat with the note attached, and the toolbar confirms "Sent to chat".
+
+![Light theme: the "Launch checklist: checkout v2" note is open with "Sent to chat" in the toolbar, and the chat shows the prompt with the note attached and the agent replying.](docs/notes-in-context-ask.png)
+
+**Recall it from a different session.** Asked to draft a runbook section from
+"whatever we already decided", the agent searches the library, reads the
+decision and uses its numbers instead of guessing.
+
+![Dark theme: search results for "retry backoff" beside the open decision note, while the chat shows the agent searching and reading notes before editing a runbook.](docs/notes-in-context-recall.png)
+
+**Browse everything the project knows.** The expanded three-column view lists
+the project's notes, including a pinned working-agreements note that the agent
+read before opening a pull request.
+
+![Dark theme, expanded panel: folders, the six notes in This Project and the open, pinned "Storefront working agreements" note beside a narrow chat column.](docs/notes-in-context-library.png)
+
+### The panel on its own
+
 Headless Microsoft Edge on Windows, using synthetic notes in a disposable
 library. These show the standalone light/dark fallback colors, not the native
 app's chrome or its injected theme. No real notes, chat turns or OS trash were used.
@@ -334,9 +371,11 @@ The send and OS-browser-opening callbacks were mocked, not real chat turns or
 browser launches. No real notes or real OS trash were used.
 
 The screenshots above were captured from the release tree in headless Edge
-on Windows. A separate light/dark fallback-color pass covered 390, 780 and
-1200 px, including narrow back navigation and the medium folder overlay,
-without rewriting the displayed note.
+on Windows. The in-context scenes embed the real panel in a mock app frame, so
+the frame, sessions, chat and tool rows are illustrations and show nothing about
+the native app's layout, theme injection or chat behavior. A separate light/dark
+fallback-color pass covered 390, 780 and 1200 px, including narrow back
+navigation and the medium folder overlay, without rewriting the displayed note.
 
 The installed SDK's `MessageOptions` and generated `AttachmentFile` contract
 specify queued sends and **absolute file paths**, with no workspace-relative

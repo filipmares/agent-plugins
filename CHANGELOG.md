@@ -7,6 +7,10 @@ and plugin versioning follows [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## [Unreleased]
 
+### Added — Notes in-context screenshots
+- The Notes guide now opens its Screenshots section with four scenes that show the panel beside a chat: the agent saving a decision, Ask Copilot, recalling a decision from another session, and the expanded project view. The three panel-only screenshots remain under "The panel on its own".
+- These are illustrations, not captures of the native app. The window frame, sessions sidebar and chat are a mock-up around the real panel running in headless Microsoft Edge on Windows, with synthetic notes in a disposable library, the panel's standalone light/dark fallback colors, and a mocked send callback. No real notes, sessions or chat turns appear. Docs and image assets only; no code or manifest version change.
+
 ### Fixed — Notes without a session
 - The Notes canvas now opens and saves notes when the Copilot app opens it without a session. It previously refused with "Cannot read this session's workspace.yaml; no provenance was guessed", because the app runs a sessionless canvas under a stand-in session that has no `workspace.yaml` in the Copilot home.
 - Notes written from a sessionless panel carry no session origin: no `session_id` or `session_name`, and edits do not add to `sessions`. The stand-in session is never recorded. Only an absent `workspace.yaml` counts as no session; unreadable, oversized, malformed or mismatched session metadata is still refused.
