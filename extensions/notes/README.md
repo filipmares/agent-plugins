@@ -29,8 +29,11 @@ before using the experimental extension for important notes.
 Notes beside a chat, in four scenes. These are **illustrations**, not captures
 of the native app: the window frame, sessions sidebar, chat transcript and
 tool-call rows are a mock-up (a fictional `storefront` project) built around
-the real Notes panel running in headless Microsoft Edge on Windows. Every note
-is synthetic, in a disposable library, and the panel shows its standalone
+the real Notes panel running in headless Microsoft Edge on Windows. Notes stays
+docked in one continuous window; the surrounding chat and sidebar are faded
+to emphasize the panel, not shown as a separate app. The reconstructed composer
+shows Autopilot and Copilot Fusion · Max as example UI labels, not required
+settings. Every note is synthetic, in a disposable library, and the panel shows its standalone
 light/dark fallback colors, not the app's injected theme. In the Ask Copilot
 scene the send was a mocked callback: the prompt and attached note shown in the
 chat are what the panel sent, while the agent's reply is scripted. No real
