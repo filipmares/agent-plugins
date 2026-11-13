@@ -53,7 +53,7 @@ const STATUS = {
 const ROUTES = {
     "/api/note/create": { body: "string", folder: "string", draft: "string?" },
     "/api/note/update": { id: "string", body: "string", expectedVersion: "string" },
-    "/api/note/rescue": { id: "string?", draft: "string?", folder: "string", body: "string", expectedVersion: "string?", stash: "boolean?" },
+    "/api/note/rescue": { id: "string?", draft: "string?", folder: "string", body: "string", expectedVersion: "string?", stash: "boolean?", key: "string?" },
     "/api/note/pin": { id: "string", pinned: "boolean", expectedVersion: "string" },
     "/api/note/move": { id: "string", folder: "string", expectedVersion: "string" },
     "/api/note/delete": { id: "string", expectedVersion: "string", permanent: "boolean?" },
@@ -214,9 +214,9 @@ export async function createNotesServer({ getLibrary, getContext, sessionId, sta
 
     // Saves text from a closing panel. Saves since its last-known version are only its own if this panel wrote them.
     // `stash` only keeps the text for the next load, for recovered text whose base version is unknown.
-    async function rescue(library, { id, draft, folder, body, expectedVersion, stash }) {
+    async function rescue(library, { id, draft, folder, body, expectedVersion, stash, key: recoveryKey }) {
         if (stash) {
-            await pushRecovery(recoveryPath(statePath), { noteId: id ?? null, folder, body });
+            await pushRecovery(recoveryPath(statePath), { noteId: id ?? null, folder, body, key: recoveryKey });
             return { recovered: true };
         }
         const noteId = id ?? (draft === undefined ? undefined : drafts.get(draft));

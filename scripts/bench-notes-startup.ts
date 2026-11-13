@@ -146,21 +146,40 @@ async function launchBrowser(executable: string) {
         "--disable-background-networking", "--disable-component-update", "--window-size=1280,800", "about:blank",
     ], { stdio: "ignore" });
     const portFile = join(profile, "DevToolsActivePort");
-    const port = await withTimeout((async () => {
-        for (;;) {
-            if (child.exitCode !== null) throw new Error(`Browser exited (${child.exitCode})`);
-            try {
-                const [line] = (await readFile(portFile, "utf8")).split("\n");
-                if (line.trim()) return Number(line);
-            } catch { /* not written yet */ }
-            await delay(25);
-        }
-    })(), "the browser debugging port");
-    const targets = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json() as { type: string; webSocketDebuggerUrl: string }[];
-    const page = targets.find(target => target.type === "page");
-    if (!page) throw new Error("The browser has no page target.");
-    const version = await (await fetch(`http://127.0.0.1:${port}/json/version`)).json() as { webSocketDebuggerUrl: string };
-    return { child, profile, page: await Cdp.connect(page.webSocketDebuggerUrl), browserUrl: version.webSocketDebuggerUrl };
+    let launching = true;
+    try {
+        const port = await withTimeout((async () => {
+            while (launching) {
+                if (child.exitCode !== null) throw new Error(`Browser exited (${child.exitCode})`);
+                try {
+                    const [line] = (await readFile(portFile, "utf8")).split("\n");
+                    if (line.trim()) return Number(line);
+                } catch { /* not written yet */ }
+                await delay(25);
+            }
+            return 0;
+        })(), "the browser debugging port");
+        const targets = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json() as { type: string; webSocketDebuggerUrl: string }[];
+        const page = targets.find(target => target.type === "page");
+        if (!page) throw new Error("The browser has no page target.");
+        const version = await (await fetch(`http://127.0.0.1:${port}/json/version`)).json() as { webSocketDebuggerUrl: string };
+        return { child, profile, page: await Cdp.connect(page.webSocketDebuggerUrl), browserUrl: version.webSocketDebuggerUrl };
+    } catch (error) {
+        launching = false;
+        await stopBrowser(child, profile);
+        throw error;
+    }
+}
+
+async function stopBrowser(child: ChildProcess, profile: string) {
+    if (child.exitCode === null && child.signalCode === null) {
+        const exited = new Promise(resolve => child.once("exit", resolve));
+        child.kill();
+        await Promise.race([exited, delay(5000)]);
+    }
+    for (let attempt = 0; attempt < 10; attempt++) {
+        try { return await rm(profile, { recursive: true, force: true }); } catch { await delay(200); }
+    }
 }
 
 async function closeBrowser({ child, profile, page, browserUrl }: { child: ChildProcess; profile: string; page: Cdp; browserUrl: string }) {
@@ -172,11 +191,7 @@ async function closeBrowser({ child, profile, page, browserUrl }: { child: Child
         await Promise.race([exited, delay(5000)]);
         browser.close();
     } catch { /* fall through to kill */ }
-    if (child.exitCode === null) child.kill();
-    await Promise.race([exited, delay(5000)]);
-    for (let attempt = 0; attempt < 10; attempt++) {
-        try { return await rm(profile, { recursive: true, force: true }); } catch { await delay(200); }
-    }
+    await stopBrowser(child, profile);
 }
 
 // ---------- Measurement ----------
@@ -215,9 +230,10 @@ const probe = (needsEditor: boolean) => `new Promise((resolve, reject) => {
 async function sample(executable: string, library: NotesLibrary, statePath: string, noteId: string | null) {
     await saveUiState(statePath, { sidebar: true, selection: { view: "all" }, noteId, collapsed: [] });
     const server = await createNotesServer({ getLibrary: async () => library, getContext: async () => ({}), sessionId: undefined, statePath });
-    const browser = await launchBrowser(executable);
     const errors: string[] = [];
+    let browser: Awaited<ReturnType<typeof launchBrowser>> | undefined;
     try {
+        browser = await launchBrowser(executable);
         const { page } = browser;
         page.on("Runtime.exceptionThrown", ({ exceptionDetails }) => errors.push(exceptionDetails.exception?.description ?? exceptionDetails.text));
         page.on("Runtime.consoleAPICalled", ({ type, args }) => { if (type === "error") errors.push(args.map((arg: any) => arg.value ?? arg.description).join(" ")); });
@@ -244,7 +260,7 @@ async function sample(executable: string, library: NotesLibrary, statePath: stri
         }
         return out;
     } finally {
-        await closeBrowser(browser);
+        if (browser) await closeBrowser(browser);
         await server.close();
     }
 }

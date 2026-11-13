@@ -308,7 +308,7 @@ describe("Notes panel server", () => {
         await library.update(created.json.id, { body: "# Plan\nagent", expectedVersion: (await library.read(created.json.id)).version }, { sessionId: "s", actor: "agent" });
         expect((await rescue({ id: created.json.id, folder: "", body: "# Plan\nmine", expectedVersion: saved.json.version })).json).toEqual({ recovered: true });
         expect((await library.read(created.json.id)).body).toContain("agent");
-        expect((await claimStartup()).recovery).toEqual({ noteId: created.json.id, folder: "", body: "# Plan\nmine" });
+        expect((await claimStartup()).recovery).toMatchObject({ noteId: created.json.id, folder: "", body: "# Plan\nmine" });
         expect((await claimStartup()).recovery).toBeNull();
 
         // Stash-only rescue never writes over this panel's own newer save.
@@ -336,7 +336,7 @@ describe("Notes panel server", () => {
         await writeFile(join(dir, `${entry}.claim`), "");
         expect(await popRecovery(dir)).toBeNull();
         await rm(join(dir, `${entry}.claim`));
-        expect(await popRecovery(dir)).toEqual({ noteId: null, folder: "", body: "mine" });
+        expect(await popRecovery(dir)).toMatchObject({ noteId: null, folder: "", body: "mine" });
         expect(await readdir(dir)).toEqual([]);
     });
 
@@ -359,8 +359,27 @@ describe("Notes panel server", () => {
         await mkdir(stuck, { recursive: true });
         await writeFile(join(stuck, "keep"), "");
         await pushRecovery(dir, { folder: "", body: "mine" });
-        expect(await popRecovery(dir)).toEqual({ noteId: null, folder: "", body: "mine" });
+        expect(await popRecovery(dir)).toMatchObject({ noteId: null, folder: "", body: "mine" });
         expect(await popRecovery(dir)).toBeNull();
+    });
+
+    test("recovered text kept again under its key replaces its entry rather than queueing a copy", async () => {
+        await start();
+        const dir = recoveryPath(statePath);
+        await pushRecovery(dir, { folder: "", body: "once" });
+        const { recovery } = await claimStartup();
+        expect(recovery.key).toMatch(/^\d{15}-[0-9a-f]{12}$/);
+        // A closing panel resends text whose first stash may already have landed.
+        const stash = key => call("api/note/rescue", { method: "POST", body: { folder: "", body: "once", stash: true, key } });
+        await stash(recovery.key);
+        await stash(recovery.key);
+        expect(await readdir(dir)).toEqual([`${recovery.key}.json`]);
+        // A key that is not an entry name never becomes a path.
+        await stash("../escape");
+        expect(await readdir(dir)).toHaveLength(2);
+        expect((await claimStartup()).recovery).toMatchObject({ noteId: null, folder: "", body: "once" });
+        expect((await claimStartup()).recovery).toMatchObject({ noteId: null, folder: "", body: "once" });
+        expect((await claimStartup()).recovery).toBeNull();
     });
 
     test("keeps unresolved recovery across closes without overwriting the fresh version", async () => {
@@ -371,7 +390,7 @@ describe("Notes panel server", () => {
         await pushRecovery(recoveryPath(statePath), recovery);
 
         for (let reopen = 0; reopen < 2; reopen++) {
-            expect((await claimStartup()).recovery).toEqual(recovery);
+            expect((await claimStartup()).recovery).toMatchObject(recovery);
             const fresh = (await call(`api/note?id=${current.id}`)).json;
             const rescued = await call("api/note/rescue", { method: "POST", body: {
                 id: fresh.id, folder: fresh.folder, body: recovery.body, expectedVersion: fresh.version, stash: true,
@@ -383,7 +402,7 @@ describe("Notes panel server", () => {
             await start();
         }
 
-        expect((await claimStartup()).recovery).toEqual(recovery);
+        expect((await claimStartup()).recovery).toMatchObject(recovery);
         const kept = await call("api/note/update", { method: "POST", body: {
             id: current.id, body: recovery.body, expectedVersion: current.version,
         } });

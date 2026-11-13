@@ -17,7 +17,8 @@ type FolderNode = { path: string; name: string; count: number; version?: string 
 type Selection = { view: "all" | "project" | "session" } | { folder: string };
 type UiState = { sidebar: boolean; selection: Selection; noteId: string | null; collapsed: string[] };
 type Target = { view?: "all" | "project" | "session"; folder?: string; noteId?: string };
-type Recovery = { noteId: string | null; folder: string; body: string };
+// `key` names the server's entry, so sending the same recovered text twice keeps one copy.
+type Recovery = { noteId: string | null; folder: string; body: string; key?: string };
 type MenuItem = { label: string; icon?: string; action: () => void; disabled?: boolean; destructive?: boolean } | "-";
 type Child = Node | string | null | undefined | false;
 
@@ -1598,7 +1599,7 @@ function connectEvents() {
 
 // The user moved on before recovered text could be shown; keep it for the next load rather than replacing their editor.
 // Resolves whether the server kept it.
-const stashBody = ({ noteId, folder, body }: Recovery) => ({ ...(noteId ? { id: noteId } : {}), folder, body, stash: true });
+const stashBody = ({ noteId, folder, body, key }: Recovery) => ({ ...(noteId ? { id: noteId } : {}), folder, body, stash: true, ...(key ? { key } : {}) });
 function stashRecovery(recovery: Recovery) {
     return request("api/note/rescue", stashBody(recovery)).then(() => true, () => false);
 }
@@ -1646,12 +1647,11 @@ async function showRecovery(recovery: Recovery) {
     try {
         note = noteId ? await request<Note>(`api/note?id=${encodeURIComponent(noteId)}`) : null;
     } catch (error) {
-        // The library could not answer; keep the text for the next load rather than saving it as a copy.
-        // If even that fails, fall through and show it as a new draft so it is not lost.
-        if (error instanceof ApiError && (error.code === "library_busy" || error.code === "offline") && await stashRecovery(recovery)) {
+        // Only a missing note means the text belongs in a new draft. Any other failure keeps the text for the next
+        // load rather than saving a copy of a note that may still exist; if even that fails, show it as a new draft.
+        if (!(error instanceof ApiError && error.code === "not_found") && await stashRecovery(recovery)) {
             return showToast(message(error));
         }
-        /* the note is gone; recover the text as a new draft */
     }
     // The user moved on while this loaded; hand the text back to the server rather than replacing their editor.
     if (gen !== navGen) return keepRecovery(recovery);
@@ -1719,7 +1719,7 @@ async function start(gen = navGen) {
         return note;
     };
     // Runs after the first list load that succeeds, here or from a retry, search or refresh.
-    resumeStartup = () => finishStartup(gen, stale, restored ?? restore());
+    resumeStartup = () => finishStartup(gen, stale, () => restored ?? restore());
     const lists = refreshLists(false, foldersRequest);
     restored = restore();
     // Fetching and evaluating the editor would delay the list requests, so it starts once they are sent.
@@ -1727,13 +1727,19 @@ async function start(gen = navGen) {
     await lists;
 }
 
-async function finishStartup(gen: number, stale: boolean, restored: Promise<Note> | null) {
+// A step the server or library could not answer waits for the next list load that succeeds rather than being dropped.
+async function finishStartup(gen: number, stale: boolean, restoring: () => Promise<Note> | null, claim = true) {
     let claimed: Startup = { target: null, recovery: null };
-    try {
-        claimed = await request<Startup>("api/startup", {});
-    } catch (error) {
-        // Nothing was handed over; a pending reveal still reaches the event stream below.
-        showToast(message(error));
+    if (claim) {
+        try {
+            claimed = await request<Startup>("api/startup", {});
+        } catch (error) {
+            // Nothing was handed over, so claiming again is safe. The restored note waits too: recovered text
+            // shown later must not replace a note the user has started editing. A pending reveal still arrives as an event.
+            showToast(message(error));
+            resumeStartup = () => finishStartup(gen, stale, restoring);
+            return connectEvents();
+        }
     }
     const { target, recovery } = claimed;
     if (stale || gen !== navGen) {
@@ -1743,21 +1749,23 @@ async function finishStartup(gen: number, stale: boolean, restored: Promise<Note
     }
     if (recovery) await recover(recovery);
     else if (target) await applyTarget(target);
-    else if (restored) {
+    else {
+        const restored = restoring();
         try {
             const note = await restored;
-            if (gen !== navGen) return connectEvents();
+            if (!note || gen !== navGen) return connectEvents();
             state.note = note;
             setText(note.body, { resetView: true });
             renderEditor();
             renderList();
         } catch (error) {
-            // Forget the restored note only when it is gone, not when the library was briefly unavailable.
+            // Forget the restored note only when it is gone; otherwise read it again on the next list load.
             if (error instanceof ApiError && error.code === "not_found") {
                 state.ui.noteId = null;
                 persistUi();
             } else {
                 showToast(message(error));
+                resumeStartup = () => finishStartup(gen, stale, restoring, false);
             }
         }
     }

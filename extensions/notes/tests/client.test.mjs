@@ -1101,8 +1101,10 @@ describe("startup while the library is unavailable", () => {
         while (!releaseStash) await Bun.sleep(1);
         const closing = panel.close();
         expect(panel.calls.filter(call => call.path === "api/note/rescue" && call.keepalive)).toEqual([
-            expect.objectContaining({ body: { id: note.id, folder: "", body: recovery.body, stash: true } }),
+            expect.objectContaining({ body: { id: note.id, folder: "", body: recovery.body, stash: true, key: expect.stringMatching(/^\d{15}-[0-9a-f]{12}$/) } }),
         ]);
+        // Every send of this text names one server entry, so a resend after a stash that landed keeps one copy.
+        expect(new Set(panel.calls.filter(call => call.path === "api/note/rescue").map(call => call.body.key)).size).toBe(1);
         releaseStash();
         await Promise.all([refreshing, closing]);
         const reloaded = await openClient();
@@ -1151,11 +1153,12 @@ describe("startup while the library is unavailable", () => {
         expect(panel.calls.filter(call => call.path === "api/startup")).toHaveLength(1);
     });
 
-    test("a restored note the library briefly cannot read is not forgotten", async () => {
+    test("a restored note the library briefly cannot read is not forgotten, and the next list load opens it", async () => {
         const note = await library.create({ body: "# Busy\ntext" }, context);
         await saveUiState(statePath, { sidebar: true, selection: { view: "all" }, noteId: note.id, collapsed: [] });
+        let busy = true;
         const panel = await openClient({
-            respond: path => path.startsWith("api/note?")
+            respond: path => busy && path.startsWith("api/note?")
                 ? new Response(JSON.stringify({ error: { code: "library_busy", message: "Notes is still loading the library." } }), { status: 503 })
                 : undefined,
             startupToast: true,
@@ -1163,6 +1166,56 @@ describe("startup while the library is unavailable", () => {
         expect(panel.listStatus()).toBe("ready");
         expect(panel.toast.textContent).toBe("Notes is still loading the library.");
         expect(panel.state.ui.noteId).toBe(note.id);
+
+        busy = false;
+        await panel.refresh();
+        await panel.settle();
+        expect(panel.state.note.id).toBe(note.id);
+        expect(panel.textarea.value).toBe(note.body);
+        expect(panel.calls.filter(call => call.path === "api/startup")).toHaveLength(1);
+    });
+
+    test("a startup claim that does not reach the server is claimed again by the next list load", async () => {
+        const recovery = { noteId: null, folder: "", body: "# Recovered\nafter claim" };
+        await pushRecovery(recoveryPath(statePath), recovery);
+        let failed = false;
+        const panel = await openClient({
+            respond: path => path === "api/startup" && !failed && (failed = true)
+                ? new Response(JSON.stringify({ error: { code: "offline", message: "Notes is offline." } }), { status: 503 })
+                : undefined,
+            startupToast: true,
+        });
+        await panel.settle();
+        expect(panel.listStatus()).toBe("ready");
+        expect(panel.toast.textContent).toBe("Notes is offline.");
+        expect(panel.state.draft).toBeNull();
+        expect(panel.eventSources()).toBe(1);
+
+        await panel.refresh();
+        await panel.settle();
+        expect(panel.textarea.value).toBe(recovery.body);
+        expect(panel.state.draft).not.toBeNull();
+        expect(panel.calls.filter(call => call.path === "api/startup")).toHaveLength(2);
+    });
+
+    test("recovered text for a note that cannot be read is kept, not saved as a copy", async () => {
+        const note = await library.create({ body: "# Unreadable\nsaved" }, context);
+        const recovery = { noteId: note.id, folder: "", body: "# Unreadable\nunsaved" };
+        await pushRecovery(recoveryPath(statePath), recovery);
+        const panel = await openClient({
+            respond: path => path.startsWith("api/note?")
+                ? new Response(JSON.stringify({ error: { code: "io_error", message: "The note could not be read." } }), { status: 500 })
+                : undefined,
+            startupToast: true,
+        });
+        await panel.settle();
+        expect(panel.state.draft).toBeNull();
+        expect(panel.toast.textContent).toBe("The note could not be read.");
+        expect((await library.list()).notes).toHaveLength(1);
+
+        const reloaded = await openClient();
+        expect(reloaded.textarea.value).toBe(recovery.body);
+        expect(reloaded.state.recovered).toBe(true);
     });
 
     test("an open target waits for the lists, and any later successful load finishes startup once", async () => {
@@ -1225,7 +1278,8 @@ describe("startup while the library is unavailable", () => {
             startupToast: true,
         });
         expect(panel.calls.filter(call => call.path === "api/note/rescue" && call.keepalive)).toEqual([
-            expect.objectContaining({ body: { id: note.id, folder: "", body: recovery.body, stash: true } }),
+            expect.objectContaining({ body: { id: note.id, folder: "", body: recovery.body, stash: true, key: expect.stringMatching(/^\d{15}-[0-9a-f]{12}$/) } }),
         ]);
+        expect(new Set(panel.calls.filter(call => call.path === "api/note/rescue").map(call => call.body.key)).size).toBe(1);
     });
 });
