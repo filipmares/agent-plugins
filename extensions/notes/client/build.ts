@@ -7,9 +7,9 @@ const client = dirname(fileURLToPath(import.meta.url));
 const root = dirname(client);
 const digest = (content: string | Buffer) => createHash("sha256").update(content).digest("hex");
 const ICONS = [
-    "alert", "chevron-down", "chevron-left", "chevron-right", "code", "comment-discussion", "compose", "copilot",
+    "alert", "check", "chevron-down", "chevron-left", "chevron-right", "circle", "code", "comment-discussion", "compose", "copilot",
     "file-directory", "file-moved", "note", "pencil", "person", "pin", "pin-slash", "plus", "repo",
-    "search", "sidebar-collapse", "sidebar-expand", "trash", "x",
+    "search", "sidebar-collapse", "sidebar-expand", "sync", "trash", "x",
 ];
 
 export async function sourceHash() {

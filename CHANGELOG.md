@@ -10,6 +10,12 @@ and plugin versioning follows [Semantic Versioning](https://semver.org/spec/v2.0
 ### Added — Notes frontmatter viewing
 - A read-only row of property pills sits below each note's opening heading (above the text in Markdown view) and shows Agent/Human authorship, origin project, and the original session name. More stays beside the pills at every width and reveals pin status, custom properties, dates, and technical details; long names expand with mouse, touch, or keyboard. Frontmatter editing is not included, and existing pin actions are unchanged.
 - The last-edited date line above the note moves into More's dates.
+- Bumped the plugin and marketplace manifests to `2.2.6`.
+
+### Added — Notes save-state icon
+- Added a save-state icon in the editor action toolbar, with readable status details, a persistent save-failure explanation, and Retry save. Conflicts and Markdown fidelity warnings retain their separate resolution paths.
+- Moved Ask Copilot feedback below the toolbar to keep action buttons available in narrow layouts; save errors and recovery are announced without narrating routine autosaves.
+- Clearing a failed new draft no longer announces that its changes were saved when no note file exists.
 - Bumped the plugin and marketplace manifests to `2.2.5`.
 
 ### Added — Notes first-use guidance

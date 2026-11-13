@@ -360,7 +360,14 @@ button.frontmatter-item:hover { border-color: color-mix(in srgb, var(--fg) 28%, 
 .tiptap ::selection, .note-text::selection { background: var(--selected); }
 .ask-note { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 0 12px 8px; }
 .ask-note .text-input { flex: 1; min-width: 160px; }
-.ask-status { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.ask-status { display: block; color: var(--muted); font-size: 12px; padding: 0 12px 8px; }
+.ask-status:empty { display: none; }
+.toolbar-separator { flex: none; height: 20px; border-left: 1px solid var(--border); margin: 0 4px; }
+.save-button.attention { color: var(--danger); outline: 1px solid var(--border); }
+.save-button.saving .icon { animation: save-spin 1s linear infinite; }
+.save-details { padding: 0 12px 8px; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.save-announcement { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+@keyframes save-spin { to { transform: rotate(360deg); } }
 .link-popover { position: absolute; z-index: 25; top: 48px; right: 12px; width: min(360px, calc(100% - 24px)); padding: 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); }
 .link-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .link-error { color: var(--danger); font-size: 12px; margin: 8px 0; }
@@ -512,4 +519,10 @@ button.frontmatter-item:hover { border-color: color-mix(in srgb, var(--fg) 28%, 
 
 @media (prefers-reduced-motion: reduce) {
     .app .sidebar { transition: none !important; }
+    .save-button.saving .icon { animation: none; }
+}
+
+@media (forced-colors: active) {
+    .save-button.attention { color: ButtonText; outline-color: ButtonText; }
+    .toolbar-separator { border-color: ButtonText; }
 }
