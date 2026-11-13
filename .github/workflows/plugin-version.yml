@@ -1,0 +1,19 @@
+name: Plugin version
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  version-bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+      - run: bun run scripts/check-plugin-version-bump.ts "${{ github.event.pull_request.base.sha }}"
+      - run: bun test scripts/check-plugin-version-bump.test.ts
+      - run: bun run validate:copilot-plugin
