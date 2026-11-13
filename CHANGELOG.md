@@ -7,6 +7,11 @@ and plugin versioning follows [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## [Unreleased]
 
+### Added — Notes first-use guidance
+- Empty libraries and folders now offer a short invitation and Create note action; empty smart views and searches have contextual guidance.
+- A compact Formatting help link below the rich editor opens supported input and keyboard shortcuts without a permanent formatting toolbar.
+- Empty note lists drop listbox semantics and their tab stop, keeping actions accessible and the result count announced.
+
 ### Added — Notes in-context screenshots
 - The Notes guide now opens its Screenshots section with four scenes that show the panel beside a chat: the agent saving a decision, Ask Copilot, recalling a decision from another session, and the expanded project view. The three panel-only screenshots remain under "The panel on its own".
 - Notes stays docked in one continuous app frame, with faded surrounding context and reconstructed composer controls matching the product reference.

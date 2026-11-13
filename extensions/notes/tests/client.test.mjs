@@ -11,7 +11,7 @@ const source = await readFile(new URL("../client/app.ts", import.meta.url), "utf
 const instrumented = source.replace(/^import .+;$/gm, "").replace(/\bvoid start\(\);(?=\s*$)/, "globalThis.clientReady = start();");
 if (instrumented === source) throw new Error("Cannot await Notes client startup.");
 const script = new Bun.Transpiler({ loader: "ts" }).transformSync(instrumented + `
-globalThis.client = { state, textarea, toast, openNote, moveNote, save, resolveConflict, refresh, select, askInput, askStatus, askPanel, copilotButton, compose, toggleMarkdown, rows, isPlain: () => plain,
+globalThis.client = { state, textarea, toast, openNote, moveNote, save, resolveConflict, refresh, select, askInput, askStatus, askPanel, copilotButton, compose, toggleMarkdown, rows, renderList, listCount, formattingHelp, isPlain: () => plain,
     app, sidebar, listPane, editorPane, sidebarToggle, showFoldersButton, backToNotesButton, backdrop, setOverlay, rememberFocus, closeOverlayOnEscape, overlayOpen: () => overlay };
 `);
 const context = { sessionId: "client-test", actor: "user" };
@@ -42,6 +42,7 @@ class Element extends EventTarget {
         if (name === "disabled") this.disabled = true;
     }
     getAttribute(name) { return this.attributes.get(name) ?? null; }
+    removeAttribute(name) { this.attributes.delete(name); }
     hasAttribute(name) { return this.attributes.has(name); }
     append(...children) {
         for (const child of children) {
@@ -210,6 +211,73 @@ afterEach(async () => {
     await Promise.all(clients.map(panel => panel.settle()));
     await server.close();
     await rm(fixture, { recursive: true, force: true });
+});
+
+describe("first-use discoverability", () => {
+    const text = element => element.children.map(child => child instanceof Element ? text(child) : child).join(" ");
+
+    test("empty library and folder offer creation without listbox semantics; drafts restore options", async () => {
+        const panel = await openClient();
+        expect(text(panel.rows)).toContain("Capture your first thought");
+        expect(panel.rows.hasAttribute("role")).toBe(false);
+        expect(panel.rows.hasAttribute("aria-label")).toBe(false);
+        expect(panel.rows.getAttribute("tabindex")).toBe("-1");
+        expect(panel.listCount.textContent).toBe("0 notes");
+        await library.create({ body: "# Elsewhere", folder: "Filled" }, context);
+        await mkdir(join(root, "Empty"));
+        await panel.select({ folder: "Empty" });
+        expect(text(panel.rows)).toContain("No notes in this folder");
+        expect(panel.rows.hasAttribute("role")).toBe(false);
+        panel.rows.querySelector("button").dispatchEvent(new Event("click"));
+        await panel.settle();
+        expect(panel.state.draft.folder).toBe("Empty");
+        expect(panel.rows.getAttribute("role")).toBe("listbox");
+        expect(panel.rows.querySelector(".row").getAttribute("role")).toBe("option");
+    });
+
+    test("no results offers search guidance, retains count, and removes stale option focus", async () => {
+        await library.create({ body: "# Existing" }, context);
+        const panel = await openClient();
+        panel.rows.querySelector(".row").focus();
+        panel.state.query = "missing";
+        panel.state.notes = [];
+        panel.renderList();
+        expect(text(panel.rows)).toContain("Try a different search.");
+        expect(panel.rows.querySelector("button")).toBeNull();
+        expect(panel.rows.hasAttribute("role")).toBe(false);
+        expect(panel.listCount.textContent).toBe("0 results");
+        expect(panel.activeElement.getAttribute("type")).toBe("search");
+    });
+
+    test("empty smart views explain where their create action saves", async () => {
+        const panel = await openClient();
+        await panel.select({ view: "session" });
+        expect(text(panel.rows)).toContain("No notes in this session");
+        expect(text(panel.rows)).toContain("New notes are saved in Notes.");
+        panel.rows.querySelector("button").dispatchEvent(new Event("click"));
+        await panel.settle();
+        expect(panel.state.draft.folder).toBe("");
+    });
+
+    test("formatting help is optional, rich-only, and restores focus on close", async () => {
+        const note = await library.create({ body: "# Help" }, context);
+        const panel = await openClient({ richSafe: true });
+        expect(panel.formattingHelp.hidden).toBe(true);
+        await panel.openNote(note.id);
+        expect(panel.formattingHelp.hidden).toBe(false);
+        const help = panel.formattingHelp.querySelector("button");
+        help.focus();
+        help.dispatchEvent(new Event("click"));
+        const dialog = panel.document.body.querySelector("dialog");
+        expect(dialog.hasAttribute("open")).toBe(true);
+        expect(text(dialog)).toContain("Ctrl / Command + K");
+        expect(text(dialog)).toContain("start a bullet, then type [ ]");
+        dialog.querySelector("button").dispatchEvent(new Event("click"));
+        expect(panel.document.body.querySelector("dialog")).toBeNull();
+        expect(panel.activeElement).toBe(help);
+        panel.toggleMarkdown();
+        expect(panel.formattingHelp.hidden).toBe(true);
+    });
 });
 
 describe("medium drawer focus", () => {
