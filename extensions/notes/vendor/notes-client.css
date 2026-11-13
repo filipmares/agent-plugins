@@ -192,6 +192,9 @@ button:disabled { cursor: default; opacity: 0.45; }
     border-radius: var(--radius);
     cursor: default;
     user-select: none;
+    /* Long lists only lay out the rows in view; the estimate is one title line and one meta line. */
+    content-visibility: auto;
+    contain-intrinsic-size: auto 58px;
 }
 .row + .row::before {
     content: "";
@@ -226,6 +229,7 @@ mark { border-radius: 3px; background: var(--accent-subtle); color: var(--fg); }
 .list-empty p { margin: 0 0 12px; }
 .list-empty > p:first-child { color: var(--fg); font-weight: var(--font-weight-semibold, 600); }
 .empty-detail { font-size: 13px; }
+.list-error p { overflow-wrap: anywhere; }
 
 /* Editor */
 .editor-pane { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
@@ -320,6 +324,11 @@ button.frontmatter-item:hover { border-color: color-mix(in srgb, var(--fg) 28%, 
 }
 .empty-editor .icon { width: 32px; height: 32px; opacity: 0.5; }
 .empty-editor p { margin: 0; }
+/* Shown only if the editor takes long enough to load to be noticed. */
+.editor-loading { flex: 1; display: grid; place-content: center; color: var(--muted); animation: editor-loading-in 150ms ease-out 300ms both; }
+.editor-loading[hidden] { display: none; }
+@keyframes editor-loading-in { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .editor-loading { animation-duration: 1ms; } }
 .editor-help { padding: 0 20px 8px; text-align: right; }
 .editor-help .text-button { font-size: 12px; }
 .formatting-shortcuts { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; font-size: 13px; }

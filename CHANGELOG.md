@@ -7,6 +7,18 @@ and plugin versioning follows [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## [Unreleased]
 
+### Changed — Notes startup performance
+- The Notes panel now loads a small ES module shell (about 44 KB, down from 649 KB). The rich editor is a separate bundle, `vendor/notes-editor.js`, imported lazily. The note list renders without waiting for the editor; the editor pane shows a loading state until it is ready, then opens the note. If the editor bundle fails to load, the note opens as plain Markdown.
+- Startup fetches the panel state, notes and folders in parallel. List rendering reuses date formatters, computes "today" once per render, groups rows in one pass, and lets the browser skip off-screen rows (`content-visibility`).
+- Added `bun run bench:notes`, which measures time to list and editor paint in headless Edge or Chrome against a synthetic library. With 500 notes at 4× CPU throttling, back-to-back medians improved: first paint from about 460 ms to 200 ms, the note list from about 2.5 s to 1.6 s, and an editable restored note from about 4.4 s to 2.8 s. Without throttling, startup is bound by the server and roughly unchanged. The remaining startup time is mostly the library's note scan behind `api/notes`.
+- Bumped the plugin and marketplace manifests to `2.2.7`.
+
+### Fixed — Notes stuck on loading without a session
+- Opening the Notes canvas no longer waits for the library's first scan before the panel can open. Previously the panel could stay on "loading" with no way to recover if the scan stalled or failed, most visibly when opened without a session.
+- The list shows **Loading notes…** while it loads. Reads that wait more than 15 seconds for the library, or fail, show the error in the list with **Try again**.
+- The note a panel was asked to open, and unsaved text recovered from a previous close, are claimed only after the list loads (`POST /api/startup`); `GET /api/state` no longer consumes them. Closing or reloading a panel that could not finish loading keeps both for the next try, and any later successful load, not just **Try again**, finishes startup, including after a claim that failed. If the note behind recovered text cannot be read, the text is kept for the next load rather than saved as a copy; it opens as a new draft only when the note is gone or the server cannot keep it. If the user has already moved on, the panel holds it and hands it back on the next list load or when it closes; resending the same recovered text keeps one copy. Saves still wait for the library and are never retried automatically.
+- A remembered note the library cannot read yet stays selected instead of being forgotten, and opens on the next list load that succeeds.
+
 ### Added — Notes frontmatter viewing
 - A read-only row of property pills sits below each note's opening heading (above the text in Markdown view) and shows Agent/Human authorship, origin project, and the original session name. More stays beside the pills at every width and reveals pin status, custom properties, dates, and technical details; long names expand with mouse, touch, or keyboard. Frontmatter editing is not included, and existing pin actions are unchanged.
 - The last-edited date line above the note moves into More's dates.

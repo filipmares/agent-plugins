@@ -3,7 +3,7 @@ import { NotesError } from "./errors.mjs";
 import { createNotesTool } from "./notes-tool.mjs";
 import { createPanelRegistry } from "./panels.mjs";
 import { readSessionContext, resolveNotesDirectory } from "./platform.mjs";
-import { createNotesServer, resolveTarget } from "./server.mjs";
+import { createNotesServer, resolveTarget, waitForLibrary } from "./server.mjs";
 import { NotesLibrary } from "./storage.mjs";
 import { uiStatePath } from "./ui-state.mjs";
 
@@ -43,11 +43,16 @@ function canvasError(error) {
     return new CanvasError("io_error", `Notes could not open (${error?.code ?? "unexpected error"}).`);
 }
 
+// Note and folder targets wait a bounded time for the first scan; other opens return the panel immediately.
+const libraryForTarget = () => waitForLibrary(getLibrary);
+
 async function openPanel(ctx) {
+    // Start the first scan alongside the panel; the client shows loading until it finishes.
+    getLibrary().catch(() => { /* the panel's reads report it, and the next call retries */ });
     try {
         const panel = await panels.open(
             ctx.instanceId,
-            async () => resolveTarget(await getLibrary(), ctx.input ?? {}),
+            () => resolveTarget(libraryForTarget, ctx.input ?? {}),
             target => createNotesServer({
                 getLibrary,
                 getContext: () => readSessionContext(ctx.sessionId, { allowMissing: true }),
@@ -89,7 +94,7 @@ session = await joinSession({
                         const panel = await panels.find(ctx.instanceId);
                         if (!panel) throw new CanvasError("not_open", "This Notes panel is not open.");
                         try {
-                            const target = await resolveTarget(await getLibrary(), ctx.input ?? {});
+                            const target = await resolveTarget(libraryForTarget, ctx.input ?? {});
                             panel.reveal(target);
                             return { revealed: target };
                         } catch (error) {

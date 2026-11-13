@@ -206,6 +206,22 @@ saves notes normally, but has no session to attribute edits to:
 - The `notes_manage` tool is unchanged: agents always run in a session, and it
   still requires that session's provenance.
 
+### Loading
+
+The panel opens before the library has finished its first scan. The list
+shows **Loading notes…** until notes arrive. Reads that wait more than 15
+seconds for the library show the error in the list with **Try again**,
+instead of leaving the panel blank. A note the panel was asked to open, and
+unsaved text recovered from a previous close, are only taken from the server
+once the list has loaded, so closing or reloading a panel that could not
+finish loading keeps them for the next try. Any later successful load, not
+just **Try again**, finishes opening the panel. Saves are never retried
+automatically; they wait for the library.
+
+The note list renders immediately. The rich editor loads separately and the
+editor pane shows a loading state until it is ready. If the editor bundle
+fails to load, the note opens as plain Markdown.
+
 ## Library and privacy
 
 Notes uses one global library at the operating system's Documents folder under
@@ -355,8 +371,22 @@ Node standard library, the host-resolved Copilot SDK, and committed offline
 bundles. Do not install the SDK into this extension.
 
 The build emits `vendor/yaml.mjs`, `vendor/markdown.mjs`, and the browser
-client `vendor/notes-client.js`/`.css` (from `client/app.ts` and `app.css`,
-with Octicons paths inlined at build time).
+client as two ES modules: the small panel shell `vendor/notes-client.js`/`.css`
+(from `client/app.ts` and `app.css`, with Octicons paths inlined at build
+time) and the lazily imported rich editor `vendor/notes-editor.js` (from
+`client/editor.ts`). Code they share lives in `client/common.ts`.
+
+To measure panel startup in headless Microsoft Edge against a synthetic library:
+
+```powershell
+bun run bench:notes --notes 500 --samples 7
+bun run bench:notes --notes 500 --samples 7 --cpu-throttle 4
+```
+
+It reports median and p90 times to list paint and editor paint, with and
+without a restored note, and the bundle sizes. It uses Microsoft Edge or
+Chrome; pass `--browser <path>` or set `NOTES_BENCH_BROWSER` to choose another
+Chromium-based browser.
 `vendor/manifest.json` pins bundle/source hashes, package versions, and licence
 sources. Verbatim dependency licences live in `third-party-licenses/`.
 Git attributes preserve bundle/licence bytes; source fingerprints normalize

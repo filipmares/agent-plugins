@@ -8,7 +8,6 @@ import remarkStringify from "remark-stringify";
 import { parseMarkdown } from "./markdown";
 
 const writer = unified().use(remarkGfm).use(remarkStringify, { bullet: "-", fences: true, emphasis: "*", rule: "-" });
-export const GUARD_MESSAGE = "This note uses Markdown the rich editor can't keep exactly.";
 type Mark = NonNullable<JSONContent["marks"]>[number];
 
 export function markdownToDoc(source: string): JSONContent {

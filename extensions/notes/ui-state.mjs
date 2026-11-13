@@ -44,10 +44,15 @@ async function writeAtomic(path, value) {
     }
 }
 
-const entryFiles = async (dir) => (await readdir(dir).catch(() => [])).filter(name => /^\d{15}-[0-9a-f]{12}\.json$/.test(name)).sort();
+const ENTRY_KEY = /^\d{15}-[0-9a-f]{12}$/;
+const newEntryKey = () => `${String(Date.now()).padStart(15, "0")}-${randomBytes(6).toString("hex")}`;
+const entryFiles = async (dir) => (await readdir(dir).catch(() => [])).filter(name => name.endsWith(".json") && ENTRY_KEY.test(name.slice(0, -5))).sort();
 
-export async function pushRecovery(dir, { noteId = null, folder = "", body }) {
-    await writeAtomic(join(dir, `${String(Date.now()).padStart(15, "0")}-${randomBytes(6).toString("hex")}.json`), { noteId, folder, body });
+// A key handed out with a recovery names its entry when it is kept again, so resending the same text
+// (as a closing panel does while its first stash is still in flight) replaces the entry rather than duplicating it.
+export async function pushRecovery(dir, { noteId = null, folder = "", body, key }) {
+    const name = typeof key === "string" && ENTRY_KEY.test(key) ? key : newEntryKey();
+    await writeAtomic(join(dir, `${name}.json`), { noteId, folder, body });
     // Trimming claims like a reader does, so it never removes an entry another panel is about to deliver.
     await Promise.all((await entryFiles(dir)).slice(0, -20).map(async name => {
         const path = join(dir, name);
@@ -63,7 +68,8 @@ export async function popRecovery(dir) {
         try {
             const entry = JSON.parse(await retryTransient(() => readFile(path, "utf8")));
             if (entry && typeof entry.body === "string" && (entry.noteId === null || isText(entry.noteId, 4096)) && isText(entry.folder, 4096)) {
-                draft = { noteId: entry.noteId, folder: entry.folder, body: entry.body };
+                // A fresh key, so text kept again joins the back of the queue rather than blocking newer entries.
+                draft = { noteId: entry.noteId, folder: entry.folder, body: entry.body, key: newEntryKey() };
             }
         } catch { /* skip unreadable or already-consumed entries */ }
         // A failed cleanup must not lose a draft that was already read; the marker left behind prevents a second delivery.

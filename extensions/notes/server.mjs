@@ -8,8 +8,9 @@ import { NotesError } from "./errors.mjs";
 import { openExternalLink } from "./platform.mjs";
 import { loadUiState, popRecovery, pushRecovery, recoveryPath, saveUiState } from "./ui-state.mjs";
 
-const [CLIENT_SCRIPT, CLIENT_STYLES] = await Promise.all([
+const [CLIENT_SCRIPT, EDITOR_SCRIPT, CLIENT_STYLES] = await Promise.all([
     readFile(new URL("./vendor/notes-client.js", import.meta.url), "utf8"),
+    readFile(new URL("./vendor/notes-editor.js", import.meta.url), "utf8"),
     readFile(new URL("./vendor/notes-client.css", import.meta.url), "utf8"),
 ]);
 
@@ -38,7 +39,7 @@ const HTML = `<!doctype html>
 </head>
 <body>
 <div id="app" class="app"></div>
-<script src="app.js" defer></script>
+<script type="module" src="app.js"></script>
 </body>
 </html>
 `;
@@ -52,7 +53,7 @@ const STATUS = {
 const ROUTES = {
     "/api/note/create": { body: "string", folder: "string", draft: "string?" },
     "/api/note/update": { id: "string", body: "string", expectedVersion: "string" },
-    "/api/note/rescue": { id: "string?", draft: "string?", folder: "string", body: "string", expectedVersion: "string?", stash: "boolean?" },
+    "/api/note/rescue": { id: "string?", draft: "string?", folder: "string", body: "string", expectedVersion: "string?", stash: "boolean?", key: "string?" },
     "/api/note/pin": { id: "string", pinned: "boolean", expectedVersion: "string" },
     "/api/note/move": { id: "string", folder: "string", expectedVersion: "string" },
     "/api/note/delete": { id: "string", expectedVersion: "string", permanent: "boolean?" },
@@ -62,6 +63,7 @@ const ROUTES = {
     "/api/ui": { state: "object" },
     "/api/open-link": { url: "string" },
     "/api/ask": { id: "string", expectedVersion: "string", prompt: "string" },
+    "/api/startup": {},
 };
 
 function fields(body, spec) {
@@ -126,10 +128,30 @@ function findFolder(node, path) {
     return undefined;
 }
 
+// How long a read waits for the library's first scan before answering library_busy. The scan keeps running.
+export const LIBRARY_WAIT_MS = 15_000;
+
+// Waits for the shared library without resetting or retrying its initialization.
+export async function waitForLibrary(getLibrary, timeoutMs = LIBRARY_WAIT_MS) {
+    let timer;
+    const timeout = new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new NotesError("library_busy", "Notes is still loading the library. Try again in a moment.")), timeoutMs);
+        timer.unref?.();
+    });
+    try {
+        return await Promise.race([getLibrary(), timeout]);
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
 // Resolves a canvas target to canonical identifiers, failing for missing notes or folders.
-export async function resolveTarget(library, target = {}) {
+// Only note and folder targets need the library, so empty and view targets never wait for it.
+export async function resolveTarget(getLibrary, target = {}) {
     const resolved = {};
     if (target.view) resolved.view = target.view;
+    if (target.folder === undefined && !target.noteId) return resolved;
+    const library = await getLibrary();
     if (target.folder !== undefined) {
         const folder = findFolder((await library.folders()).folders, target.folder.replaceAll("\\", "/").replace(/^\/+|\/+$/g, ""));
         if (!folder) throw new NotesError("not_found", "The folder was not found.");
@@ -143,7 +165,9 @@ export async function resolveTarget(library, target = {}) {
     return resolved;
 }
 
-export async function createNotesServer({ getLibrary, getContext, sessionId, statePath, target, onChange, log, sendMessage, openLink = openExternalLink }) {
+export async function createNotesServer({ getLibrary, getContext, sessionId, statePath, target, onChange, log, sendMessage, openLink = openExternalLink, libraryWaitMs = LIBRARY_WAIT_MS }) {
+    // Reads answer library_busy rather than hanging while the first scan runs; writes still queue for it.
+    const readLibrary = () => waitForLibrary(getLibrary, libraryWaitMs);
     const token = randomBytes(32).toString("hex");
     const base = `/${token}`;
     const streams = new Set();
@@ -169,7 +193,7 @@ export async function createNotesServer({ getLibrary, getContext, sessionId, sta
     }
 
     async function list(url) {
-        const library = await getLibrary();
+        const library = await readLibrary();
         const query = url.searchParams.get("query") ?? "";
         const view = url.searchParams.get("view");
         const folder = url.searchParams.get("folder");
@@ -190,9 +214,9 @@ export async function createNotesServer({ getLibrary, getContext, sessionId, sta
 
     // Saves text from a closing panel. Saves since its last-known version are only its own if this panel wrote them.
     // `stash` only keeps the text for the next load, for recovered text whose base version is unknown.
-    async function rescue(library, { id, draft, folder, body, expectedVersion, stash }) {
+    async function rescue(library, { id, draft, folder, body, expectedVersion, stash, key: recoveryKey }) {
         if (stash) {
-            await pushRecovery(recoveryPath(statePath), { noteId: id ?? null, folder, body });
+            await pushRecovery(recoveryPath(statePath), { noteId: id ?? null, folder, body, key: recoveryKey });
             return { recovered: true };
         }
         const noteId = id ?? (draft === undefined ? undefined : drafts.get(draft));
@@ -260,27 +284,26 @@ export async function createNotesServer({ getLibrary, getContext, sessionId, sta
             switch (route) {
                 case "/": return send(res, 200, "text/html; charset=utf-8", HTML);
                 case "/app.js": return send(res, 200, "text/javascript; charset=utf-8", CLIENT_SCRIPT);
+                case "/editor.js": return send(res, 200, "text/javascript; charset=utf-8", EDITOR_SCRIPT);
                 case "/app.css": return send(res, 200, "text/css; charset=utf-8", CLIENT_STYLES);
                 case "/api/state": {
+                    // Reading state has no side effects; the panel claims the open target and recovered text
+                    // with /api/startup only once its lists have loaded, so a failed load loses neither.
                     const context = await panelContext();
-                    const state = {
+                    return sendJson(res, 200, {
                         context: { sessionId: context.sessionId ?? null, project: context.project ?? null, sessionName: context.sessionName ?? null },
                         ui: await loadUiState(statePath),
-                        target: pendingTarget,
-                        recovery: await popRecovery(recoveryPath(statePath)),
-                    };
-                    pendingTarget = null;
-                    return sendJson(res, 200, state);
+                    });
                 }
-                case "/api/folders": return sendJson(res, 200, await (await getLibrary()).folders());
+                case "/api/folders": return sendJson(res, 200, await (await readLibrary()).folders());
                 case "/api/notes": return sendJson(res, 200, await list(url));
                 case "/api/note": {
                     const id = url.searchParams.get("id");
                     if (!id) throw new NotesError("invalid_request", "id is required.");
-                    return sendJson(res, 200, await (await getLibrary()).read(id));
+                    return sendJson(res, 200, await (await readLibrary()).read(id));
                 }
                 case "/api/image": {
-                    const image = await (await getLibrary()).image(url.searchParams.get("noteId"), url.searchParams.get("src"));
+                    const image = await (await readLibrary()).image(url.searchParams.get("noteId"), url.searchParams.get("src"));
                     headers(res, image.type);
                     if (image.type === "image/svg+xml") {
                         res.setHeader("Content-Security-Policy", "default-src 'none'; script-src 'none'; style-src 'none'; sandbox; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
@@ -305,6 +328,12 @@ export async function createNotesServer({ getLibrary, getContext, sessionId, sta
             if (requestOrigin !== origin) throw new NotesError("not_found", "Not found.");
             const body = fields(await readJson(req), ROUTES[route]);
             if (route === "/api/ui") return sendJson(res, 200, await saveUiState(statePath, body.state));
+            if (route === "/api/startup") {
+                const recovery = await popRecovery(recoveryPath(statePath));
+                const claimed = { target: pendingTarget, recovery };
+                pendingTarget = null;
+                return sendJson(res, 200, claimed);
+            }
             if (route === "/api/open-link") {
                 await openLink(body.url);
                 return sendJson(res, 200, { opened: true });
@@ -320,6 +349,8 @@ export async function createNotesServer({ getLibrary, getContext, sessionId, sta
                 if (typeof messageId !== "string" || !messageId) throw new NotesError("chat_unavailable", "Copilot did not acknowledge the message.");
                 return sendJson(res, 200, { messageId });
             }
+            // Stashing only keeps text for the next load, so it must not wait for a library that may still be loading.
+            if (route === "/api/note/rescue" && body.stash) return sendJson(res, 200, await rescue(null, body));
             const run = writes.then(() => post(route, body));
             writes = run.catch(() => {});
             const result = await run;

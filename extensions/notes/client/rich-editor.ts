@@ -8,12 +8,9 @@ import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { closeHistory } from "@tiptap/pm/history";
 import { markdownToDoc, roundTripSafe, serializeEdit } from "./rich-codec";
+import { safeExternal } from "./common";
 
-export const safeExternal = (value: string) => {
-    try {
-        return !/[\u0000-\u0020\u007f]/.test(value) && ["http:", "https:", "mailto:"].includes(new URL(value).protocol);
-    } catch { return false; }
-};
+export { safeExternal };
 const localImage = (value: string) => value !== "" && !/^(?:[a-z][a-z\d+.-]*:|[\\/])/i.test(value);
 
 // Typing ")" that completes [label](https://…) turns the label into a link; unsafe or code contexts stay literal.

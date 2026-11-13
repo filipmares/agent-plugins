@@ -5,7 +5,8 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { retryTransient } from "../filesystem.mjs";
 import { NotesError } from "../errors.mjs";
-import { MAX_REQUEST_BYTES, createNotesServer, resolveTarget } from "../server.mjs";
+import { MAX_REQUEST_BYTES, createNotesServer, resolveTarget, waitForLibrary } from "../server.mjs";
+import { createPanelRegistry } from "../panels.mjs";
 import { NotesLibrary } from "../storage.mjs";
 import { popRecovery, pushRecovery, recoveryPath } from "../ui-state.mjs";
 
@@ -39,6 +40,8 @@ afterEach(async () => {
     server = undefined;
     await rm(fixture, { recursive: true, force: true });
 });
+
+const claimStartup = async () => (await call("api/startup", { method: "POST", body: {} })).json;
 
 function call(path, { method = "GET", headers = {}, body, base = server.url } = {}) {
     const url = new URL(path, base);
@@ -157,12 +160,17 @@ describe("Notes panel server", () => {
         await start();
         const shell = await call("");
         expect(shell.status).toBe(200);
-        expect(shell.text).toContain('<script src="app.js" defer></script>');
+        expect(shell.text).toContain('<script type="module" src="app.js"></script>');
         expect(shell.headers["content-security-policy"]).toContain("default-src 'none'");
         expect(shell.headers["content-security-policy"]).toContain("script-src 'self'");
         expect(shell.headers).toMatchObject({ "cache-control": "no-store", "x-content-type-options": "nosniff", "referrer-policy": "no-referrer" });
         expect(shell.headers["access-control-allow-origin"]).toBeUndefined();
         expect((await call("app.js")).headers["content-type"]).toStartWith("text/javascript");
+        // Module scripts are fetched in CORS mode, so the lazy editor arrives with the panel's own Origin.
+        const editor = await call("editor.js", { headers: { Origin: new URL(server.url).origin } });
+        expect(editor.status).toBe(200);
+        expect(editor.headers["content-type"]).toStartWith("text/javascript");
+        expect(editor.text).toContain("createRichEditor");
         expect((await call("app.css")).headers["content-type"]).toStartWith("text/css");
 
         const origin = new URL(server.url).origin;
@@ -253,10 +261,15 @@ describe("Notes panel server", () => {
         expect((await call("api/state")).json.ui).toEqual(state);
     });
 
-    test("hands the open target to the first state load and streams reveal and change events", async () => {
+    test("hands the open target to the first startup claim and streams reveal and change events", async () => {
         await start({ folder: "Home" });
-        expect((await call("api/state")).json).toMatchObject({ context: { sessionId: "session-a", project: "owner/repo" }, target: { folder: "Home" } });
-        expect((await call("api/state")).json.target).toBeNull();
+        // Reading state never consumes the target; claiming it does, once.
+        const state = (await call("api/state")).json;
+        expect(state.context).toMatchObject({ sessionId: "session-a", project: "owner/repo" });
+        expect(Object.keys(state).sort()).toEqual(["context", "ui"]);
+        expect((await claimStartup()).target).toEqual({ folder: "Home" });
+        expect((await claimStartup()).target).toBeNull();
+        expect((await call("api/startup", { method: "POST", body: {}, headers: { Origin: "null" } })).status).toBe(404);
 
         const stream = events();
         await stream.ready;
@@ -295,15 +308,15 @@ describe("Notes panel server", () => {
         await library.update(created.json.id, { body: "# Plan\nagent", expectedVersion: (await library.read(created.json.id)).version }, { sessionId: "s", actor: "agent" });
         expect((await rescue({ id: created.json.id, folder: "", body: "# Plan\nmine", expectedVersion: saved.json.version })).json).toEqual({ recovered: true });
         expect((await library.read(created.json.id)).body).toContain("agent");
-        expect((await call("api/state")).json.recovery).toEqual({ noteId: created.json.id, folder: "", body: "# Plan\nmine" });
-        expect((await call("api/state")).json.recovery).toBeNull();
+        expect((await claimStartup()).recovery).toMatchObject({ noteId: created.json.id, folder: "", body: "# Plan\nmine" });
+        expect((await claimStartup()).recovery).toBeNull();
 
         // Stash-only rescue never writes over this panel's own newer save.
         const own = await library.read(created.json.id);
         await call("api/note/update", { method: "POST", body: { id: own.id, body: "# Plan\nnewest", expectedVersion: own.version } });
         expect((await rescue({ id: own.id, folder: "", body: "# Plan\nolder", stash: true })).json).toEqual({ recovered: true });
         expect((await library.read(own.id)).body).toContain("newest");
-        expect((await call("api/state")).json.recovery.body).toBe("# Plan\nolder");
+        expect((await claimStartup()).recovery.body).toBe("# Plan\nolder");
     });
 
     test("delivers each queued recovery entry exactly once to panels loading at the same time", async () => {
@@ -323,7 +336,7 @@ describe("Notes panel server", () => {
         await writeFile(join(dir, `${entry}.claim`), "");
         expect(await popRecovery(dir)).toBeNull();
         await rm(join(dir, `${entry}.claim`));
-        expect(await popRecovery(dir)).toEqual({ noteId: null, folder: "", body: "mine" });
+        expect(await popRecovery(dir)).toMatchObject({ noteId: null, folder: "", body: "mine" });
         expect(await readdir(dir)).toEqual([]);
     });
 
@@ -346,8 +359,27 @@ describe("Notes panel server", () => {
         await mkdir(stuck, { recursive: true });
         await writeFile(join(stuck, "keep"), "");
         await pushRecovery(dir, { folder: "", body: "mine" });
-        expect(await popRecovery(dir)).toEqual({ noteId: null, folder: "", body: "mine" });
+        expect(await popRecovery(dir)).toMatchObject({ noteId: null, folder: "", body: "mine" });
         expect(await popRecovery(dir)).toBeNull();
+    });
+
+    test("recovered text kept again under its key replaces its entry rather than queueing a copy", async () => {
+        await start();
+        const dir = recoveryPath(statePath);
+        await pushRecovery(dir, { folder: "", body: "once" });
+        const { recovery } = await claimStartup();
+        expect(recovery.key).toMatch(/^\d{15}-[0-9a-f]{12}$/);
+        // A closing panel resends text whose first stash may already have landed.
+        const stash = key => call("api/note/rescue", { method: "POST", body: { folder: "", body: "once", stash: true, key } });
+        await stash(recovery.key);
+        await stash(recovery.key);
+        expect(await readdir(dir)).toEqual([`${recovery.key}.json`]);
+        // A key that is not an entry name never becomes a path.
+        await stash("../escape");
+        expect(await readdir(dir)).toHaveLength(2);
+        expect((await claimStartup()).recovery).toMatchObject({ noteId: null, folder: "", body: "once" });
+        expect((await claimStartup()).recovery).toMatchObject({ noteId: null, folder: "", body: "once" });
+        expect((await claimStartup()).recovery).toBeNull();
     });
 
     test("keeps unresolved recovery across closes without overwriting the fresh version", async () => {
@@ -358,7 +390,7 @@ describe("Notes panel server", () => {
         await pushRecovery(recoveryPath(statePath), recovery);
 
         for (let reopen = 0; reopen < 2; reopen++) {
-            expect((await call("api/state")).json.recovery).toEqual(recovery);
+            expect((await claimStartup()).recovery).toMatchObject(recovery);
             const fresh = (await call(`api/note?id=${current.id}`)).json;
             const rescued = await call("api/note/rescue", { method: "POST", body: {
                 id: fresh.id, folder: fresh.folder, body: recovery.body, expectedVersion: fresh.version, stash: true,
@@ -370,21 +402,72 @@ describe("Notes panel server", () => {
             await start();
         }
 
-        expect((await call("api/state")).json.recovery).toEqual(recovery);
+        expect((await claimStartup()).recovery).toMatchObject(recovery);
         const kept = await call("api/note/update", { method: "POST", body: {
             id: current.id, body: recovery.body, expectedVersion: current.version,
         } });
         expect(kept.status).toBe(200);
         expect((await library.read(current.id)).body).toBe(recovery.body);
-        expect((await call("api/state")).json.recovery).toBeNull();
+        expect((await claimStartup()).recovery).toBeNull();
     });
 
-    test("resolves canvas targets to canonical identifiers", async () => {
+    test("resolves canvas targets to canonical identifiers, reading the library only for notes and folders", async () => {
         const note = await library.create({ body: "# Target", folder: "Work/Plans" }, { sessionId: "s", actor: "user" });
-        expect(await resolveTarget(library, { noteId: note.path })).toEqual({ noteId: note.id, folder: "Work/Plans" });
-        expect(await resolveTarget(library, { folder: "work\\plans" })).toEqual({ folder: "Work/Plans" });
-        expect(await resolveTarget(library, { view: "all", noteId: note.id })).toEqual({ view: "all", noteId: note.id });
-        await expect(resolveTarget(library, { folder: "Nope" })).rejects.toMatchObject({ code: "not_found" });
-        await expect(resolveTarget(library, { noteId: "missing.md" })).rejects.toMatchObject({ code: "not_found" });
+        const getLibrary = async () => library;
+        expect(await resolveTarget(getLibrary, { noteId: note.path })).toEqual({ noteId: note.id, folder: "Work/Plans" });
+        expect(await resolveTarget(getLibrary, { folder: "work\\plans" })).toEqual({ folder: "Work/Plans" });
+        expect(await resolveTarget(getLibrary, { view: "all", noteId: note.id })).toEqual({ view: "all", noteId: note.id });
+        await expect(resolveTarget(getLibrary, { folder: "Nope" })).rejects.toMatchObject({ code: "not_found" });
+        await expect(resolveTarget(getLibrary, { noteId: "missing.md" })).rejects.toMatchObject({ code: "not_found" });
+        const unused = () => { throw new Error("The library is not needed."); };
+        expect(await resolveTarget(unused, {})).toEqual({});
+        expect(await resolveTarget(unused, { view: "session" })).toEqual({ view: "session" });
+    });
+
+    test("a sessionless panel opens while the library is still loading, and reads recover once it loads", async () => {
+        let finish;
+        const loading = new Promise(resolve => { finish = resolve; });
+        let waits = 0;
+        const getLibrary = () => { waits += 1; return loading; };
+        // As the extension opens a panel: the target and server never wait for the first scan.
+        const panels = createPanelRegistry();
+        server = await panels.open("sessionless", () => resolveTarget(getLibrary, {}), target => createNotesServer({
+            getLibrary, getContext: async () => ({}), sessionId: "app-control-session", statePath, target, libraryWaitMs: 50,
+        }));
+        expect(waits).toBe(0);
+        expect((await call("")).status).toBe(200);
+        expect((await call("app.js")).status).toBe(200);
+        expect((await call("api/state")).json.context).toEqual({ sessionId: null, project: null, sessionName: null });
+
+        // Reads answer rather than hang; the shared initialization keeps running.
+        for (const path of ["api/folders", "api/notes?view=all", "api/note?id=any.md"]) {
+            const busy = await call(path);
+            expect(busy.status).toBe(503);
+            expect(busy.json.error.code).toBe("library_busy");
+        }
+        await expect(resolveTarget(() => waitForLibrary(getLibrary, 20), { noteId: "any.md" })).rejects.toMatchObject({ code: "library_busy" });
+
+        // Writes queue for the library rather than failing, and stashing recovered text never waits for it.
+        const created = call("api/note/create", { method: "POST", body: { body: "# Queued", folder: "" } });
+        const stashed = await call("api/note/rescue", { method: "POST", body: { folder: "", body: "Kept", stash: true } });
+        expect(stashed.json).toEqual({ recovered: true });
+        expect(await popRecovery(recoveryPath(statePath))).toMatchObject({ folder: "", body: "Kept" });
+
+        finish(library);
+        const saved = await created;
+        expect(saved.status).toBe(200);
+        expect(saved.json.frontmatter).toMatchObject({ created_by: "user", sessions: [] });
+        expect((await call("api/notes?view=all")).json.notes.map(note => note.title)).toEqual(["Queued"]);
+    });
+
+    test("a failed library load is retried by the next read", async () => {
+        let attempts = 0;
+        await start(undefined, { getLibrary: async () => {
+            attempts += 1;
+            if (attempts === 1) throw new NotesError("unsafe_path", "The Notes library was redirected.");
+            return library;
+        } });
+        expect((await call("api/notes?view=all")).json.error.code).toBe("unsafe_path");
+        expect((await call("api/notes?view=all")).status).toBe(200);
     });
 });

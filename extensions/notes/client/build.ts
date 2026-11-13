@@ -57,16 +57,30 @@ async function build() {
         if (!icon) throw new Error(`Unknown 16px Octicon: ${name}`);
         icons[name] = { width: icon.width, path: icon.path };
     }
+    // The shell paints the list without Tiptap; the editor bundle is imported at runtime from the same origin.
     const app = await Bun.build({
         entrypoints: [join(client, "app.ts")],
         target: "browser",
-        format: "iife",
+        format: "esm",
         minify: true,
+        external: ["*/editor.js"],
         define: { __ICONS__: JSON.stringify(icons) },
     });
     if (!app.success) throw new AggregateError(app.logs, "Could not build the Notes client");
+    const editor = await Bun.build({
+        entrypoints: [join(client, "editor.ts")],
+        target: "browser",
+        format: "esm",
+        minify: true,
+    });
+    if (!editor.success) throw new AggregateError(editor.logs, "Could not build the Notes rich editor");
+    const shell = await app.outputs[0].text();
+    if (!shell.includes('import("./editor.js")') || /prosemirror|tiptap/i.test(shell)) {
+        throw new Error("The Notes client must load the rich editor lazily from ./editor.js.");
+    }
     for (const [file, content] of [
-        ["notes-client.js", await app.outputs[0].text()],
+        ["notes-client.js", shell],
+        ["notes-editor.js", await editor.outputs[0].text()],
         ["notes-client.css", (await readFile(join(client, "app.css"), "utf8")).replaceAll("\r\n", "\n")],
     ]) {
         await writeFile(join(vendor, file), content);

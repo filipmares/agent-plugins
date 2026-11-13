@@ -10,9 +10,13 @@ import { pushRecovery, recoveryPath, saveUiState } from "../ui-state.mjs";
 const source = await readFile(new URL("../client/app.ts", import.meta.url), "utf8");
 const instrumented = source.replace(/^import .+;$/gm, "").replace(/\bvoid start\(\);(?=\s*$)/, "globalThis.clientReady = start();");
 if (instrumented === source) throw new Error("Cannot await Notes client startup.");
-const script = new Bun.Transpiler({ loader: "ts" }).transformSync(instrumented + `
+// The sandbox supplies the lazy editor loader, so each test can delay or fail it.
+const lazy = instrumented.replace(/^const importEditor = .+;$/m, "");
+if (lazy === instrumented) throw new Error("Cannot replace the Notes editor loader.");
+const script = new Bun.Transpiler({ loader: "ts" }).transformSync(lazy + `
 globalThis.client = { state, textarea, toast, openNote, moveNote, save, resolveConflict, refresh, select, askInput, askStatus, askPanel, copilotButton, compose, toggleMarkdown, rows, renderList, listCount, formattingHelp,
     frontmatterView, frontmatterContext, frontmatterDetails, frontmatterMore, isPlain: () => plain,
+    editorLoading, richElement, markdownButton, focusEditor, isWaiting: () => editorWaiting, listStatus: () => listStatus,
     saveButton, saveDetails, saveAnnouncement, saving: () => inflight,
     app, sidebar, listPane, editorPane, sidebarToggle, showFoldersButton, backToNotesButton, backdrop, setOverlay, rememberFocus, closeOverlayOnEscape, overlayOpen: () => overlay };
 `);
@@ -118,7 +122,7 @@ class Element extends EventTarget {
     }
 }
 
-async function openClient({ richSafe = false } = {}) {
+async function openClient({ richSafe = false, importEditor, respond, startupToast = false } = {}) {
     const window = new EventTarget();
     const document = Object.assign(new EventTarget(), {
         body: new Element("body"), activeElement: null,
@@ -137,6 +141,7 @@ async function openClient({ richSafe = false } = {}) {
     let timerId = 0;
     const timers = new Map();
     const media = new Map();
+    let eventSources = 0;
     const sandbox = {
         window, document, URLSearchParams, Event, crypto, queueMicrotask,
         GUARD_MESSAGE: "This note uses Markdown the rich editor can't keep exactly.",
@@ -147,12 +152,13 @@ async function openClient({ richSafe = false } = {}) {
             headers.push(callbacks.header);
             return { safe: richSafe, editor: { destroy() {}, commands: { focus() {} }, isFocused: false, state: { selection: { from: 1 } } } };
         },
+        importEditor: () => importEditor ? importEditor({ createRichEditor: sandbox.createRichEditor }) : Promise.resolve({ createRichEditor: sandbox.createRichEditor }),
         matchMedia: query => {
             const result = Object.assign(new EventTarget(), { matches: false });
             media.set(query, result);
             return result;
         },
-        EventSource: class extends EventTarget { close() {} },
+        EventSource: class extends EventTarget { constructor() { super(); eventSources += 1; } close() {} },
         __ICONS__: new Proxy({}, { get: (_target, name) => ({ width: 16, path: String(name) }) }),
         addEventListener: window.addEventListener.bind(window),
         setTimeout: (callback, delay) => { timers.set(++timerId, { callback, delay }); return timerId; },
@@ -160,6 +166,8 @@ async function openClient({ richSafe = false } = {}) {
         fetch(path, options = {}) {
             calls.push({ path, ...options, body: options.body && JSON.parse(options.body) });
             const result = (async () => {
+                const canned = respond?.(path, sandbox.client, window);
+                if (canned) return canned;
                 if (path === "api/note/update" || path === "api/note/create") {
                     const replacement = await beforeSave?.();
                     if (replacement) return replacement;
@@ -182,6 +190,7 @@ async function openClient({ richSafe = false } = {}) {
     const panel = {
         ...sandbox.client,
         calls,
+        eventSources: () => eventSources,
         richHeader: () => headers.at(-1),
         scrollCalls: () => scrollIntoViewTotal,
         document,
@@ -226,7 +235,7 @@ async function openClient({ richSafe = false } = {}) {
         },
     };
     clients.push(panel);
-    expect(panel.toast.hidden).toBe(true);
+    if (!startupToast) expect(panel.toast.hidden).toBe(true);
     return panel;
 }
 
@@ -1006,5 +1015,404 @@ describe("Notes client persistence", () => {
             .toMatchObject({ id: note.id, body: note.body, expectedVersion: external.version });
         expect((await library.read(note.id)).body).toBe(note.body);
         expect(panel.state.conflict).toBe(false);
+    });
+});
+
+describe("lazy rich editor", () => {
+    const tick = () => new Promise(resolve => setImmediate(resolve));
+    const gate = () => {
+        let open, fail;
+        const promise = new Promise((resolve, reject) => { open = resolve; fail = reject; });
+        return { promise, open, fail };
+    };
+    // Records each rich editor the client creates, and where it was asked to focus.
+    const tracked = (created, focused) => module => ({
+        createRichEditor: options => {
+            const result = module.createRichEditor(options);
+            created.push(options.body);
+            result.editor.commands = { focus: at => focused.push(at) };
+            return result;
+        },
+    });
+
+    test("the editor pane shows a loading state, then the rich editor with any focus asked for meanwhile", async () => {
+        const note = await library.create({ body: "# Lazy\nbody" }, context);
+        const loaded = gate();
+        const created = [];
+        const focused = [];
+        const panel = await openClient({ richSafe: true, importEditor: module => loaded.promise.then(() => tracked(created, focused)(module)) });
+        await panel.openNote(note.id);
+        expect(panel.isWaiting()).toBe(true);
+        expect(panel.editorLoading.hidden).toBe(false);
+        expect(panel.textarea.hidden).toBe(true);
+        expect(panel.richElement.hidden).toBe(true);
+        expect(panel.markdownButton.disabled).toBe(true);
+        panel.toggleMarkdown();
+        panel.focusEditor();
+        expect(panel.isPlain()).toBe(false);
+
+        loaded.open();
+        await tick();
+        expect(panel.isWaiting()).toBe(false);
+        expect(panel.editorLoading.hidden).toBe(true);
+        expect(panel.richElement.hidden).toBe(false);
+        expect(panel.textarea.hidden).toBe(true);
+        expect(panel.markdownButton.disabled).toBe(false);
+        expect(created).toEqual([note.body]);
+        expect(focused).toEqual(["end"]);
+    });
+
+    test("switching notes while the editor loads builds it only for the note now open", async () => {
+        const first = await library.create({ body: "# First\none" }, context);
+        const second = await library.create({ body: "# Second\ntwo" }, context);
+        const loaded = gate();
+        const created = [];
+        const panel = await openClient({ richSafe: true, importEditor: module => loaded.promise.then(() => tracked(created, [])(module)) });
+        await panel.openNote(first.id);
+        await panel.openNote(second.id);
+        loaded.open();
+        await tick();
+        expect(created).toEqual([second.body]);
+        expect(panel.richElement.hidden).toBe(false);
+    });
+
+    test("a failed load falls back to Markdown with a toast, and the next rich toggle retries", async () => {
+        const note = await library.create({ body: "# Offline\nbody" }, context);
+        let failing = true;
+        const focused = [];
+        const panel = await openClient({
+            richSafe: true,
+            importEditor: module => failing ? Promise.reject(new Error("Network down.")) : Promise.resolve(tracked([], focused)(module)),
+        });
+        await panel.openNote(note.id);
+        await tick();
+        expect(panel.isWaiting()).toBe(false);
+        expect(panel.isPlain()).toBe(true);
+        expect(panel.textarea.hidden).toBe(false);
+        expect(panel.textarea.value).toBe(note.body);
+        expect(panel.toast.hidden).toBe(false);
+        // The rejection comes from the test realm, so the client formats it as a foreign Error.
+        expect(panel.toast.textContent).toStartWith("Rich editing is unavailable. Your Markdown is unchanged.");
+        expect(panel.toast.textContent).toContain("Network down.");
+
+        failing = false;
+        panel.toggleMarkdown();
+        await tick();
+        expect(panel.isPlain()).toBe(false);
+        expect(panel.richElement.hidden).toBe(false);
+        expect(panel.textarea.value).toBe(note.body);
+        expect(focused).toEqual(["end"]);
+    });
+
+    test("recovered text autosaves while the editor is still loading", async () => {
+        const recovery = { noteId: null, folder: "", body: "# Recovered\nwhile loading" };
+        await pushRecovery(recoveryPath(statePath), recovery);
+        const panel = await openClient({ richSafe: true, importEditor: () => new Promise(() => {}), startupToast: true });
+        expect(panel.toast.textContent).toBe("Recovered unsaved text from when Notes last closed.");
+        expect(panel.isWaiting()).toBe(true);
+        expect(panel.textarea.value).toBe(recovery.body);
+        expect(await panel.save()).toBe(true);
+        const [saved] = (await library.list()).notes;
+        expect((await library.read(saved.id)).body).toBe(recovery.body);
+    });
+
+    test("recovered text survives a folder request that fails, even if the panel reloads before retrying", async () => {
+        const note = await library.create({ body: "# Kept\nsaved" }, context);
+        const recovery = { noteId: note.id, folder: "", body: "# Kept\nunsaved" };
+        await pushRecovery(recoveryPath(statePath), recovery);
+        let failed = false;
+        const panel = await openClient({
+            respond: path => path === "api/folders" && !failed && (failed = true)
+                ? new Response(JSON.stringify({ error: { code: "io_error", message: "Folders failed." } }), { status: 500 })
+                : undefined,
+        });
+        await panel.settle();
+        expect(failed).toBe(true);
+        // The list keeps the error with a retry, and nothing was claimed, so closing cannot lose the text.
+        expect(panel.listStatus().error).toBe("Folders failed.");
+        expect(panel.rows.querySelectorAll(".list-error")).toHaveLength(1);
+        expect(panel.calls.some(call => call.path === "api/startup" || call.path === "api/note/rescue")).toBe(false);
+        expect(panel.eventSources()).toBe(0);
+
+        const reloaded = await openClient();
+        expect(reloaded.listStatus()).toBe("ready");
+        expect(reloaded.textarea.value).toBe(recovery.body);
+        expect(reloaded.state.conflict).toBe(true);
+        expect(reloaded.state.recovered).toBe(true);
+    });
+
+    test("a retry finishes startup with the recovered text", async () => {
+        const recovery = { noteId: null, folder: "", body: "# Recovered\nafter folders" };
+        await pushRecovery(recoveryPath(statePath), recovery);
+        let failed = false;
+        const panel = await openClient({
+            respond: path => path === "api/folders" && !failed && (failed = true)
+                ? new Response(JSON.stringify({ error: { code: "io_error", message: "Folders failed." } }), { status: 500 })
+                : undefined,
+        });
+        await panel.settle();
+        await panel.listStatus().retry();
+        expect(panel.listStatus()).toBe("ready");
+        expect(panel.textarea.value).toBe(recovery.body);
+        expect(panel.state.draft).not.toBeNull();
+        expect(panel.eventSources()).toBe(1);
+    });
+});
+
+describe("startup while the library is unavailable", () => {
+    test("a stalled library shows a retryable error and keeps the restored note until it loads", async () => {
+        const note = await library.create({ body: "# Restored\ntext" }, context);
+        await saveUiState(statePath, { sidebar: true, selection: { view: "all" }, noteId: note.id, collapsed: [] });
+        let release;
+        const loading = new Promise(resolve => { release = resolve; });
+        await server.close();
+        server = await startServer({ getLibrary: () => loading, libraryWaitMs: 30 });
+        const panel = await openClient();
+        const failed = panel.listStatus();
+        expect(failed.error).toBe("Notes is still loading the library. Try again in a moment.");
+        expect(panel.rows.querySelectorAll(".list-error")).toHaveLength(1);
+        expect(panel.state.note).toBeNull();
+        expect(panel.state.ui.noteId).toBe(note.id);
+
+        release(library);
+        const retrying = failed.retry();
+        expect(panel.listStatus()).toBe("loading");
+        await retrying;
+        await panel.settle();
+        expect(panel.listStatus()).toBe("ready");
+        expect(panel.state.notes.map(item => item.title)).toEqual(["Restored"]);
+        expect(panel.state.note.id).toBe(note.id);
+        expect(panel.textarea.value).toBe(note.body);
+    });
+
+    test("a failed startup state request retries without having consumed recovered text", async () => {
+        const recovery = { noteId: null, folder: "", body: "# Recovered\nafter retry" };
+        await pushRecovery(recoveryPath(statePath), recovery);
+        let failed = false;
+        const panel = await openClient({
+            respond: path => path === "api/state" && !failed && (failed = true)
+                ? new Response(JSON.stringify({ error: { code: "io_error", message: "State unavailable." } }), { status: 500 })
+                : undefined,
+        });
+        expect(panel.listStatus().error).toBe("State unavailable.");
+        expect(panel.rows.querySelectorAll(".list-error")).toHaveLength(1);
+
+        await panel.listStatus().retry();
+        expect(panel.listStatus()).toBe("ready");
+        expect(panel.textarea.value).toBe(recovery.body);
+        expect(panel.toast.textContent).toBe("Recovered unsaved text from when Notes last closed.");
+    });
+
+    test("recovered text survives the user moving on while the server cannot take it back", async () => {
+        const note = await library.create({ body: "# Moved\nsaved" }, context);
+        const recovery = { noteId: note.id, folder: "", body: "# Moved\nunsaved" };
+        await pushRecovery(recoveryPath(statePath), recovery);
+        let moved = false;
+        let stashes = 0;
+        let releaseStash;
+        const panel = await openClient({
+            respond: (path, client) => {
+                // The user composes a new note while the recovered note is still loading.
+                if (path.startsWith("api/note?") && !moved && (moved = true)) {
+                    return client.compose().then(() => fetch(new URL(path, server.url), { headers: { Origin: new URL(server.url).origin } }));
+                }
+                if (path !== "api/note/rescue") return;
+                stashes += 1;
+                if (stashes === 1) return new Response(JSON.stringify({ error: { code: "io_error", message: "Disk full." } }), { status: 500 });
+                // The retry stalls, then fails, as the panel closes.
+                if (stashes === 2) return new Promise(resolve => { releaseStash = resolve; })
+                    .then(() => new Response(JSON.stringify({ error: { code: "offline", message: "Closed." } }), { status: 503 }));
+            },
+            startupToast: true,
+        });
+        await panel.settle();
+        expect(panel.state.draft).not.toBeNull();
+        expect(panel.state.recovered).toBe(false);
+        expect(panel.toast.textContent).toBe("Notes could not keep recovered unsaved text yet; it will try again.");
+
+        const refreshing = panel.refresh();
+        while (!releaseStash) await Bun.sleep(1);
+        const closing = panel.close();
+        expect(panel.calls.filter(call => call.path === "api/note/rescue" && call.keepalive)).toEqual([
+            expect.objectContaining({ body: { id: note.id, folder: "", body: recovery.body, stash: true, key: expect.stringMatching(/^\d{15}-[0-9a-f]{12}$/) } }),
+        ]);
+        // Every send of this text names one server entry, so a resend after a stash that landed keeps one copy.
+        expect(new Set(panel.calls.filter(call => call.path === "api/note/rescue").map(call => call.body.key)).size).toBe(1);
+        releaseStash();
+        await Promise.all([refreshing, closing]);
+        const reloaded = await openClient();
+        expect(reloaded.textarea.value).toBe(recovery.body);
+        expect(reloaded.state.recovered).toBe(true);
+    });
+
+    test("a restored-note read that failed while loading is read again when a newer list load succeeds", async () => {
+        const note = await library.create({ body: "# Restored\nagain" }, context);
+        await saveUiState(statePath, { sidebar: true, selection: { view: "all" }, noteId: note.id, collapsed: [] });
+        const busy = () => new Response(JSON.stringify({ error: { code: "library_busy", message: "Notes is still loading the library." } }), { status: 503 });
+        let noteFailed = false;
+        let listsStalled = false;
+        const panel = await openClient({
+            respond: (path, client) => {
+                if (path.startsWith("api/note?") && !noteFailed && (noteFailed = true)) return busy();
+                // The first list load stalls and a search or refresh supersedes it.
+                if (path.startsWith("api/notes?") && !listsStalled && (listsStalled = true)) {
+                    return Bun.sleep(0).then(() => { void client.refresh(); return Bun.sleep(50); }).then(busy);
+                }
+            },
+        });
+        await panel.settle();
+        expect(panel.listStatus()).toBe("ready");
+        expect(panel.state.note.id).toBe(note.id);
+        expect(panel.textarea.value).toBe(note.body);
+    });
+
+    test("a list load after a failed startup state request finishes startup", async () => {
+        const note = await library.create({ body: "# Target\nafter state" }, context);
+        await server.close();
+        server = await startServer({ target: { noteId: note.id, folder: "" } });
+        let failed = false;
+        const panel = await openClient({
+            respond: path => path === "api/state" && !failed && (failed = true)
+                ? new Response(JSON.stringify({ error: { code: "io_error", message: "State unavailable." } }), { status: 500 })
+                : undefined,
+        });
+        expect(panel.listStatus().error).toBe("State unavailable.");
+
+        await panel.refresh();
+        await panel.settle();
+        expect(panel.listStatus()).toBe("ready");
+        expect(panel.state.note.id).toBe(note.id);
+        expect(panel.eventSources()).toBe(1);
+        expect(panel.calls.filter(call => call.path === "api/startup")).toHaveLength(1);
+    });
+
+    test("a restored note the library briefly cannot read is not forgotten, and the next list load opens it", async () => {
+        const note = await library.create({ body: "# Busy\ntext" }, context);
+        await saveUiState(statePath, { sidebar: true, selection: { view: "all" }, noteId: note.id, collapsed: [] });
+        let busy = true;
+        const panel = await openClient({
+            respond: path => busy && path.startsWith("api/note?")
+                ? new Response(JSON.stringify({ error: { code: "library_busy", message: "Notes is still loading the library." } }), { status: 503 })
+                : undefined,
+            startupToast: true,
+        });
+        expect(panel.listStatus()).toBe("ready");
+        expect(panel.toast.textContent).toBe("Notes is still loading the library.");
+        expect(panel.state.ui.noteId).toBe(note.id);
+
+        busy = false;
+        await panel.refresh();
+        await panel.settle();
+        expect(panel.state.note.id).toBe(note.id);
+        expect(panel.textarea.value).toBe(note.body);
+        expect(panel.calls.filter(call => call.path === "api/startup")).toHaveLength(1);
+    });
+
+    test("a startup claim that does not reach the server is claimed again by the next list load", async () => {
+        const recovery = { noteId: null, folder: "", body: "# Recovered\nafter claim" };
+        await pushRecovery(recoveryPath(statePath), recovery);
+        let failed = false;
+        const panel = await openClient({
+            respond: path => path === "api/startup" && !failed && (failed = true)
+                ? new Response(JSON.stringify({ error: { code: "offline", message: "Notes is offline." } }), { status: 503 })
+                : undefined,
+            startupToast: true,
+        });
+        await panel.settle();
+        expect(panel.listStatus()).toBe("ready");
+        expect(panel.toast.textContent).toBe("Notes is offline.");
+        expect(panel.state.draft).toBeNull();
+        expect(panel.eventSources()).toBe(1);
+
+        await panel.refresh();
+        await panel.settle();
+        expect(panel.textarea.value).toBe(recovery.body);
+        expect(panel.state.draft).not.toBeNull();
+        expect(panel.calls.filter(call => call.path === "api/startup")).toHaveLength(2);
+    });
+
+    test("recovered text for a note that cannot be read is kept, not saved as a copy", async () => {
+        const note = await library.create({ body: "# Unreadable\nsaved" }, context);
+        const recovery = { noteId: note.id, folder: "", body: "# Unreadable\nunsaved" };
+        await pushRecovery(recoveryPath(statePath), recovery);
+        const panel = await openClient({
+            respond: path => path.startsWith("api/note?")
+                ? new Response(JSON.stringify({ error: { code: "io_error", message: "The note could not be read." } }), { status: 500 })
+                : undefined,
+            startupToast: true,
+        });
+        await panel.settle();
+        expect(panel.state.draft).toBeNull();
+        expect(panel.toast.textContent).toBe("The note could not be read.");
+        expect((await library.list()).notes).toHaveLength(1);
+
+        const reloaded = await openClient();
+        expect(reloaded.textarea.value).toBe(recovery.body);
+        expect(reloaded.state.recovered).toBe(true);
+    });
+
+    test("an open target waits for the lists, and any later successful load finishes startup once", async () => {
+        const note = await library.create({ body: "# Target\ntext" }, context);
+        await server.close();
+        server = await startServer({ target: { noteId: note.id, folder: "" } });
+        let failed = false;
+        const panel = await openClient({
+            respond: path => path.startsWith("api/notes?") && !failed && (failed = true)
+                ? new Response(JSON.stringify({ error: { code: "library_busy", message: "Notes is still loading the library." } }), { status: 503 })
+                : undefined,
+        });
+        expect(panel.listStatus().error).toBe("Notes is still loading the library.");
+        expect(panel.eventSources()).toBe(0);
+
+        // Not only the retry button: a refresh, search or reveal that loads the lists also finishes startup.
+        await panel.refresh();
+        await panel.settle();
+        expect(panel.listStatus()).toBe("ready");
+        expect(panel.state.note.id).toBe(note.id);
+        expect(panel.eventSources()).toBe(1);
+        await panel.refresh();
+        await panel.settle();
+        expect(panel.eventSources()).toBe(1);
+        expect(panel.calls.filter(call => call.path === "api/startup")).toHaveLength(1);
+    });
+
+    test("recovered text the library cannot read and the server cannot keep stays in the editor", async () => {
+        const note = await library.create({ body: "# Busy\nsaved" }, context);
+        const recovery = { noteId: note.id, folder: "", body: "# Busy\nunsaved" };
+        await pushRecovery(recoveryPath(statePath), recovery);
+        const panel = await openClient({
+            respond: path => path.startsWith("api/note?")
+                ? new Response(JSON.stringify({ error: { code: "library_busy", message: "Notes is still loading the library." } }), { status: 503 })
+                : path === "api/note/rescue"
+                    ? new Response(JSON.stringify({ error: { code: "io_error", message: "Disk full." } }), { status: 500 })
+                    : undefined,
+            startupToast: true,
+        });
+        expect(panel.textarea.value).toBe(recovery.body);
+        expect(panel.state.draft).not.toBeNull();
+    });
+
+    test("closing while recovered text is being handed back sends it again", async () => {
+        const note = await library.create({ body: "# Closing\nsaved" }, context);
+        const recovery = { noteId: note.id, folder: "", body: "# Closing\nunsaved" };
+        await pushRecovery(recoveryPath(statePath), recovery);
+        let closed = false;
+        const panel = await openClient({
+            respond: (path, client, window) => {
+                if (path.startsWith("api/note?")) {
+                    return new Response(JSON.stringify({ error: { code: "library_busy", message: "Notes is still loading the library." } }), { status: 503 });
+                }
+                // The panel closes while the stash is in flight, cancelling it.
+                if (path === "api/note/rescue" && !closed && (closed = true)) {
+                    window.dispatchEvent(new Event("pagehide"));
+                    return new Response(JSON.stringify({ error: { code: "offline", message: "Closed." } }), { status: 503 });
+                }
+            },
+            startupToast: true,
+        });
+        expect(panel.calls.filter(call => call.path === "api/note/rescue" && call.keepalive)).toEqual([
+            expect.objectContaining({ body: { id: note.id, folder: "", body: recovery.body, stash: true, key: expect.stringMatching(/^\d{15}-[0-9a-f]{12}$/) } }),
+        ]);
+        expect(new Set(panel.calls.filter(call => call.path === "api/note/rescue").map(call => call.body.key)).size).toBe(1);
     });
 });
