@@ -13,7 +13,8 @@
  * - Every plugin `source` resolves inside the repository and is a directory
  * - Every plugin resolves a manifest (`plugin.json` or `.github/plugin/plugin.json`)
  * - Plugin name and version agree with the marketplace entry
- * - Declared `extensions` paths resolve inside the plugin and contain `extension.mjs`
+ * - Declared `extensions` discovery roots resolve inside the plugin and contain
+ *   immediate extension subdirectories with `extension.mjs`
  * - Canvas ids are unique across a plugin, action names are unique within a
  *   canvas, and no action name uses the reserved `canvas.` prefix
  *
@@ -26,7 +27,7 @@
  * reported as an error rather than skipped, so the validator fails closed.
  */
 
-import { existsSync, readFileSync, statSync } from 'fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'fs';
 import { isAbsolute, join, relative, resolve, sep } from 'path';
 
 export interface PluginValidationResults {
@@ -396,6 +397,7 @@ function validateExtensions(
   }
 
   const seenCanvasIds = new Set<string>();
+  const extensionPaths: string[] = [];
 
   for (const declaredPath of paths as string[]) {
     if (declaredPath.trim() === '') {
@@ -412,6 +414,19 @@ function validateExtensions(
       continue;
     }
 
+    const children = readdirSync(extensionDir, { withFileTypes: true })
+      .filter(entry => entry.isDirectory());
+    if (children.length === 0) {
+      results.errors.push(
+        `Plugin "${entryName}" extension discovery path "${declaredPath}" contains no extension subdirectories`,
+      );
+      continue;
+    }
+    extensionPaths.push(...children.map(entry => join(declaredPath, entry.name)));
+  }
+
+  for (const declaredPath of extensionPaths) {
+    const extensionDir = resolve(pluginDir, declaredPath);
     const entryFile = join(extensionDir, 'extension.mjs');
     if (!existsSync(entryFile) || !statSync(entryFile).isFile()) {
       results.errors.push(`Plugin "${entryName}" extension "${declaredPath}" is missing extension.mjs`);
