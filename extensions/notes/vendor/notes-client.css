@@ -192,6 +192,9 @@ button:disabled { cursor: default; opacity: 0.45; }
     border-radius: var(--radius);
     cursor: default;
     user-select: none;
+    /* Long lists only lay out the rows in view; the estimate is one title line and one meta line. */
+    content-visibility: auto;
+    contain-intrinsic-size: auto 58px;
 }
 .row + .row::before {
     content: "";
@@ -223,6 +226,7 @@ button:disabled { cursor: default; opacity: 0.45; }
 .row-folder .icon { width: 12px; height: 12px; }
 mark { border-radius: 3px; background: var(--accent-subtle); color: var(--fg); }
 .list-empty { padding: 32px 12px; color: var(--muted); text-align: center; }
+.list-error p { margin: 0 0 12px; overflow-wrap: anywhere; }
 
 /* Editor */
 .editor-pane { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
@@ -254,6 +258,11 @@ mark { border-radius: 3px; background: var(--accent-subtle); color: var(--fg); }
 }
 .empty-editor .icon { width: 32px; height: 32px; opacity: 0.5; }
 .empty-editor p { margin: 0; }
+/* Shown only if the editor takes long enough to load to be noticed. */
+.editor-loading { flex: 1; display: grid; place-content: center; color: var(--muted); animation: editor-loading-in 150ms ease-out 300ms both; }
+.editor-loading[hidden] { display: none; }
+@keyframes editor-loading-in { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .editor-loading { animation-duration: 1ms; } }
 .rich-note { flex: 1; width: 100%; max-width: 760px; margin: 0 auto; padding: 16px 28px 48px; }
 .tiptap { min-height: 100%; line-height: 1.65; overflow-wrap: anywhere; white-space: pre-wrap; caret-color: var(--fg); }
 .tiptap:focus-visible { outline-offset: 6px; border-radius: 2px; }

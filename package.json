@@ -9,6 +9,7 @@
     "test:copilot-plugin": "bun test scripts/validate-copilot-plugin.test.ts",
     "test:canvas": "bun test extensions/rpi-artifact-navigator/tests/*.test.mjs",
     "build:notes": "bun run extensions/notes/client/build.ts",
-    "test:notes": "bun test extensions/notes/tests/*.test.mjs"
+    "test:notes": "bun test extensions/notes/tests/*.test.mjs",
+    "bench:notes": "bun run scripts/bench-notes-startup.ts"
   }
 }

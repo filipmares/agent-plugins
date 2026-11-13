@@ -1,8 +1,10 @@
 // Notes panel client. Served same-origin by server.mjs; every request goes to the capability-scoped API.
-import { createRichEditor, safeExternal } from "./rich-editor";
-import { GUARD_MESSAGE } from "./rich-codec";
+import { GUARD_MESSAGE, safeExternal } from "./common";
 import type { Editor } from "@tiptap/core";
 declare const __ICONS__: Record<string, { width: number; path: string }>;
+type EditorModule = typeof import("./editor");
+// Tiptap is a separate bundle so the list can paint before it downloads and evaluates. The client tests replace this line.
+const importEditor = (): Promise<EditorModule> => import("./editor.js");
 
 type Warning = { code: string; message: string };
 type Summary = {
@@ -93,6 +95,15 @@ async function request<T>(path: string, body?: unknown): Promise<T> {
     return data as T;
 }
 
+// Startup milestones for `bun run bench:notes`; "-painted" lands after the next frame.
+const marked = new Set<string>();
+function markOnce(name: string) {
+    if (marked.has(name) || typeof performance === "undefined") return;
+    marked.add(name);
+    performance.mark(`notes:${name}`);
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => setTimeout(() => performance.mark(`notes:${name}-painted`)));
+}
+
 const keyOf = (note: { id: string | null; path: string }) => note.id ?? note.path;
 const openKey = () => (state.note ? keyOf(state.note) : null);
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
@@ -115,10 +126,17 @@ const banner = h("div", { class: "banner", role: "status", hidden: true });
 const fidelityBanner = h("div", { class: "banner", role: "status", hidden: true });
 const textarea = h("textarea", { class: "note-text", "aria-label": "Note", spellcheck: "true", hidden: true });
 const richElement = h("div", { class: "rich-note", hidden: true });
+const editorLoading = h("div", { class: "editor-loading", role: "status", hidden: true }, "Loading editor…");
 let rich: Editor | null = null;
 let plain = false;
 let guarded = false;
 let editorError = false;
+let editorModule: EditorModule | null = null;
+let editorLoad: Promise<EditorModule> | null = null;
+// While the editor bundle loads, the pane shows a placeholder; the token drops loads the user has navigated away from.
+let editorWaiting = false;
+let editorFocus = false;
+let editorToken = 0;
 const markdownButton = iconButton("code", "View as Markdown", () => toggleMarkdown());
 const copilotButton = iconButton("copilot", "Ask Copilot about this note", () => {
     if (!askPanel.hidden) return hideAsk();
@@ -160,7 +178,7 @@ const editorPane = h("main", { class: "editor-pane", "aria-label": "Editor" },
         backToNotesButton,
         h("span", { class: "spacer" }), askStatus, markdownButton, copilotButton, pinButton, moveButton, trashButton),
     askPanel, banner, fidelityBanner,
-    h("div", { class: "editor-scroll" }, dateLine, textarea, richElement, emptyEditor),
+    h("div", { class: "editor-scroll" }, dateLine, textarea, richElement, editorLoading, emptyEditor),
 );
 const backdrop = h("div", { class: "backdrop", onclick: () => setOverlay(false) });
 app.append(sidebar, backdrop, listPane, editorPane);
@@ -316,29 +334,60 @@ function listParams() {
 
 let listSequence = 0;
 let listScrollPending = false;
-async function refreshLists(preserveScroll = false): Promise<void> {
+// Until the first list loads, the list shows loading, or an error with a retry, rather than "No notes".
+let listStatus: "loading" | "ready" | { error: string; retry: () => Promise<void> } = "loading";
+let latestLists: Promise<boolean> = Promise.resolve(false);
+// Resolves whether the lists loaded; a superseded load resolves with the load that replaced it.
+function refreshLists(preserveScroll = false, foldersRequest?: Promise<{ folders: FolderNode }>): Promise<boolean> {
     if (!preserveScroll) listScrollPending = true;
-    const sequence = ++listSequence;
+    const run = loadLists(preserveScroll, ++listSequence, foldersRequest);
+    latestLists = run;
+    return run;
+}
+
+async function loadLists(preserveScroll: boolean, sequence: number, foldersRequest?: Promise<{ folders: FolderNode }>): Promise<boolean> {
     try {
         const [folders, notes] = await Promise.all([
-            request<{ folders: FolderNode }>("api/folders"),
+            foldersRequest ?? request<{ folders: FolderNode }>("api/folders"),
             request<{ notes: Summary[] }>(`api/notes?${listParams()}`),
         ]);
-        if (sequence !== listSequence) return;
+        if (sequence !== listSequence) return latestLists;
+        listStatus = "ready";
         state.folders = folders.folders;
         state.notes = notes.notes;
         renderSidebar();
         renderList(!listScrollPending);
         listScrollPending = false;
+        markOnce("list");
+        // Recovered text a previous load could not hand back is retried now the library answers.
+        if (heldRecoveries.size) await retryHeldRecoveries();
+        // Startup claims the open target and recovered text only once a list load succeeds, from any caller.
+        const resume = resumeStartup;
+        resumeStartup = null;
+        await resume?.();
+        return true;
     } catch (error) {
-        if (sequence !== listSequence) return;
+        if (sequence !== listSequence) return latestLists;
         if (error instanceof ApiError && error.code === "not_found" && "folder" in state.ui.selection) {
             state.ui.selection = { view: "all" };
             persistUi();
             return refreshLists(preserveScroll);
         }
-        showToast(message(error));
+        if (listStatus === "ready") showToast(message(error));
+        else {
+            listStatus = { error: message(error), retry: retryLists };
+            renderList();
+        }
+        return false;
     }
+}
+
+// Startup steps that need the library, waiting for the next list load that succeeds.
+let resumeStartup: (() => Promise<void>) | null = null;
+async function retryLists() {
+    listStatus = "loading";
+    renderList();
+    await refreshLists();
 }
 
 // ---------- Saving ----------
@@ -354,7 +403,7 @@ const dirty = () => (state.draft ? /[^#\s]/.test(textarea.value) : state.note !=
 
 function setText(body: string, { resetView = false } = {}) {
     const { selectionStart, selectionEnd, scrollTop } = textarea;
-    const focused = document.activeElement === textarea || rich?.isFocused;
+    const focused = document.activeElement === textarea || rich?.isFocused || (editorWaiting && editorFocus);
     const wasPlain = plain;
     const position = rich?.state.selection.from;
     textarea.value = body;
@@ -362,14 +411,32 @@ function setText(body: string, { resetView = false } = {}) {
     if (document.activeElement === textarea) textarea.setSelectionRange(selectionStart, selectionEnd);
     textarea.scrollTop = scrollTop;
     prepareEditor();
-    if (!resetView && wasPlain) plain = true;
+    if (!resetView && wasPlain) {
+        plain = true;
+        stopWaiting();
+    }
     renderEditor();
     if (focused) {
-        if (plain) {
+        if (editorWaiting) editorFocus = true;
+        else if (plain) {
             textarea.focus();
             textarea.setSelectionRange(selectionStart, selectionEnd);
         } else if (rich) rich.commands.focus(Math.min(position ?? 1, rich.state.doc.content.size));
     }
+}
+
+function loadEditor() {
+    editorLoad ??= importEditor().then(module => (editorModule = module), error => {
+        editorLoad = null;
+        throw error;
+    });
+    return editorLoad;
+}
+
+function stopWaiting() {
+    editorToken++;
+    editorWaiting = false;
+    editorFocus = false;
 }
 
 function prepareEditor() {
@@ -379,10 +446,31 @@ function prepareEditor() {
     richElement.replaceChildren();
     editorError = false;
     guarded = false;
+    stopWaiting();
     plain = !!state.note?.warning;
     if (plain || (!state.note && !state.draft)) return;
+    if (!editorModule) {
+        const token = editorToken;
+        editorWaiting = true;
+        loadEditor().then(() => {
+            if (token !== editorToken) return;
+            const focus = editorFocus;
+            prepareEditor();
+            renderEditor();
+            if (focus) focusEditor();
+        }, error => {
+            if (token !== editorToken) return;
+            const focus = editorFocus;
+            stopWaiting();
+            plain = true;
+            renderEditor();
+            showToast(`Rich editing is unavailable. Your Markdown is unchanged. ${message(error)}`);
+            if (focus) focusEditor();
+        });
+        return;
+    }
     try {
-        const result = createRichEditor({
+        const result = editorModule.createRichEditor({
             element: richElement, body: textarea.value, noteKey: openKey,
             change: body => { textarea.value = body; editorError = false; changedText(); },
             blur: () => void save(),
@@ -393,6 +481,7 @@ function prepareEditor() {
         rich = result.editor;
         guarded = !result.safe;
         plain = guarded;
+        markOnce("editor");
     } catch (error) {
         rich?.destroy();
         rich = null;
@@ -402,12 +491,13 @@ function prepareEditor() {
 }
 
 function focusEditor() {
-    if (plain || !rich) textarea.focus();
+    if (editorWaiting) editorFocus = true;
+    else if (plain || !rich) textarea.focus();
     else rich.commands.focus("end");
 }
 
 function toggleMarkdown(forceRich = false) {
-    if (!state.note && !state.draft) return;
+    if ((!state.note && !state.draft) || editorWaiting) return;
     if (editorError) { showToast("Resolve the rich-editor error before changing views; your rich text is still in the panel."); return; }
     if (!plain) plain = true;
     else {
@@ -574,6 +664,7 @@ function discardEditor() {
     textarea.value = "";
     rich?.destroy();
     rich = null;
+    stopWaiting();
     state.ui.noteId = null;
     hideAsk();
     persistUi();
@@ -1143,26 +1234,31 @@ function selectionName() {
 
 const startOfDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
 const DAY = 86_400_000;
+// toLocale*String builds a formatter per call, which dominated rendering long lists; these are built once.
+let formats: Record<"month" | "time" | "weekday" | "date", Intl.DateTimeFormat> | null = null;
+const dateFormats = () => formats ??= {
+    month: new Intl.DateTimeFormat(undefined, { month: "long" }),
+    time: new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }),
+    weekday: new Intl.DateTimeFormat(undefined, { weekday: "long" }),
+    date: new Intl.DateTimeFormat(undefined, { year: "2-digit", month: "numeric", day: "numeric" }),
+};
 
-function groupOf(iso: string) {
+function groupOf(iso: string, today: number) {
     const time = Date.parse(iso);
-    const today = startOfDay(new Date());
     if (time >= today) return "Today";
     if (time >= today - DAY) return "Yesterday";
     if (time >= today - 7 * DAY) return "Previous 7 Days";
     if (time >= today - 30 * DAY) return "Previous 30 Days";
-    const date = new Date(time);
-    return date.getFullYear() === new Date().getFullYear() ? date.toLocaleDateString(undefined, { month: "long" }) : String(date.getFullYear());
+    const year = new Date(time).getFullYear();
+    return year === new Date(today).getFullYear() ? dateFormats().month.format(time) : String(year);
 }
 
-function shortDate(iso: string) {
+function shortDate(iso: string, today: number) {
     const time = Date.parse(iso);
-    const today = startOfDay(new Date());
-    const date = new Date(time);
-    if (time >= today) return date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    if (time >= today) return dateFormats().time.format(time);
     if (time >= today - DAY) return "Yesterday";
-    if (time >= today - 6 * DAY) return date.toLocaleDateString(undefined, { weekday: "long" });
-    return date.toLocaleDateString(undefined, { year: "2-digit", month: "numeric", day: "numeric" });
+    if (time >= today - 6 * DAY) return dateFormats().weekday.format(time);
+    return dateFormats().date.format(time);
 }
 
 function highlight(text: string, words: string[]): Child[] {
@@ -1197,7 +1293,7 @@ function preview(note: Summary) {
     return text || "No additional text";
 }
 
-function noteRow(note: Summary, words: string[], searching: boolean) {
+function noteRow(note: Summary, words: string[], searching: boolean, today: number) {
     const key = keyOf(note);
     const selected = key === openKey() && !state.draft;
     const row = h("div", {
@@ -1217,7 +1313,7 @@ function noteRow(note: Summary, words: string[], searching: boolean) {
         h("span", { class: "row-title-text" }, ...highlight(note.title, words)),
         note.pinned && searching ? icon("pin") : null),
     h("div", { class: "row-meta" },
-        h("span", { class: "row-date" }, shortDate(note.lastEdited)),
+        h("span", { class: "row-date" }, shortDate(note.lastEdited, today)),
         h("span", { class: "row-preview" }, ...highlight(preview(note), words))),
     searching ? h("div", { class: "row-folder" }, icon("file-directory"), note.folder ? note.folder.split("/").pop()! : "Notes") : null);
     return row;
@@ -1227,30 +1323,39 @@ function renderList(preserveScroll = false) {
     const searching = state.query.trim() !== "";
     const words = state.query.toLowerCase().split(/\s+/).filter(Boolean);
     listTitle.textContent = searching ? "Search" : selectionName();
-    listCount.textContent = searching ? plural(state.notes.length, "result") : plural(state.notes.length, "note");
+    listCount.textContent = listStatus !== "ready" ? "" : searching ? plural(state.notes.length, "result") : plural(state.notes.length, "note");
     const children: HTMLElement[] = [];
     if (state.draft) {
         children.push(h("div", { class: "row draft", role: "option", tabindex: "-1", "aria-selected": "true" },
             h("div", { class: "row-title" }, h("span", { class: "row-title-text" }, titleFromText(textarea.value))),
             h("div", { class: "row-meta" }, h("span", { class: "row-date" }, "Now"), h("span", { class: "row-preview" }, "No additional text"))));
     }
+    const today = startOfDay(new Date());
     if (searching) {
-        children.push(...state.notes.map(note => noteRow(note, words, true)));
+        children.push(...state.notes.map(note => noteRow(note, words, true, today)));
     } else {
         const groups = new Map<string, Summary[]>();
         for (const note of state.notes) {
-            const name = note.pinned ? "Pinned" : groupOf(note.lastEdited);
-            groups.set(name, [...groups.get(name) ?? [], note]);
+            const name = note.pinned ? "Pinned" : groupOf(note.lastEdited, today);
+            const group = groups.get(name);
+            if (group) group.push(note);
+            else groups.set(name, [note]);
         }
         const ordered = [...groups].sort(([a], [b]) => Number(b === "Pinned") - Number(a === "Pinned"));
         for (const [name, notes] of ordered) {
             const id = `group-${name.replace(/\W+/g, "-")}`;
             children.push(h("div", { class: "group", role: "group", "aria-labelledby": id },
                 h("div", { class: "group-title", id, role: "presentation" }, name === "Pinned" ? icon("pin") : null, name),
-                ...notes.map(note => noteRow(note, words, false))));
+                ...notes.map(note => noteRow(note, words, false, today))));
         }
     }
-    if (!children.length) {
+    if (listStatus === "loading") {
+        children.push(h("div", { class: "list-empty", role: "status" }, "Loading notes…"));
+    } else if (listStatus !== "ready") {
+        children.push(h("div", { class: "list-empty list-error", role: "alert" },
+            h("p", {}, listStatus.error),
+            h("button", { type: "button", class: "button", onclick: listStatus.retry }, "Try again")));
+    } else if (!children.length) {
         children.push(h("div", { class: "list-empty" }, searching ? "No matching notes" : "No notes"));
     }
     const hadFocus = rows.contains(document.activeElement);
@@ -1292,9 +1397,10 @@ rows.addEventListener("keydown", event => {
 
 function renderEditor() {
     const active = state.note !== null || state.draft !== null;
-    textarea.hidden = !active || !plain;
-    richElement.hidden = !active || plain;
-    markdownButton.disabled = !active || !!state.note?.warning;
+    textarea.hidden = !active || !plain || editorWaiting;
+    richElement.hidden = !active || plain || editorWaiting;
+    editorLoading.hidden = !active || !editorWaiting;
+    markdownButton.disabled = !active || !!state.note?.warning || editorWaiting;
     markdownButton.setAttribute("aria-pressed", String(plain));
     markdownButton.setAttribute("aria-label", plain ? "View as rich text" : "View as Markdown");
     markdownButton.title = plain ? "View as rich text" : "View as Markdown";
@@ -1357,7 +1463,10 @@ document.addEventListener("keydown", event => {
     if (event.key === "Escape") closeOverlayOnEscape(event.target);
 });
 
+let eventsConnected = false;
 function connectEvents() {
+    if (eventsConnected) return;
+    eventsConnected = true;
     const events = new EventSource("api/events");
     let opened = false;
     events.addEventListener("open", () => {
@@ -1370,20 +1479,64 @@ function connectEvents() {
 }
 
 // The user moved on before recovered text could be shown; keep it for the next load rather than replacing their editor.
-function stashRecovery({ noteId, folder, body }: Recovery) {
-    void request("api/note/rescue", { ...(noteId ? { id: noteId } : {}), folder, body, stash: true }).catch(() => {});
+// Resolves whether the server kept it.
+const stashBody = ({ noteId, folder, body }: Recovery) => ({ ...(noteId ? { id: noteId } : {}), folder, body, stash: true });
+function stashRecovery(recovery: Recovery) {
+    return request("api/note/rescue", stashBody(recovery)).then(() => true, () => false);
+}
+
+// Recovered text the server has not confirmed keeping stays here until it does: retried on each list load,
+// and sent when the panel closes, even while a stash is still in flight.
+const heldRecoveries = new Set<Recovery>();
+let retryingRecoveries = false;
+async function keepRecovery(recovery: Recovery) {
+    heldRecoveries.add(recovery);
+    if (await stashRecovery(recovery)) heldRecoveries.delete(recovery);
+    else showToast("Notes could not keep recovered unsaved text yet; it will try again.");
+}
+async function retryHeldRecoveries() {
+    if (retryingRecoveries) return;
+    retryingRecoveries = true;
+    for (const recovery of [...heldRecoveries]) {
+        if (await stashRecovery(recovery)) heldRecoveries.delete(recovery);
+    }
+    retryingRecoveries = false;
+}
+addEventListener("pagehide", () => {
+    for (const recovery of new Set([...claimedRecoveries, ...heldRecoveries])) {
+        void fetch("api/note/rescue", { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify(stashBody(recovery)) })
+            .catch(() => {});
+    }
+});
+
+// Recovered text the server handed over that is not yet in the editor or kept again; closing sends it back.
+const claimedRecoveries = new Set<Recovery>();
+async function recover(recovery: Recovery) {
+    claimedRecoveries.add(recovery);
+    try {
+        await showRecovery(recovery);
+    } finally {
+        claimedRecoveries.delete(recovery);
+    }
 }
 
 // Shows text a closing panel could not save, as a conflict the user resolves with Reload or Keep Mine.
-async function recover(recovery: Recovery) {
+async function showRecovery(recovery: Recovery) {
     const { noteId, folder, body } = recovery;
     const gen = ++navGen;
     let note: Note | null = null;
     try {
         note = noteId ? await request<Note>(`api/note?id=${encodeURIComponent(noteId)}`) : null;
-    } catch { /* the note is gone; recover the text as a new draft */ }
+    } catch (error) {
+        // The library could not answer; keep the text for the next load rather than saving it as a copy.
+        // If even that fails, fall through and show it as a new draft so it is not lost.
+        if (error instanceof ApiError && (error.code === "library_busy" || error.code === "offline") && await stashRecovery(recovery)) {
+            return showToast(message(error));
+        }
+        /* the note is gone; recover the text as a new draft */
+    }
     // The user moved on while this loaded; hand the text back to the server rather than replacing their editor.
-    if (gen !== navGen) return stashRecovery(recovery);
+    if (gen !== navGen) return keepRecovery(recovery);
     if (note?.body === body) return void (await openNote(keyOf(note)));
     state.note = note;
     state.draft = note ? null : newDraft(folder);
@@ -1403,48 +1556,93 @@ async function recover(recovery: Recovery) {
     }
 }
 
-async function start() {
+type Initial = { context: typeof state.context; ui: UiState };
+type Startup = { target: Target | null; recovery: Recovery | null };
+
+// Composing before startup finishes wins over the restored note and recovered text, even across retries.
+async function start(gen = navGen) {
+    markOnce("start");
+    resumeStartup = null;
+    // Requests begin before the first render. Neither has side effects: the open target and recovered text are
+    // claimed separately, once the lists load, so a library that cannot load yet never loses them.
+    const initialRequest = request<Initial>("api/state");
+    const foldersRequest = request<{ folders: FolderNode }>("api/folders");
+    foldersRequest.catch(() => { /* refreshLists reports it */ });
+    listStatus = "loading";
     layout();
+    renderList();
     renderEditor();
-    // Composing before startup finishes wins over the restored note and recovered text.
-    const gen = navGen;
+    let initial: Initial;
     try {
-        const initial = await request<{ context: typeof state.context; ui: UiState; target: Target | null; recovery: Recovery | null }>("api/state");
-        state.context = initial.context;
-        copilotButton.hidden = !state.context.sessionId;
-        const stale = gen !== navGen;
-        state.ui = stale ? { ...initial.ui, selection: state.ui.selection, noteId: state.ui.noteId } : initial.ui;
-        const selection = state.ui.selection;
-        if ("view" in selection && !viewAvailable(selection.view)) state.ui.selection = { view: "all" };
-        layout();
-        await refreshLists();
-        if (stale || gen !== navGen) {
-            state.ui.noteId = state.note ? keyOf(state.note) : null;
-            if (initial.recovery) stashRecovery(initial.recovery);
-            return connectEvents();
-        }
-        const target = initial.target;
-        if (initial.recovery) await recover(initial.recovery);
-        else if (target) await applyTarget(target);
-        else if (state.ui.noteId) {
-            const key = state.ui.noteId;
-            const gen = navGen;
-            try {
-                const note = await request<Note>(`api/note?id=${encodeURIComponent(key)}`);
-                if (gen !== navGen) return connectEvents();
-                state.note = note;
-                setText(note.body, { resetView: true });
-                renderEditor();
-                renderList();
-            } catch {
-                state.ui.noteId = null;
-                persistUi();
-            }
-        }
-        connectEvents();
+        initial = await initialRequest;
     } catch (error) {
+        listStatus = { error: message(error), retry: () => start(gen) };
+        // A search or refresh that loads the lists later must not leave startup unfinished either.
+        resumeStartup = () => start(gen);
+        return renderList();
+    }
+    state.context = initial.context;
+    copilotButton.hidden = !state.context.sessionId;
+    const stale = gen !== navGen;
+    state.ui = stale ? { ...initial.ui, selection: state.ui.selection, noteId: state.ui.noteId } : initial.ui;
+    const selection = state.ui.selection;
+    if ("view" in selection && !viewAvailable(selection.view)) state.ui.selection = { view: "all" };
+    layout();
+    // The restored note loads alongside the list rather than after it; the list request is issued first.
+    const restoreKey = stale ? null : state.ui.noteId;
+    let restored: Promise<Note> | null = null;
+    // A read that failed while the library was loading is read again rather than reused.
+    const restore = () => {
+        const note = restoreKey ? request<Note>(`api/note?id=${encodeURIComponent(restoreKey)}`) : null;
+        note?.catch(error => {
+            if (restored === note && !(error instanceof ApiError && error.code === "not_found")) restored = null;
+        });
+        return note;
+    };
+    // Runs after the first list load that succeeds, here or from a retry, search or refresh.
+    resumeStartup = () => finishStartup(gen, stale, restored ?? restore());
+    const lists = refreshLists(false, foldersRequest);
+    restored = restore();
+    // Fetching and evaluating the editor would delay the list requests, so it starts once they are sent.
+    loadEditor().catch(() => { /* prepareEditor retries and reports it */ });
+    await lists;
+}
+
+async function finishStartup(gen: number, stale: boolean, restored: Promise<Note> | null) {
+    let claimed: Startup = { target: null, recovery: null };
+    try {
+        claimed = await request<Startup>("api/startup", {});
+    } catch (error) {
+        // Nothing was handed over; a pending reveal still reaches the event stream below.
         showToast(message(error));
     }
+    const { target, recovery } = claimed;
+    if (stale || gen !== navGen) {
+        state.ui.noteId = state.note ? keyOf(state.note) : null;
+        if (recovery) await keepRecovery(recovery);
+        return connectEvents();
+    }
+    if (recovery) await recover(recovery);
+    else if (target) await applyTarget(target);
+    else if (restored) {
+        try {
+            const note = await restored;
+            if (gen !== navGen) return connectEvents();
+            state.note = note;
+            setText(note.body, { resetView: true });
+            renderEditor();
+            renderList();
+        } catch (error) {
+            // Forget the restored note only when it is gone, not when the library was briefly unavailable.
+            if (error instanceof ApiError && error.code === "not_found") {
+                state.ui.noteId = null;
+                persistUi();
+            } else {
+                showToast(message(error));
+            }
+        }
+    }
+    connectEvents();
 }
 
 void start();
