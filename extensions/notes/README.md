@@ -26,10 +26,11 @@ before using the experimental extension for important notes.
 
 ### In context
 
-Notes beside a chat, in four scenes. These are **illustrations**, not captures
-of the native app: the window frame, sessions sidebar, chat transcript and
-tool-call rows are a mock-up (a fictional `storefront` project) built around
-the real Notes panel running in headless Microsoft Edge on Windows. Notes stays
+Notes beside a chat, in four scenes from a fictional Azure-hosted app called
+Shiplog. These are **illustrations**, not captures of the native app: the
+window frame, sessions sidebar, chat transcript and tool-call rows are a mock-up
+(a fictional `contoso/shiplog` project) built around the real Notes panel
+running in headless Microsoft Edge on Windows. Notes stays
 docked in one continuous window; the surrounding chat and sidebar are faded
 to emphasize the panel, not shown as a separate app. The reconstructed composer
 shows Autopilot and Copilot Fusion · Max as example UI labels, not required
@@ -39,28 +40,26 @@ scene the send was a mocked callback: the prompt and attached note shown in the
 chat are what the panel sent, while the agent's reply is scripted. No real
 notes, sessions, chat turns or OS trash were used.
 
-**Capture decisions while you work.** The agent saves the decision from the
-conversation with `notes_manage`. It appears under This Session with a Copilot
-mark, with its backoff table ready to read.
+**Capture decisions while you work.** The agent records why Shiplog is keeping
+Azure Static Web Apps, Azure SQL, and Microsoft Entra ID—and deferring extra
+services. The decision appears under This Session.
 
-![Light theme: in a "Checkout retries" chat the agent saves a "Decision: checkout retry policy" note, which is open in the Notes panel under This Session.](docs/notes-in-context-capture.png)
+![Light theme: in the Shiplog chat, the agent saves a decision to keep Azure Static Web Apps, Azure SQL, and Microsoft Entra ID and defer extra services. The note is open under This Session.](docs/notes-in-context-capture.png)
 
-**Ask Copilot about the note you are reading.** The prompt is queued to the
-session's chat with the note attached, and the toolbar confirms "Sent to chat".
+**Turn a launch checklist into work.** Ask Copilot sends the checklist note to
+the chat and drafts Azure Boards work items for the first real user.
 
-![Light theme: the "Launch checklist: checkout v2" note is open with "Sent to chat" in the toolbar, and the chat shows the prompt with the note attached and the agent replying.](docs/notes-in-context-ask.png)
+![Light theme: the Shiplog launch checklist is open with "Sent to chat" in the toolbar. The chat shows an attached-note prompt for Azure Boards tasks and a scripted reply.](docs/notes-in-context-ask.png)
 
-**Recall it from a different session.** Asked to draft a runbook section from
-"whatever we already decided", the agent searches the library, reads the
-decision and uses its numbers instead of guessing.
+**Recall an architecture decision.** In another session, the agent checks the
+saved choice to keep drafts in Azure SQL before considering Cosmos DB.
 
-![Dark theme: search results for "retry backoff" beside the open decision note, while the chat shows the agent searching and reading notes before editing a runbook.](docs/notes-in-context-recall.png)
+![Dark theme: the chat searches Azure SQL notes and recalls the decision to defer Cosmos DB, with the decision note open in the Notes panel.](docs/notes-in-context-recall.png)
 
-**Browse everything the project knows.** The expanded three-column view lists
-the project's notes, including a pinned working-agreements note that the agent
-read before opening a pull request.
+**Keep working agreements close.** The expanded project view shows Shiplog's
+pinned agreements: “Vibes for exploration, evidence for shipping.”
 
-![Dark theme, expanded panel: folders, the six notes in This Project and the open, pinned "Storefront working agreements" note beside a narrow chat column.](docs/notes-in-context-library.png)
+![Dark theme, expanded panel: the six Shiplog project notes and pinned working agreements beside a chat preparing an Azure SQL autosave fix.](docs/notes-in-context-library.png)
 
 ### The panel on its own
 

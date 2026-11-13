@@ -10,6 +10,7 @@ and plugin versioning follows [Semantic Versioning](https://semver.org/spec/v2.0
 ### Added — Notes in-context screenshots
 - The Notes guide now opens its Screenshots section with four scenes that show the panel beside a chat: the agent saving a decision, Ask Copilot, recalling a decision from another session, and the expanded project view. The three panel-only screenshots remain under "The panel on its own".
 - Notes stays docked in one continuous app frame, with faded surrounding context and reconstructed composer controls matching the product reference.
+- The fictional Shiplog story now uses Azure Static Web Apps, Azure SQL, Microsoft Entra ID, Azure Monitor and Azure Boards, with deadpan prototype-to-production easter eggs.
 - These are illustrations, not captures of the native app. The window frame, sessions sidebar and chat are a mock-up around the real panel running in headless Microsoft Edge on Windows, with synthetic notes in a disposable library, the panel's standalone light/dark fallback colors, and a mocked send callback. No real notes, sessions or chat turns appear. Docs and image assets only; no code or manifest version change.
 
 ### Fixed — Notes without a session
