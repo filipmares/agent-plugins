@@ -3,7 +3,9 @@ import { Editor, Extension, InputRule, Node, type JSONContent } from "@tiptap/co
 import StarterKit from "@tiptap/starter-kit";
 import { ListItem } from "@tiptap/extension-list";
 import { Table, TableRow, TableCell, TableHeader } from "@tiptap/extension-table";
-import { Selection, type EditorState, type Transaction } from "@tiptap/pm/state";
+import { Plugin, Selection, type EditorState, type Transaction } from "@tiptap/pm/state";
+import { Decoration, DecorationSet } from "@tiptap/pm/view";
+import type { Node as PMNode } from "@tiptap/pm/model";
 import { closeHistory } from "@tiptap/pm/history";
 import { markdownToDoc, roundTripSafe, serializeEdit } from "./rich-codec";
 import { safeExternal } from "./common";
@@ -179,8 +181,21 @@ export function editorExtensions(noteKey: () => string | null = () => null, open
     ];
 }
 
+// The note header sits directly below an opening heading, or at the top when the note has none.
+export const headerPosition = (doc: PMNode) => doc.firstChild?.type.name === "heading" ? doc.firstChild.nodeSize : 0;
+
+// Non-editable, outside the document: never serialized, and its own clicks and keys bypass the editor.
+function headerExtension(header: HTMLElement) {
+    return Extension.create({
+        name: "noteHeader",
+        addProseMirrorPlugins: () => [new Plugin({ props: { decorations: state => DecorationSet.create(state.doc, [
+            Decoration.widget(headerPosition(state.doc), header, { key: "note-header", side: -1, ignoreSelection: true, stopEvent: () => true }),
+        ]) } })],
+    });
+}
+
 export function createRichEditor(options: {
-    element: HTMLElement; body: string; noteKey: () => string | null;
+    element: HTMLElement; body: string; noteKey: () => string | null; header?: HTMLElement;
     change: (body: string) => void; blur: () => void; error: (message: string) => void; notice: (message: string) => void;
     link: () => void; open: (url: string) => void;
 }) {
@@ -216,7 +231,8 @@ export function createRichEditor(options: {
     const editor = new Editor({
         element: options.element,
         injectCSS: false,
-        extensions: [...editorExtensions(options.noteKey, options.open), shortcuts],
+        extensions: [...editorExtensions(options.noteKey, options.open), shortcuts,
+            ...(options.header ? [headerExtension(options.header)] : [])],
         content: markdownToDoc(options.body),
         editorProps: {
             attributes: { role: "textbox", "aria-label": "Note", "aria-multiline": "true", spellcheck: "true" },
