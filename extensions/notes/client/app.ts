@@ -10,7 +10,8 @@ type Summary = {
     project: string | null; created_by: string | null; pinned: boolean; version: string;
     snippet?: string; warning?: Warning;
 };
-type Note = Summary & { body: string };
+type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
+type Note = Summary & { body: string; frontmatter: Record<string, JsonValue> };
 type FolderNode = { path: string; name: string; count: number; version?: string | null; warning?: Warning; children: FolderNode[] };
 type Selection = { view: "all" | "project" | "session" } | { folder: string };
 type UiState = { sidebar: boolean; selection: Selection; noteId: string | null; collapsed: string[] };
@@ -110,12 +111,22 @@ const listTitle = h("h1", { class: "list-title" });
 const listCount = h("p", { class: "list-count", "aria-live": "polite" });
 const search = h("input", { type: "search", class: "search-input", placeholder: "Search all notes", "aria-label": "Search all notes", spellcheck: "false", autocomplete: "off" });
 const rows = h("div", { class: "rows", role: "listbox", "aria-label": "Notes", tabindex: "0" });
-const dateLine = h("p", { class: "date-line" });
+const frontmatterContext = h("div", { class: "frontmatter-context" });
+const frontmatterDetails = h("div", { id: "frontmatter-details", class: "frontmatter-details", hidden: true });
+const frontmatterMore = h("button", {
+    type: "button", class: "frontmatter-more", "aria-expanded": "false", "aria-controls": "frontmatter-details",
+    onclick: () => setFrontmatterOpen(frontmatterDetails.hidden === true),
+}, "More", icon("chevron-down"));
+const frontmatterView = h("section", { class: "frontmatter-view", "aria-label": "Note properties", hidden: true },
+    h("div", { class: "frontmatter-strip" }, frontmatterContext, frontmatterMore), frontmatterDetails);
 const banner = h("div", { class: "banner", role: "status", hidden: true });
 const fidelityBanner = h("div", { class: "banner", role: "status", hidden: true });
 const textarea = h("textarea", { class: "note-text", "aria-label": "Note", spellcheck: "true", hidden: true });
 const richElement = h("div", { class: "rich-note", hidden: true });
 let rich: Editor | null = null;
+// Each rich editor owns a slot below its opening heading; Markdown view keeps the properties above the text instead.
+let richHeader: HTMLElement | null = null;
+let heldFrontmatterFocus: string | null = null;
 let plain = false;
 let guarded = false;
 let editorError = false;
@@ -177,7 +188,7 @@ const editorPane = h("main", { class: "editor-pane", "aria-label": "Editor" },
         h("span", { class: "spacer" }), saveButton, saveSeparator, markdownButton, copilotButton, pinButton, moveButton, trashButton),
     h("div", { class: "editor-feedback" }, saveDetails, askStatus, saveAnnouncement),
     askPanel, banner, fidelityBanner,
-    h("div", { class: "editor-scroll" }, dateLine, textarea, richElement, emptyEditor),
+    h("div", { class: "editor-scroll" }, frontmatterView, textarea, richElement, emptyEditor),
     formattingHelp,
 );
 const backdrop = h("div", { class: "backdrop", onclick: () => setOverlay(false) });
@@ -423,6 +434,7 @@ function setText(body: string, { resetView = false } = {}) {
     const focused = document.activeElement === textarea || rich?.isFocused;
     const wasPlain = plain;
     const position = rich?.state.selection.from;
+    heldFrontmatterFocus = frontmatterFocus();
     textarea.value = body;
     state.sent = textarea.value;
     saveFailure = null;
@@ -444,6 +456,7 @@ function prepareEditor() {
     editorPane.querySelector(".link-popover")?.remove();
     rich?.destroy();
     rich = null;
+    richHeader = null;
     richElement.replaceChildren();
     editorError = false;
     editorErrorText = "";
@@ -451,8 +464,9 @@ function prepareEditor() {
     plain = !!state.note?.warning;
     if (plain || (!state.note && !state.draft)) return;
     try {
+        richHeader = h("div", { class: "frontmatter-slot" });
         const result = createRichEditor({
-            element: richElement, body: textarea.value, noteKey: openKey,
+            element: richElement, body: textarea.value, noteKey: openKey, header: richHeader,
             change: body => { textarea.value = body; editorError = false; editorErrorText = ""; changedText(); },
             blur: () => void save(),
             error: text => { editorError = true; editorErrorText = text; clearTimeout(saveTimer); renderSaveStatus(); },
@@ -465,6 +479,7 @@ function prepareEditor() {
     } catch (error) {
         rich?.destroy();
         rich = null;
+        richHeader = null;
         plain = true;
         showToast(`Rich editing is unavailable. Your Markdown is unchanged. ${message(error)}`);
     }
@@ -478,13 +493,15 @@ function focusEditor() {
 function toggleMarkdown(forceRich = false) {
     if (!state.note && !state.draft) return;
     if (editorError) { showToast("Resolve the rich-editor error before changing views; your rich text is still in the panel."); return; }
+    heldFrontmatterFocus = frontmatterFocus();
+    const keepPropertyFocus = heldFrontmatterFocus !== null;
     if (!plain) plain = true;
     else {
         prepareEditor();
         if (forceRich && rich && !state.note?.warning) { guarded = false; plain = false; }
     }
     renderEditor();
-    focusEditor();
+    if (!keepPropertyFocus) focusEditor();
 }
 
 async function openExternal(url: string) {
@@ -1406,6 +1423,122 @@ rows.addEventListener("keydown", event => {
     event.preventDefault();
 });
 
+const frontmatterGroups = [
+    { title: "Dates and origin", fields: [["created", "Created"], ["updated", "Updated"], ["branch", "Original branch"]] },
+    { title: "Technical details", fields: [["id", "Note ID"], ["session_id", "Original session ID"], ["sessions", "Editing sessions"]] },
+] as const;
+const builtInFields = new Set<string>(["created_by", "project", "session_name", "pinned",
+    ...frontmatterGroups.flatMap(group => group.fields.map(([key]) => key))]);
+const expandedFrontmatter = new Set<string>();
+let shownFrontmatter: { key: string; version: string } | null = null;
+
+function setFrontmatterOpen(open: boolean) {
+    frontmatterDetails.hidden = !open;
+    frontmatterMore.setAttribute("aria-expanded", String(open));
+    frontmatterMore.replaceChildren(open ? "Less" : "More", icon("chevron-down"));
+}
+
+function frontmatterRow(key: string, label: string, value: JsonValue) {
+    let content: Child;
+    if ((key === "created" || key === "updated") && typeof value === "string") {
+        content = h("time", { datetime: value, title: value },
+            new Date(value).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }));
+    } else if (key === "sessions" && Array.isArray(value)) {
+        content = value.length
+            ? h("ul", { class: "frontmatter-sessions" }, ...value.map(id => h("li", {}, h("code", {}, String(id)))))
+            : "No sessions recorded";
+    } else if (value !== null && typeof value === "object") {
+        content = h("pre", { class: "frontmatter-value" }, JSON.stringify(value, null, 2));
+    } else {
+        const text = typeof value === "string" ? (value || "(empty string)") : JSON.stringify(value);
+        content = h(key === "id" || key === "session_id" ? "code" : "span", { class: "frontmatter-value" }, text);
+    }
+    return h("div", { class: "frontmatter-row", "data-property": key }, h("dt", {}, label), h("dd", {}, content));
+}
+
+function frontmatterGroup(title: string, rows: HTMLElement[]) {
+    return rows.length ? h("section", { class: "frontmatter-group", "aria-label": title },
+        h("h3", {}, title), h("dl", {}, ...rows)) : null;
+}
+
+function frontmatterFocus() {
+    const active = document.activeElement;
+    if (active === frontmatterMore) return "more";
+    return active && frontmatterView.contains(active) ? active.getAttribute("data-frontmatter-field") : null;
+}
+
+function renderFrontmatter() {
+    const note = state.note;
+    const focused = heldFrontmatterFocus ?? frontmatterFocus();
+    heldFrontmatterFocus = null;
+    const host = rich && !plain ? richHeader : null;
+    if (host) { if (frontmatterView.parentNode !== host) host.append(frontmatterView); }
+    else if (frontmatterView.nextSibling !== textarea) textarea.before(frontmatterView);
+    frontmatterView.hidden = !note || !!note.warning;
+    if (!note || note.warning) {
+        shownFrontmatter = null;
+        expandedFrontmatter.clear();
+        frontmatterContext.replaceChildren();
+        frontmatterDetails.replaceChildren();
+        setFrontmatterOpen(false);
+        return;
+    }
+    const key = keyOf(note);
+    const sameNote = key === shownFrontmatter?.key;
+    if (!(sameNote && note.version === shownFrontmatter?.version)) {
+        if (!sameNote) {
+            expandedFrontmatter.clear();
+            setFrontmatterOpen(false);
+        }
+        fillFrontmatter(note);
+        shownFrontmatter = { key, version: note.version };
+    }
+    // Moving between the rich editor and Markdown view, or rebuilding either, drops focus from the row.
+    if (sameNote && focused && !frontmatterView.contains(document.activeElement)) {
+        const pill = Array.from(frontmatterContext.children).find(item => item.getAttribute("data-frontmatter-field") === focused) as HTMLElement | undefined;
+        (pill ?? frontmatterMore).focus();
+    }
+}
+
+function fillFrontmatter(note: Note) {
+    const metadata = note.frontmatter;
+    const context: HTMLElement[] = [];
+    if (metadata.created_by === "agent" || metadata.created_by === "user") {
+        const agent = metadata.created_by === "agent";
+        context.push(h("span", { class: "frontmatter-item", "data-property": "created_by" },
+            icon(agent ? "copilot" : "person"), h("span", { class: "sr-only" }, "Created by "), agent ? "Agent" : "Human"));
+    }
+    for (const [field, label, iconName] of [
+        ["project", "Origin project", "repo"], ["session_name", "Original session", "comment-discussion"],
+    ]) {
+        const value = metadata[field];
+        if (typeof value !== "string") continue;
+        const button = h("button", {
+            type: "button", class: "frontmatter-item", "data-property": field, "data-frontmatter-field": field,
+            "aria-label": `${label}: ${value || "(empty string)"}`, title: `${label}: ${value}`,
+            "aria-expanded": String(expandedFrontmatter.has(field)),
+            onclick: () => {
+                if (expandedFrontmatter.has(field)) expandedFrontmatter.delete(field);
+                else expandedFrontmatter.add(field);
+                button.setAttribute("aria-expanded", String(expandedFrontmatter.has(field)));
+            },
+        }, icon(iconName), h("span", { class: "frontmatter-context-value" }, value || "(empty string)"));
+        context.push(button);
+    }
+    frontmatterContext.replaceChildren(...context);
+    frontmatterDetails.replaceChildren(
+        frontmatterGroup("Properties", [
+            frontmatterRow("pinned", "Pinned", note.pinned ? "Yes" : "No"),
+            ...Object.entries(metadata).filter(([field]) => !builtInFields.has(field))
+                .map(([field, value]) => frontmatterRow(field, field, value)),
+        ])!,
+        ...frontmatterGroups.map(group => frontmatterGroup(group.title,
+            group.fields.filter(([field]) => Object.hasOwn(metadata, field))
+                .map(([field, label]) => frontmatterRow(field, label, metadata[field]))))
+            .filter((group): group is HTMLElement => group !== null),
+    );
+}
+
 function renderEditor() {
     const active = state.note !== null || state.draft !== null;
     renderSaveStatus();
@@ -1415,15 +1548,13 @@ function renderEditor() {
     markdownButton.setAttribute("aria-pressed", String(plain));
     markdownButton.setAttribute("aria-label", plain ? "View as rich text" : "View as Markdown");
     markdownButton.title = plain ? "View as rich text" : "View as Markdown";
+    renderFrontmatter();
     copilotButton.disabled = !active;
     fidelityBanner.hidden = !active || !guarded;
     if (guarded) fidelityBanner.replaceChildren(h("span", {}, GUARD_MESSAGE),
         h("button", { type: "button", class: "button", onclick: () => toggleMarkdown(true) }, "Edit rich anyway"));
     emptyEditor.hidden = active;
     formattingHelp.hidden = !active || plain;
-    dateLine.textContent = state.draft
-        ? "New Note"
-        : state.note ? new Date(state.note.lastEdited).toLocaleString(undefined, { dateStyle: "long", timeStyle: "short" }) : "";
     for (const button of [pinButton, moveButton, trashButton]) button.disabled = !state.note;
     const pinned = state.note?.pinned === true;
     pinButton.replaceChildren(icon(pinned ? "pin-slash" : "pin"));

@@ -7,6 +7,11 @@ and plugin versioning follows [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## [Unreleased]
 
+### Added — Notes frontmatter viewing
+- A read-only row of property pills sits below each note's opening heading (above the text in Markdown view) and shows Agent/Human authorship, origin project, and the original session name. More stays beside the pills at every width and reveals pin status, custom properties, dates, and technical details; long names expand with mouse, touch, or keyboard. Frontmatter editing is not included, and existing pin actions are unchanged.
+- The last-edited date line above the note moves into More's dates.
+- Bumped the plugin and marketplace manifests to `2.2.6`.
+
 ### Added — Notes save-state icon
 - Added a save-state icon in the editor action toolbar, with readable status details, a persistent save-failure explanation, and Retry save. Conflicts and Markdown fidelity warnings retain their separate resolution paths.
 - Moved Ask Copilot feedback below the toolbar to keep action buttons available in narrow layouts; save errors and recovery are announced without narrating routine autosaves.
@@ -31,6 +36,7 @@ and plugin versioning follows [Semantic Versioning](https://semver.org/spec/v2.0
 
 ### Fixed — Notes scrolling
 - Keep the Notes panel's grid row within its available height so the folder list, note list, and editor scroll inside their panes instead of expanding the panel; background refreshes preserve list scroll and focus.
+
 ### Fixed — Notes without a session
 - The Notes canvas now opens and saves notes when the Copilot app opens it without a session. It previously refused with "Cannot read this session's workspace.yaml; no provenance was guessed", because the app runs a sessionless canvas under a stand-in session that has no `workspace.yaml` in the Copilot home.
 - Notes written from a sessionless panel carry no session origin: no `session_id` or `session_name`, and edits do not add to `sessions`. The stand-in session is never recorded. Only an absent `workspace.yaml` counts as no session; unreadable, oversized, malformed or mismatched session metadata is still refused.
