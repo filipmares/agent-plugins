@@ -14,8 +14,9 @@ if (instrumented === source) throw new Error("Cannot await Notes client startup.
 const lazy = instrumented.replace(/^const importEditor = .+;$/m, "");
 if (lazy === instrumented) throw new Error("Cannot replace the Notes editor loader.");
 const script = new Bun.Transpiler({ loader: "ts" }).transformSync(lazy + `
-globalThis.client = { state, textarea, toast, openNote, moveNote, save, resolveConflict, refresh, select, askInput, askStatus, askPanel, copilotButton, compose, toggleMarkdown, rows, isPlain: () => plain,
+globalThis.client = { state, textarea, toast, openNote, moveNote, save, resolveConflict, refresh, select, askInput, askStatus, askPanel, copilotButton, compose, toggleMarkdown, rows, renderList, listCount, formattingHelp, isPlain: () => plain,
     editorLoading, richElement, markdownButton, focusEditor, isWaiting: () => editorWaiting, listStatus: () => listStatus,
+    saveButton, saveDetails, saveAnnouncement, saving: () => inflight,
     app, sidebar, listPane, editorPane, sidebarToggle, showFoldersButton, backToNotesButton, backdrop, setOverlay, rememberFocus, closeOverlayOnEscape, overlayOpen: () => overlay };
 `);
 const context = { sessionId: "client-test", actor: "user" };
@@ -46,6 +47,7 @@ class Element extends EventTarget {
         if (name === "disabled") this.disabled = true;
     }
     getAttribute(name) { return this.attributes.get(name) ?? null; }
+    removeAttribute(name) { this.attributes.delete(name); }
     hasAttribute(name) { return this.attributes.has(name); }
     append(...children) {
         for (const child of children) {
@@ -118,6 +120,8 @@ async function openClient({ richSafe = false, importEditor, respond, startupToas
     const calls = [];
     let afterMove;
     let afterNotes;
+    let beforeSave;
+    let richCallbacks;
     let timerId = 0;
     const timers = new Map();
     const media = new Map();
@@ -127,7 +131,10 @@ async function openClient({ richSafe = false, importEditor, respond, startupToas
         GUARD_MESSAGE: "This note uses Markdown the rich editor can't keep exactly.",
         safeExternal: value => /^(https?:|mailto:)/.test(value),
         // Only the rendered view is inert. Real codec/schema and browser tests cover the rich view separately.
-        createRichEditor: () => ({ safe: richSafe, editor: { destroy() {}, isFocused: false, state: { selection: { from: 1 } } } }),
+        createRichEditor: callbacks => {
+            richCallbacks = callbacks;
+            return { safe: richSafe, editor: { destroy() {}, isFocused: false, state: { selection: { from: 1 } } } };
+        },
         importEditor: () => importEditor ? importEditor({ createRichEditor: sandbox.createRichEditor }) : Promise.resolve({ createRichEditor: sandbox.createRichEditor }),
         matchMedia: query => {
             const result = Object.assign(new EventTarget(), { matches: false });
@@ -137,13 +144,17 @@ async function openClient({ richSafe = false, importEditor, respond, startupToas
         EventSource: class extends EventTarget { constructor() { super(); eventSources += 1; } close() {} },
         __ICONS__: new Proxy({}, { get: () => ({ width: 16, path: "" }) }),
         addEventListener: window.addEventListener.bind(window),
-        setTimeout: callback => { timers.set(++timerId, callback); return timerId; },
+        setTimeout: (callback, delay) => { timers.set(++timerId, { callback, delay }); return timerId; },
         clearTimeout: id => timers.delete(id),
         fetch(path, options = {}) {
             calls.push({ path, ...options, body: options.body && JSON.parse(options.body) });
             const result = (async () => {
                 const canned = respond?.(path, sandbox.client, window);
                 if (canned) return canned;
+                if (path === "api/note/update" || path === "api/note/create") {
+                    const replacement = await beforeSave?.();
+                    if (replacement) return replacement;
+                }
                 const response = await fetch(new URL(path, server.url), {
                     ...options, headers: { ...options.headers, Origin: new URL(server.url).origin },
                 });
@@ -190,6 +201,14 @@ async function openClient({ richSafe = false, importEditor, respond, startupToas
         },
         delayMove(handler) { afterMove = handler; },
         delayNotes(handler) { afterNotes = handler; },
+        interceptSave(handler) { beforeSave = handler; },
+        richError(text) { richCallbacks.error(text); },
+        richChange(text) { richCallbacks.change(text); },
+        runTimers(delay) {
+            for (const [id, timer] of [...timers]) {
+                if (timer.delay === delay) { timers.delete(id); timer.callback(); }
+            }
+        },
         async settle() { while (pending.size) await Promise.all([...pending]); },
         async close() {
             window.dispatchEvent(new Event("pagehide"));
@@ -219,6 +238,233 @@ afterEach(async () => {
     await Promise.all(clients.map(panel => panel.settle()));
     await server.close();
     await rm(fixture, { recursive: true, force: true });
+});
+
+describe("save-state toolbar icon", () => {
+    test("idle is hidden; new and saved notes have readable, toggleable status without autosave announcements", async () => {
+        const panel = await openClient();
+        expect(panel.saveButton.hidden).toBe(true);
+        await panel.compose();
+        expect(panel.saveButton.hidden).toBe(false);
+        expect(panel.saveButton.getAttribute("aria-label")).toBe("New note - not saved yet");
+        expect(panel.saveDetails.hidden).toBe(true);
+        panel.saveButton.focus();
+        panel.saveButton.dispatchEvent(new Event("click"));
+        expect(panel.saveDetails.hidden).toBe(false);
+        expect(panel.saveButton.getAttribute("aria-expanded")).toBe("true");
+        expect(panel.activeElement).toBe(panel.saveButton);
+        panel.saveButton.dispatchEvent(new Event("click"));
+        expect(panel.saveDetails.hidden).toBe(true);
+
+        const note = await library.create({ body: "# Status\noriginal" }, context);
+        await panel.openNote(note.id);
+        expect(panel.saveButton.getAttribute("aria-label")).toBe("Saved");
+        expect(panel.saveDetails.hidden).toBe(true);
+        panel.textarea.value += "\nEdited";
+        panel.textarea.dispatchEvent(new Event("input"));
+        expect(panel.saveButton.getAttribute("aria-label")).toBe("Unsaved changes");
+        expect(await panel.save()).toBe(true);
+        expect(panel.saveButton.getAttribute("aria-label")).toBe("Saved");
+        expect(panel.saveAnnouncement.textContent).toBe("");
+    });
+
+    test.each([["server", false], ["transport", false], ["server", true], ["transport", true]])("a %s failure stays visible until Retry saves the current text (new draft: %s)", async (kind, draft) => {
+        const note = draft ? null : await library.create({ body: "# Status\noriginal" }, context);
+        const other = await library.create({ body: "# Other\nclean" }, context);
+        const panel = await openClient();
+        if (draft) await panel.compose();
+        else await panel.openNote(note.id);
+        panel.interceptSave(() => {
+            if (kind === "transport") throw new Error("Connection refused");
+            return new Response(JSON.stringify({ error: { code: "io_error", message: "Synthetic save failure" } }), { status: 500 });
+        });
+        panel.textarea.value = "# Status\nunsaved";
+        panel.textarea.dispatchEvent(new Event("input"));
+        expect(await panel.save()).toBe(false);
+        expect(panel.saveButton.getAttribute("aria-label")).toBe("Save failed - Retry save");
+        expect(panel.saveDetails.hidden).toBe(false);
+        expect(panel.saveDetails.textContent).toContain(kind === "server" ? "Synthetic save failure" : "Notes is not responding");
+        const announcement = panel.saveAnnouncement.textContent;
+        panel.runTimers(6000);
+        panel.textarea.value += "\nMore typing";
+        panel.textarea.dispatchEvent(new Event("input"));
+        expect(panel.saveButton.getAttribute("aria-label")).toBe("Save failed - Retry save");
+        expect(panel.saveAnnouncement.textContent).toBe(announcement);
+        if (draft) expect((await library.list()).notes).toHaveLength(1);
+        else expect((await library.read(note.id)).body).toBe(note.body);
+
+        let release, started;
+        const reachedSave = new Promise(resolve => { started = resolve; });
+        panel.interceptSave(() => { started(); return new Promise(resolve => { release = resolve; }); });
+        panel.saveButton.focus();
+        panel.saveButton.dispatchEvent(new Event("click"));
+        await reachedSave;
+        expect(panel.saveButton.getAttribute("aria-label")).toBe("Saving...");
+        expect(panel.saveDetails.hidden).toBe(false);
+        expect(panel.saveDetails.textContent).toContain("Previous save failed");
+        expect(panel.saveAnnouncement.textContent).toBe(announcement);
+        const retrying = panel.saving();
+        release();
+        expect(await retrying).toBe(true);
+        await panel.settle();
+        expect(panel.saveButton.getAttribute("aria-label")).toBe("Saved");
+        expect(panel.saveDetails.hidden).toBe(true);
+        expect(panel.saveAnnouncement.textContent).toBe("Your changes are saved.");
+        expect(panel.activeElement).toBe(panel.saveButton);
+        expect((await library.read(panel.state.note.id)).body).toBe(panel.textarea.value);
+        await panel.openNote(other.id);
+        expect(panel.saveButton.getAttribute("aria-label")).toBe("Saved");
+        expect(panel.saveAnnouncement.textContent).toBe("");
+    });
+
+    test("clearing a failed new draft never announces a successful save", async () => {
+        const panel = await openClient();
+        await panel.compose();
+        panel.interceptSave(() => new Response(JSON.stringify({
+            error: { code: "io_error", message: "Synthetic draft failure" },
+        }), { status: 500 }));
+        panel.textarea.value = "# Draft\nUnsaved content";
+        panel.textarea.dispatchEvent(new Event("input"));
+        expect(await panel.save()).toBe(false);
+        expect(panel.saveAnnouncement.textContent).toContain("Save failed");
+        panel.textarea.value = "# ";
+        panel.textarea.dispatchEvent(new Event("input"));
+        expect(panel.saveButton.getAttribute("aria-label")).toBe("New note - not saved yet");
+        expect(panel.saveAnnouncement.textContent).toBe("");
+        expect((await library.list()).notes).toHaveLength(0);
+    });
+
+    test.each([false, true])("typing during a save never claims newer text is Saved (new draft: %s)", async draft => {
+        const panel = await openClient();
+        if (draft) await panel.compose();
+        else {
+            const note = await library.create({ body: "# Status\noriginal" }, context);
+            await panel.openNote(note.id);
+        }
+        panel.textarea.value = "# Status\nfirst edit";
+        panel.textarea.dispatchEvent(new Event("input"));
+        let release, started;
+        const reachedSave = new Promise(resolve => { started = resolve; });
+        panel.interceptSave(() => { started(); return new Promise(resolve => { release = resolve; }); });
+        const saving = panel.save();
+        await reachedSave;
+        expect(panel.saveButton.getAttribute("aria-label")).toBe("Saving...");
+        panel.textarea.value += "\nnewer edit";
+        panel.textarea.dispatchEvent(new Event("input"));
+        expect(panel.saveButton.getAttribute("aria-label")).toBe("Saving...");
+        release();
+        expect(await saving).toBe(true);
+        expect(panel.saveButton.getAttribute("aria-label")).toBe("Unsaved changes");
+        expect((await library.read(panel.state.note.id)).body).toBe("# Status\nfirst edit");
+        panel.interceptSave(undefined);
+        expect(await panel.save()).toBe(true);
+        expect(panel.saveButton.getAttribute("aria-label")).toBe("Saved");
+        expect((await library.read(panel.state.note.id)).body).toBe(panel.textarea.value);
+    });
+
+    test("a fidelity guard still allows saving; conflict uses its own resolution instead of Retry", async () => {
+        const note = await library.create({ body: "# Status\noriginal" }, context);
+        const panel = await openClient();
+        await panel.openNote(note.id);
+        expect(panel.isPlain()).toBe(true);
+        panel.textarea.value += "\nMarkdown edit";
+        expect(await panel.save()).toBe(true);
+        expect(panel.saveButton.getAttribute("aria-label")).toBe("Saved");
+        await library.update(note.id, { body: "# Status\nexternal", expectedVersion: panel.state.note.version }, context);
+        panel.textarea.value += "\nLocal edit";
+        expect(await panel.save()).toBe(false);
+        expect(panel.saveButton.getAttribute("aria-label")).toBe("Save paused - conflict");
+        const count = panel.calls.filter(call => call.path === "api/note/update").length;
+        panel.saveButton.dispatchEvent(new Event("click"));
+        expect(panel.saveDetails.textContent).toContain("Reload or Keep Mine");
+        expect(panel.calls.filter(call => call.path === "api/note/update")).toHaveLength(count);
+        await panel.resolveConflict(false);
+        expect(panel.saveButton.getAttribute("aria-label")).toBe("Saved");
+    });
+
+    test("rich-editor errors persist without a network Retry and clear only when the editor recovers", async () => {
+        const note = await library.create({ body: "# Status\noriginal" }, context);
+        const panel = await openClient({ richSafe: true });
+        await panel.openNote(note.id);
+        panel.richError("Cannot serialize this edit");
+        expect(panel.saveButton.getAttribute("aria-label")).toBe("Save paused - editor error");
+        expect(panel.saveDetails.hidden).toBe(false);
+        expect(panel.saveDetails.textContent).toContain("Cannot serialize this edit");
+        expect(await panel.save()).toBe(false);
+        panel.saveButton.dispatchEvent(new Event("click"));
+        expect(panel.calls.filter(call => call.path === "api/note/update")).toHaveLength(0);
+        panel.richChange("# Status\nrecovered edit");
+        expect(panel.saveButton.getAttribute("aria-label")).toBe("Unsaved changes");
+        expect(await panel.save()).toBe(true);
+        expect(panel.saveButton.getAttribute("aria-label")).toBe("Saved");
+    });
+});
+
+describe("first-use discoverability", () => {
+    const text = element => element.children.map(child => child instanceof Element ? text(child) : child).join(" ");
+
+    test("empty library and folder offer creation without listbox semantics; drafts restore options", async () => {
+        const panel = await openClient();
+        expect(text(panel.rows)).toContain("Capture your first thought");
+        expect(panel.rows.hasAttribute("role")).toBe(false);
+        expect(panel.rows.hasAttribute("aria-label")).toBe(false);
+        expect(panel.rows.getAttribute("tabindex")).toBe("-1");
+        expect(panel.listCount.textContent).toBe("0 notes");
+        await library.create({ body: "# Elsewhere", folder: "Filled" }, context);
+        await mkdir(join(root, "Empty"));
+        await panel.select({ folder: "Empty" });
+        expect(text(panel.rows)).toContain("No notes in this folder");
+        expect(panel.rows.hasAttribute("role")).toBe(false);
+        panel.rows.querySelector("button").dispatchEvent(new Event("click"));
+        await panel.settle();
+        expect(panel.state.draft.folder).toBe("Empty");
+        expect(panel.rows.getAttribute("role")).toBe("listbox");
+        expect(panel.rows.querySelector(".row").getAttribute("role")).toBe("option");
+    });
+
+    test("no results offers search guidance, retains count, and removes stale option focus", async () => {
+        await library.create({ body: "# Existing" }, context);
+        const panel = await openClient();
+        panel.rows.querySelector(".row").focus();
+        panel.state.query = "missing";
+        panel.state.notes = [];
+        panel.renderList();
+        expect(text(panel.rows)).toContain("Try a different search.");
+        expect(panel.rows.querySelector("button")).toBeNull();
+        expect(panel.rows.hasAttribute("role")).toBe(false);
+        expect(panel.listCount.textContent).toBe("0 results");
+        expect(panel.activeElement.getAttribute("type")).toBe("search");
+    });
+
+    test("empty smart views explain where their create action saves", async () => {
+        const panel = await openClient();
+        await panel.select({ view: "session" });
+        expect(text(panel.rows)).toContain("No notes in this session");
+        expect(text(panel.rows)).toContain("New notes are saved in Notes.");
+        panel.rows.querySelector("button").dispatchEvent(new Event("click"));
+        await panel.settle();
+        expect(panel.state.draft.folder).toBe("");
+    });
+
+    test("formatting help is optional, rich-only, and restores focus on close", async () => {
+        const note = await library.create({ body: "# Help" }, context);
+        const panel = await openClient({ richSafe: true });
+        expect(panel.formattingHelp.hidden).toBe(true);
+        await panel.openNote(note.id);
+        expect(panel.formattingHelp.hidden).toBe(false);
+        const help = panel.formattingHelp.querySelector("button");
+        help.focus();
+        help.dispatchEvent(new Event("click"));
+        const dialog = panel.document.body.querySelector("dialog");
+        expect(dialog.hasAttribute("open")).toBe(true);
+        expect(text(dialog)).toContain("Ctrl / Command + K");
+        expect(text(dialog)).toContain("start a bullet, then type [ ]");
+        dialog.querySelector("button").dispatchEvent(new Event("click"));
+        expect(panel.document.body.querySelector("dialog")).toBeNull();
+        expect(panel.activeElement).toBe(help);
+        panel.toggleMarkdown();
+        expect(panel.formattingHelp.hidden).toBe(true);
+    });
 });
 
 describe("medium drawer focus", () => {
