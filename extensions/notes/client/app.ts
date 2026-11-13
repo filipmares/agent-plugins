@@ -407,7 +407,7 @@ function renderSaveStatus() {
         ? editorError ? `Save paused. ${editorErrorText}` : saveFailure ? `Save failed. ${saveFailure} Your text is still in the editor. Use Retry save in the toolbar.` : ""
         : "";
     if (attention !== lastSaveAttention && (attention || !saving)) {
-        const recovered = lastSaveAttention.startsWith("Save failed.") && active && !paused;
+        const recovered = lastSaveAttention.startsWith("Save failed.") && active && !state.draft && !paused;
         saveAnnouncement.textContent = attention || (recovered
             ? unsaved ? "The save error is resolved. Newer changes still need saving." : "Your changes are saved."
             : "");

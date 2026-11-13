@@ -307,6 +307,23 @@ describe("save-state toolbar icon", () => {
         expect(panel.saveAnnouncement.textContent).toBe("");
     });
 
+    test("clearing a failed new draft never announces a successful save", async () => {
+        const panel = await openClient();
+        await panel.compose();
+        panel.interceptSave(() => new Response(JSON.stringify({
+            error: { code: "io_error", message: "Synthetic draft failure" },
+        }), { status: 500 }));
+        panel.textarea.value = "# Draft\nUnsaved content";
+        panel.textarea.dispatchEvent(new Event("input"));
+        expect(await panel.save()).toBe(false);
+        expect(panel.saveAnnouncement.textContent).toContain("Save failed");
+        panel.textarea.value = "# ";
+        panel.textarea.dispatchEvent(new Event("input"));
+        expect(panel.saveButton.getAttribute("aria-label")).toBe("New note - not saved yet");
+        expect(panel.saveAnnouncement.textContent).toBe("");
+        expect((await library.list()).notes).toHaveLength(0);
+    });
+
     test.each([false, true])("typing during a save never claims newer text is Saved (new draft: %s)", async draft => {
         const panel = await openClient();
         if (draft) await panel.compose();
