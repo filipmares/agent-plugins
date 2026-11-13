@@ -24,6 +24,45 @@ before using the experimental extension for important notes.
 
 ## Screenshots
 
+### In context
+
+Notes beside a chat, in four scenes from a fictional Azure-hosted app called
+Shiplog. These are **illustrations**, not captures of the native app: the
+window frame, sessions sidebar, chat transcript and tool-call rows are a mock-up
+(a fictional `contoso/shiplog` project) built around the real Notes panel
+running in headless Microsoft Edge on Windows. Notes stays
+docked in one continuous window; the surrounding chat and sidebar are faded
+to emphasize the panel, not shown as a separate app. The reconstructed composer
+shows Autopilot and Copilot Fusion · Max as example UI labels, not required
+settings. Every note is synthetic, in a disposable library, and the panel shows its standalone
+light/dark fallback colors, not the app's injected theme. In the Ask Copilot
+scene the send was a mocked callback: the prompt and attached note shown in the
+chat are what the panel sent, while the agent's reply is scripted. No real
+notes, sessions, chat turns or OS trash were used.
+
+**Capture decisions while you work.** The agent records why Shiplog is keeping
+Azure Static Web Apps, Azure SQL, and Microsoft Entra ID—and deferring extra
+services. The decision appears under This Session.
+
+![Light theme: in the Shiplog chat, the agent saves a decision to keep Azure Static Web Apps, Azure SQL, and Microsoft Entra ID and defer extra services. The note is open under This Session.](docs/notes-in-context-capture.png)
+
+**Turn a launch checklist into work.** Ask Copilot sends the checklist note to
+the chat and drafts Azure Boards work items for the first real user.
+
+![Light theme: the Shiplog launch checklist is open with "Sent to chat" in the toolbar. The chat shows an attached-note prompt for Azure Boards tasks and a scripted reply.](docs/notes-in-context-ask.png)
+
+**Recall an architecture decision.** In another session, the agent checks the
+saved choice to keep drafts in Azure SQL before considering Cosmos DB.
+
+![Dark theme: the chat searches Azure SQL notes and recalls the decision to defer Cosmos DB, with the decision note open in the Notes panel.](docs/notes-in-context-recall.png)
+
+**Keep working agreements close.** The expanded project view shows Shiplog's
+pinned agreements: “Vibes for exploration, evidence for shipping.”
+
+![Dark theme, expanded panel: the six Shiplog project notes and pinned working agreements beside a chat preparing an Azure SQL autosave fix.](docs/notes-in-context-library.png)
+
+### The panel on its own
+
 Headless Microsoft Edge on Windows, using synthetic notes in a disposable
 library. These show the standalone light/dark fallback colors, not the native
 app's chrome or its injected theme. No real notes, chat turns or OS trash were used.
@@ -56,6 +95,9 @@ and background tokens rather than depending on app-internal variables.
 - The list groups notes as Pinned, Today, Yesterday, Previous 7/30 Days, and
   then by month and year. Search spans every folder and highlights matches.
   Agent-created notes show a Copilot mark.
+  Empty libraries and folders offer a **Create note** action; searches with no
+  matches suggest changing the query. Creating from a folder saves the draft
+  there; creating from a smart view saves it in the Notes root.
 - The rich editor supports headings, bold, italic, strike, inline code,
   bullet/ordered/check lists, quotes, unhighlighted code blocks, tables, and
   dividers. Frontmatter stays outside the editor. Existing first lines are
@@ -83,6 +125,8 @@ and background tokens rather than depending on app-internal variables.
   pressing Enter creates a table with that header and one empty row.
   Table Tab / Shift+Tab moves between cells; Tab at the end adds a row.
   Adding columns requires Markdown view.
+  **Formatting help** below the rich editor opens a compact shortcut reference;
+  there is no permanent formatting toolbar.
 
 **View as Markdown** switches to the monospace textarea. Opening or switching
 views without edits never rewrites the body. A semantic round-trip check
@@ -347,9 +391,11 @@ The send and OS-browser-opening callbacks were mocked, not real chat turns or
 browser launches. No real notes or real OS trash were used.
 
 The screenshots above were captured from the release tree in headless Edge
-on Windows. A separate light/dark fallback-color pass covered 390, 780 and
-1200 px, including narrow back navigation and the medium folder overlay,
-without rewriting the displayed note.
+on Windows. The in-context scenes embed the real panel in a mock app frame, so
+the frame, sessions, chat and tool rows are illustrations and show nothing about
+the native app's layout, theme injection or chat behavior. A separate light/dark
+fallback-color pass covered 390, 780 and 1200 px, including narrow back
+navigation and the medium folder overlay, without rewriting the displayed note.
 
 The installed SDK's `MessageOptions` and generated `AttachmentFile` contract
 specify queued sends and **absolute file paths**, with no workspace-relative

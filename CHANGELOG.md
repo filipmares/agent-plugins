@@ -9,6 +9,27 @@ and plugin versioning follows [Semantic Versioning](https://semver.org/spec/v2.0
 
 ### Added — Notes frontmatter viewing
 - A read-only row of property pills sits below each note's opening heading (above the text in Markdown view) and shows Agent/Human authorship, origin project, and the original session name. More stays beside the pills at every width and reveals pin status, custom properties, dates, and technical details; long names expand with mouse, touch, or keyboard. Frontmatter editing is not included, and existing pin actions are unchanged.
+- The last-edited date line above the note moves into More's dates.
+- Bumped the plugin and marketplace manifests to `2.2.5`.
+
+### Added — Notes first-use guidance
+- Empty libraries and folders now offer a short invitation and Create note action; empty smart views and searches have contextual guidance.
+- A compact Formatting help link below the rich editor opens supported input and keyboard shortcuts without a permanent formatting toolbar.
+- Empty note lists drop listbox semantics and their tab stop, keeping actions accessible and the result count announced.
+- Bumped the plugin and marketplace manifests to `2.2.4`.
+
+### Fixed — Notes drawer focus
+- Keep focus in the Notes drawer while it is open and restore it to the trigger when closed, including after sidebar resizing.
+- Bumped the plugin and marketplace manifests to `2.2.3` for the Notes scrolling and drawer-focus fixes.
+
+### Added — Notes in-context screenshots
+- The Notes guide now opens its Screenshots section with four scenes that show the panel beside a chat: the agent saving a decision, Ask Copilot, recalling a decision from another session, and the expanded project view. The three panel-only screenshots remain under "The panel on its own".
+- Notes stays docked in one continuous app frame, with faded surrounding context and reconstructed composer controls matching the product reference.
+- The fictional Shiplog story now uses Azure Static Web Apps, Azure SQL, Microsoft Entra ID, Azure Monitor and Azure Boards, with deadpan prototype-to-production easter eggs.
+- These are illustrations, not captures of the native app. The window frame, sessions sidebar and chat are a mock-up around the real panel running in headless Microsoft Edge on Windows, with synthetic notes in a disposable library, the panel's standalone light/dark fallback colors, and a mocked send callback. No real notes, sessions or chat turns appear. Docs and image assets only; no code or manifest version change.
+
+### Fixed — Notes scrolling
+- Keep the Notes panel's grid row within its available height so the folder list, note list, and editor scroll inside their panes instead of expanding the panel; background refreshes preserve list scroll and focus.
 
 ### Fixed — Notes without a session
 - The Notes canvas now opens and saves notes when the Copilot app opens it without a session. It previously refused with "Cannot read this session's workspace.yaml; no provenance was guessed", because the app runs a sessionless canvas under a stand-in session that has no `workspace.yaml` in the Copilot home.
