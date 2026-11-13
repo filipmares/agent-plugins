@@ -145,6 +145,8 @@ const askInput = h("input", { type: "text", class: "text-input", "aria-label": "
 const askStatus = h("span", { role: "status", class: "ask-status" });
 const askPanel = h("div", { id: "ask-note", class: "ask-note", hidden: true }, askInput);
 const emptyEditor = h("div", { class: "empty-editor" }, icon("note"), h("p", {}, "No note selected"));
+const formattingHelp = h("footer", { class: "editor-help", hidden: true },
+    h("button", { type: "button", class: "text-button", onclick: () => void showFormattingHelp() }, "Formatting help"));
 const pinButton = iconButton("pin", "Pin note", () => state.note && void togglePin(state.note));
 const moveButton = iconButton("file-moved", "Move note to folder", () => state.note && void moveDialog(state.note));
 const trashButton = iconButton("trash", "Delete note", () => state.note && void deleteNote(state.note));
@@ -176,6 +178,7 @@ const editorPane = h("main", { class: "editor-pane", "aria-label": "Editor" },
     h("div", { class: "editor-feedback" }, saveDetails, askStatus, saveAnnouncement),
     askPanel, banner, fidelityBanner,
     h("div", { class: "editor-scroll" }, dateLine, textarea, richElement, emptyEditor),
+    formattingHelp,
 );
 const backdrop = h("div", { class: "backdrop", onclick: () => setOverlay(false) });
 app.append(sidebar, backdrop, listPane, editorPane);
@@ -1089,6 +1092,26 @@ function actions<T>(close: (value: T | null) => void, confirm: string, value: ()
         h("button", { type: "button", class: destructive ? "button destructive" : "button primary", onclick: () => close(value()) }, confirm));
 }
 
+function showFormattingHelp() {
+    return modal<void>("Formatting help", close => [
+        h("p", { class: "dialog-text" }, "In rich text, type these at the start of a line, then press Space:"),
+        h("dl", { class: "formatting-shortcuts" },
+            h("dt", {}, h("code", {}, "#"), " / ", h("code", {}, "##"), " / ", h("code", {}, "###")), h("dd", {}, "Headings"),
+            h("dt", {}, h("code", {}, "-"), " / ", h("code", {}, "1.")), h("dd", {}, "Bullet / numbered list"),
+            h("dt", {}, h("code", {}, ">")), h("dd", {}, "Quote")),
+        h("p", { class: "dialog-text" }, "For a checklist, start a bullet, then type [ ] followed by Space."),
+        h("p", { class: "dialog-text" }, "Use Ctrl on Windows/Linux or Command on Mac:"),
+        h("dl", { class: "formatting-shortcuts" },
+            h("dt", {}, "Ctrl / Command + B"), h("dd", {}, "Bold"),
+            h("dt", {}, "Ctrl / Command + I"), h("dd", {}, "Italic"),
+            h("dt", {}, "Ctrl / Command + E"), h("dd", {}, "Inline code"),
+            h("dt", {}, "Ctrl / Command + K"), h("dd", {}, "Edit link")),
+        h("p", { class: "dialog-text" }, "View as Markdown lets you edit the source, including tables and other formatting."),
+        h("div", { class: "dialog-actions" },
+            h("button", { type: "button", class: "button", onclick: () => close(null) }, "Close")),
+    ]);
+}
+
 async function confirmDialog({ title, text, confirm }: { title: string; text: string; confirm: string }) {
     let button: HTMLElement | null = null;
     return (await modal<boolean>(title, close => {
@@ -1325,16 +1348,34 @@ function renderList(preserveScroll = false) {
                 ...notes.map(note => noteRow(note, words, false))));
         }
     }
-    if (!children.length) {
-        children.push(h("div", { class: "list-empty" }, searching ? "No matching notes" : "No notes"));
+    const empty = !children.length;
+    if (empty) {
+        const selection = state.ui.selection;
+        const invitation = "folder" in selection ? "No notes in this folder"
+            : selection.view !== "all" ? `No notes in ${selectionName().toLowerCase()}`
+            : "Capture your first thought";
+        children.push(h("div", { class: "list-empty" },
+            h("p", {}, searching ? "No matching notes" : invitation),
+            h("p", { class: "empty-detail" }, searching ? "Try a different search."
+                : "folder" in selection ? "Create a note here to get started."
+                : selection.view !== "all" ? "New notes are saved in Notes."
+                : "Create a note to keep ideas and decisions close."),
+            searching ? null : h("button", { type: "button", class: "button", onclick: () => void compose() }, "Create note")));
     }
     const hadFocus = rows.contains(document.activeElement);
     rows.replaceChildren(...children);
+    if (empty) {
+        rows.removeAttribute("role");
+        rows.removeAttribute("aria-label");
+    } else {
+        rows.setAttribute("role", "listbox");
+        rows.setAttribute("aria-label", "Notes");
+    }
     const options = [...rows.querySelectorAll<HTMLElement>(".row")];
     const current = options.find(row => row.getAttribute("aria-selected") === "true") ?? options[0];
     current?.setAttribute("tabindex", "0");
-    rows.setAttribute("tabindex", current ? "-1" : "0");
-    if (hadFocus) (current ?? rows).focus({ preventScroll: preserveScroll });
+    rows.setAttribute("tabindex", "-1");
+    if (hadFocus) (current ?? rows.querySelector("button") ?? search).focus({ preventScroll: preserveScroll });
     if (!preserveScroll) current?.scrollIntoView({ block: "nearest" });
 }
 
@@ -1379,6 +1420,7 @@ function renderEditor() {
     if (guarded) fidelityBanner.replaceChildren(h("span", {}, GUARD_MESSAGE),
         h("button", { type: "button", class: "button", onclick: () => toggleMarkdown(true) }, "Edit rich anyway"));
     emptyEditor.hidden = active;
+    formattingHelp.hidden = !active || plain;
     dateLine.textContent = state.draft
         ? "New Note"
         : state.note ? new Date(state.note.lastEdited).toLocaleString(undefined, { dateStyle: "long", timeStyle: "short" }) : "";

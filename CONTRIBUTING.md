@@ -187,6 +187,11 @@ screenshots and verified setups.
   must use synthetic content and identify simulated themes or mocked callbacks.
   Native-app shortcut handling, queued attachment consumption and real OS
   integration need separate checks; browser fixtures do not establish support.
+- Changes to shipped plugin content (`skills/`, `.github/agents/`, `.github/plugin/`,
+  or runtime files under `extensions/`) require a stable SemVer increase in both plugin
+  manifests and a `CHANGELOG.md` entry. Documentation-only changes under
+  `extensions/` do not require a version bump; the pull-request check enforces
+  this rule.
 - Maintain plugin/marketplace version parity and the Notes entry in
   `CHANGELOG.md`. Run `bun run validate:copilot-plugin` after manifest changes.
 

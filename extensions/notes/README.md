@@ -95,6 +95,9 @@ and background tokens rather than depending on app-internal variables.
 - The list groups notes as Pinned, Today, Yesterday, Previous 7/30 Days, and
   then by month and year. Search spans every folder and highlights matches.
   Agent-created notes show a Copilot mark.
+  Empty libraries and folders offer a **Create note** action; searches with no
+  matches suggest changing the query. Creating from a folder saves the draft
+  there; creating from a smart view saves it in the Notes root.
 - The rich editor supports headings, bold, italic, strike, inline code,
   bullet/ordered/check lists, quotes, unhighlighted code blocks, tables, and
   dividers. Frontmatter stays outside the editor. Existing first lines are
@@ -130,6 +133,8 @@ and background tokens rather than depending on app-internal variables.
   pressing Enter creates a table with that header and one empty row.
   Table Tab / Shift+Tab moves between cells; Tab at the end adds a row.
   Adding columns requires Markdown view.
+  **Formatting help** below the rich editor opens a compact shortcut reference;
+  there is no permanent formatting toolbar.
 
 **View as Markdown** switches to the monospace textarea. Opening or switching
 views without edits never rewrites the body. A semantic round-trip check
