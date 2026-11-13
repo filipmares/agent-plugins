@@ -60,6 +60,28 @@ describe("notes and provenance", () => {
         expect((await library.search({ project: "another/repo" })).total).toBe(0);
     });
 
+    test("a user editing without a session writes no origin, but still records sessions that later edit the note", async () => {
+        const user = { actor: "user" };
+        const note = await library.create({ body: "# Loose\nFirst" }, user);
+        expect(note.frontmatter).toMatchObject({ created_by: "user", sessions: [] });
+        expect(note.frontmatter).not.toHaveProperty("session_id");
+        expect(note.frontmatter).not.toHaveProperty("session_name");
+        const edited = await library.update(note.id, { body: "# Loose\nSecond", expectedVersion: note.version }, user);
+        expect(edited.frontmatter.sessions).toEqual([]);
+        const attributed = await library.append(note.id, { text: "Third", expectedVersion: edited.version }, { ...author, actor: "user" });
+        expect(attributed.frontmatter).toMatchObject({ created_by: "user", sessions: ["session-a"] });
+        expect(attributed.frontmatter).not.toHaveProperty("session_id");
+        const sessionless = await library.update(note.id, { body: "# Loose\nFourth", expectedVersion: attributed.version }, user);
+        expect(sessionless.frontmatter.sessions).toEqual(["session-a"]);
+    });
+
+    test("only a user may omit the session; agents and malformed session IDs are still refused", async () => {
+        for (const context of [{ actor: "agent" }, { actor: "user", sessionId: "../bad" }, { actor: "user", sessionId: null }, null]) {
+            await expect(library.create({ body: "# Refused" }, context)).rejects.toMatchObject({ code: "invalid_session" });
+        }
+        expect(await readdir(root)).toEqual([]);
+    });
+
     test("refuses empty new notes, but clearing an existing note keeps its identity", async () => {
         await expect(library.create({ body: " \n" }, author)).rejects.toMatchObject({ code: "invalid_request" });
         expect(await readdir(root)).toEqual([]);

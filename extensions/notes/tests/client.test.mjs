@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { runInNewContext } from "node:vm";
 import { createNotesServer } from "../server.mjs";
 import { NotesLibrary } from "../storage.mjs";
-import { pushRecovery, recoveryPath } from "../ui-state.mjs";
+import { pushRecovery, recoveryPath, saveUiState } from "../ui-state.mjs";
 
 const source = await readFile(new URL("../client/app.ts", import.meta.url), "utf8");
 const instrumented = source.replace(/^import .+;$/gm, "").replace(/\bvoid start\(\);(?=\s*$)/, "globalThis.clientReady = start();");
@@ -35,6 +35,7 @@ class Element extends EventTarget {
     replaceChildren(...children) { this.children = children; }
     contains() { return false; }
     focus() {}
+    setSelectionRange() {}
     querySelector() { return null; }
     querySelectorAll() { return []; }
 }
@@ -186,6 +187,7 @@ describe("Notes client persistence", () => {
         const note = await library.create({ body: "# Ask\nsend me" }, context);
         const panel = await openClient();
         await panel.openNote(note.id);
+        expect(panel.copilotButton.hidden).toBe(false);
         const press = key => panel.askInput.dispatchEvent(Object.assign(new Event("keydown"), { key }));
         const settled = async status => {
             for (let i = 0; i < 200 && panel.askStatus.textContent !== status; i++) await Bun.sleep(5);
@@ -292,6 +294,24 @@ describe("Notes client persistence", () => {
             expect(await panel.save()).toBe(true);
             expect((await library.read("Work/plan-2.md")).body).toBe(rewritten + "\nAfter the move");
         }
+    });
+
+    test("a panel opened without a session hides Ask Copilot, falls back from a remembered session view, and still saves", async () => {
+        await server.close();
+        server = await startServer({ getContext: async () => ({}), sessionId: "app-control-session" });
+        await saveUiState(statePath, { sidebar: true, selection: { view: "session" }, noteId: null, collapsed: [] });
+        const panel = await openClient();
+        expect(panel.state.context).toEqual({ sessionId: null, project: null, sessionName: null });
+        expect(panel.state.ui.selection).toEqual({ view: "all" });
+        expect(panel.copilotButton.hidden).toBe(true);
+
+        await panel.compose();
+        panel.textarea.value = "# Loose\nNo session";
+        expect(await panel.save()).toBe(true);
+        expect(panel.toast.hidden).toBe(true);
+        const [saved] = (await library.list()).notes;
+        expect((await library.read(saved.id)).frontmatter).toMatchObject({ created_by: "user", sessions: [] });
+        expect((await library.read(saved.id)).frontmatter).not.toHaveProperty("session_id");
     });
 
     test("Keep Mine writes text undone to the old saved body instead of treating it as clean", async () => {

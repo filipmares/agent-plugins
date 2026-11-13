@@ -50,7 +50,9 @@ and background tokens rather than depending on app-internal variables.
 
 - Smart views: All Notes, This Project, and This Session. Folders support
   create, rename (double-click), delete with a recursive count, collapse, and
-  dragging notes onto a folder to move them.
+  dragging notes onto a folder to move them. A panel opened without a session
+  (see [Opening without a session](#opening-without-a-session)) has no This
+  Session view.
 - The list groups notes as Pinned, Today, Yesterday, Previous 7/30 Days, and
   then by month and year. Search spans every folder and highlights matches.
   Agent-created notes show a Copilot mark.
@@ -102,6 +104,8 @@ mode: "enqueue" })` queues behind a busy turn; a returned message ID hides the
 prompt, returns focus to the Copilot button, and shows "Sent to chat" in the
 toolbar. Escape also hides the prompt; a failed send keeps it open with the
 text. There is no Ask Copilot shortcut and no retry that drops the attachment.
+The button is hidden when the panel was opened without a session, because
+there is no chat to send to.
 
 UI state (sidebar visibility, selection, open note, collapsed folders) is
 stored in `$COPILOT_HOME/extensions/notes/artifacts/ui-state.json`. It holds
@@ -120,6 +124,22 @@ and retains the periodic fallback. Note hashes, paths, folder names and file
 modified times suppress duplicate notifications from its own writes. The
 watcher stays available for tool search without an open panel, and stops on
 session shutdown/process exit. Each panel closes its own SSE connections/server.
+
+### Opening without a session
+
+The Copilot app can open canvases without a session. The panel then reads and
+saves notes normally, but has no session to attribute edits to:
+
+- Notes created in the panel have no `session_id` or `session_name`, and edits
+  do not add to `sessions`. Origin is never guessed or copied from a stand-in
+  session. `created_by` is still `user`; `project` and `branch` are omitted.
+- This Session and Ask Copilot are unavailable. A remembered or requested
+  `session` view shows All Notes instead.
+- Only an absent `workspace.yaml` counts as no session. A session whose
+  metadata exists but cannot be read, is oversized, malformed, or does not match
+  its ID is still refused, so a broken session is never saved as sessionless.
+- The `notes_manage` tool is unchanged: agents always run in a session, and it
+  still requires that session's provenance.
 
 ## Library and privacy
 

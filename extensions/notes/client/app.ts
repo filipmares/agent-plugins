@@ -28,7 +28,7 @@ const wide = matchMedia("(min-width: 960px)");
 const narrow = matchMedia("(max-width: 639.98px)");
 
 const state = {
-    context: { sessionId: "", project: null as string | null, sessionName: null as string | null },
+    context: { sessionId: null as string | null, project: null as string | null, sessionName: null as string | null },
     ui: { sidebar: true, selection: { view: "all" }, noteId: null, collapsed: [] } as UiState,
     folders: null as FolderNode | null,
     notes: [] as Summary[],
@@ -41,6 +41,11 @@ const state = {
 };
 let pane: "folders" | "list" | "note" = "list";
 let overlay = false;
+
+// A panel the app opened without a session has no session notes, and no project either.
+function viewAvailable(view: "all" | "project" | "session") {
+    return view === "all" || !!(view === "project" ? state.context.project : state.context.sessionId);
+}
 
 function h<K extends keyof HTMLElementTagNameMap>(tag: K, props: Record<string, unknown> = {}, ...children: Child[]) {
     const element = document.createElement(tag);
@@ -586,7 +591,7 @@ async function backToList() {
 async function applyTarget(target: Target | null) {
     if (!target) return;
     if (!(await flush())) return;
-    if (target.view) state.ui.selection = { view: target.view };
+    if (target.view) state.ui.selection = { view: viewAvailable(target.view) ? target.view : "all" };
     else if (target.folder !== undefined) state.ui.selection = { folder: target.folder };
     state.query = "";
     search.value = "";
@@ -1013,7 +1018,7 @@ function renderSidebar() {
     smart.replaceChildren(...[
         smartButton("all", "All Notes", "note", state.folders ? totalCount(state.folders) : undefined),
         state.context.project ? smartButton("project", "This Project", "repo", undefined, state.context.project) : null,
-        smartButton("session", "This Session", "comment-discussion", undefined, state.context.sessionName ?? undefined),
+        state.context.sessionId ? smartButton("session", "This Session", "comment-discussion", undefined, state.context.sessionName ?? undefined) : null,
     ].filter(button => button !== null));
     tree.replaceChildren(...(state.folders ? [folderRow(state.folders, 0)] : []));
     if (focused) {
@@ -1307,10 +1312,11 @@ async function start() {
     try {
         const initial = await request<{ context: typeof state.context; ui: UiState; target: Target | null; recovery: Recovery | null }>("api/state");
         state.context = initial.context;
+        copilotButton.hidden = !state.context.sessionId;
         const stale = gen !== navGen;
         state.ui = stale ? { ...initial.ui, selection: state.ui.selection, noteId: state.ui.noteId } : initial.ui;
         const selection = state.ui.selection;
-        if ("view" in selection && selection.view === "project" && !state.context.project) state.ui.selection = { view: "all" };
+        if ("view" in selection && !viewAvailable(selection.view)) state.ui.selection = { view: "all" };
         layout();
         await refreshLists();
         if (stale || gen !== navGen) {

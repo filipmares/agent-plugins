@@ -112,6 +112,25 @@ describe("platform integration", () => {
         }
     });
 
+    test("allowMissing treats absent session metadata as no session, but never unreadable or untrusted metadata", async () => {
+        const options = { home: fixture, allowMissing: true };
+        expect(await readSessionContext("app-control-session", options)).toEqual({});
+        for (const id of [undefined, "", "../elsewhere"]) expect(await readSessionContext(id, options)).toEqual({});
+
+        const directory = join(fixture, "session-state", "session-a");
+        const file = join(directory, "workspace.yaml");
+        await mkdir(directory, { recursive: true });
+        await writeFile(file, "id: session-a\nname: Present\n");
+        expect(await readSessionContext("session-a", options)).toEqual({ sessionId: "session-a", sessionName: "Present" });
+        for (const raw of ["id: wrong-session\n", "name: [broken"]) {
+            await writeFile(file, raw);
+            await expect(readSessionContext("session-a", options)).rejects.toMatchObject({ code: "session_metadata_unavailable" });
+        }
+        await rm(file);
+        await mkdir(file);
+        await expect(readSessionContext("session-a", options)).rejects.toMatchObject({ code: "session_metadata_unavailable" });
+    });
+
     test.skipIf(process.env.NOTES_TEST_REAL_TRASH !== "1")("opt-in real OS trash test (one temporary note)", async () => {
         const path = join(fixture, "copilot-notes-trash-smoke.md");
         await writeFile(path, "Temporary Notes adapter verification file.");

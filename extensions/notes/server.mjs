@@ -157,6 +157,8 @@ export async function createNotesServer({ getLibrary, getContext, sessionId, sta
     let origin = "";
 
     const userContext = async () => ({ ...await getContext(), actor: "user" });
+    // The session this panel's notes belong to: none when the app opened it without a session, which has no metadata to read.
+    const panelContext = () => getContext().catch(() => ({ sessionId }));
     const changed = () => { try { onChange?.(); } catch { /* listeners must not fail the request */ } };
 
     function checkToken(pathname) {
@@ -173,7 +175,10 @@ export async function createNotesServer({ getLibrary, getContext, sessionId, sta
         const folder = url.searchParams.get("folder");
         if (query.trim()) return library.list({ query });
         if (view === "all") return library.list();
-        if (view === "session") return library.list({ session: sessionId });
+        if (view === "session") {
+            const { sessionId: owner } = await panelContext();
+            return owner ? library.list({ session: owner }) : { notes: [], warnings: [] };
+        }
         if (view === "project") {
             const { project } = await getContext().catch(() => ({}));
             return project ? library.list({ project }) : { notes: [], warnings: [] };
@@ -257,9 +262,9 @@ export async function createNotesServer({ getLibrary, getContext, sessionId, sta
                 case "/app.js": return send(res, 200, "text/javascript; charset=utf-8", CLIENT_SCRIPT);
                 case "/app.css": return send(res, 200, "text/css; charset=utf-8", CLIENT_STYLES);
                 case "/api/state": {
-                    const context = await getContext().catch(() => ({ sessionId }));
+                    const context = await panelContext();
                     const state = {
-                        context: { sessionId, project: context.project ?? null, sessionName: context.sessionName ?? null },
+                        context: { sessionId: context.sessionId ?? null, project: context.project ?? null, sessionName: context.sessionName ?? null },
                         ui: await loadUiState(statePath),
                         target: pendingTarget,
                         recovery: await popRecovery(recoveryPath(statePath)),
@@ -306,11 +311,12 @@ export async function createNotesServer({ getLibrary, getContext, sessionId, sta
             }
             if (route === "/api/ask") {
                 if (!body.prompt.trim() || body.prompt.length > 16000) throw new NotesError("invalid_request", "Enter a prompt of up to 16000 characters.");
-                if (!sendMessage) throw new NotesError("chat_unavailable", "This panel is not connected to its Copilot session.");
+                const { sessionId: owner } = await panelContext();
+                if (!sendMessage || !owner) throw new NotesError("chat_unavailable", "Ask Copilot needs a Copilot session, and this panel was opened without one.");
                 await writes;
                 const attachment = await (await getLibrary()).attachment(body.id, body.expectedVersion);
                 // SDK MessageOptions: enqueue is the documented busy-session delivery mode; never drop the file on failure.
-                const messageId = await sendMessage({ prompt: body.prompt, attachments: [attachment], mode: "enqueue" }, sessionId);
+                const messageId = await sendMessage({ prompt: body.prompt, attachments: [attachment], mode: "enqueue" }, owner);
                 if (typeof messageId !== "string" || !messageId) throw new NotesError("chat_unavailable", "Copilot did not acknowledge the message.");
                 return sendJson(res, 200, { messageId });
             }
