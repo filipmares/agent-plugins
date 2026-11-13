@@ -8,7 +8,7 @@ const root = dirname(client);
 const digest = (content: string | Buffer) => createHash("sha256").update(content).digest("hex");
 const ICONS = [
     "alert", "chevron-down", "chevron-left", "chevron-right", "code", "comment-discussion", "compose", "copilot",
-    "file-directory", "file-moved", "note", "pencil", "pin", "pin-slash", "plus", "repo",
+    "file-directory", "file-moved", "note", "pencil", "person", "pin", "pin-slash", "plus", "repo",
     "search", "sidebar-collapse", "sidebar-expand", "trash", "x",
 ];
 

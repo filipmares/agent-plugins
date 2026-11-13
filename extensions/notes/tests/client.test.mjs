@@ -11,7 +11,7 @@ const source = await readFile(new URL("../client/app.ts", import.meta.url), "utf
 const instrumented = source.replace(/^import .+;$/gm, "").replace(/\bvoid start\(\);(?=\s*$)/, "globalThis.clientReady = start();");
 if (instrumented === source) throw new Error("Cannot await Notes client startup.");
 const script = new Bun.Transpiler({ loader: "ts" }).transformSync(instrumented + `
-globalThis.client = { state, textarea, toast, openNote, moveNote, save, resolveConflict, refresh, askInput, askStatus, askPanel, copilotButton, compose, toggleMarkdown, isPlain: () => plain };
+globalThis.client = { state, textarea, toast, openNote, moveNote, save, resolveConflict, refresh, askInput, askStatus, askPanel, copilotButton, compose, toggleMarkdown, frontmatterView, frontmatterContext, frontmatterDetails, frontmatterMore, isPlain: () => plain };
 `);
 const context = { sessionId: "client-test", actor: "user" };
 let fixture, root, library, server, statePath, clients;
@@ -19,6 +19,7 @@ let fixture, root, library, server, statePath, clients;
 // Execute the entire client, including event listeners, without a browser dependency.
 // DOM/layout are inert: these tests exercise controller state and real server/storage effects.
 class Element extends EventTarget {
+    constructor(tagName = "div") { super(); this.tagName = tagName; }
     value = "";
     hidden = false;
     dataset = {};
@@ -31,8 +32,30 @@ class Element extends EventTarget {
         if (name === "hidden") this.hidden = true;
     }
     getAttribute(name) { return this.attributes.get(name) ?? null; }
-    append(...children) { this.children.push(...children); }
-    replaceChildren(...children) { this.children = children; }
+    parentNode = null;
+    get nextSibling() { return this.parentNode?.children[this.parentNode.children.indexOf(this) + 1] ?? null; }
+    adopt(children) {
+        for (const child of children) {
+            if (!(child instanceof Element)) continue;
+            child.remove();
+            child.parentNode = this;
+        }
+        return children;
+    }
+    remove() {
+        if (this.parentNode) this.parentNode.children = this.parentNode.children.filter(child => child !== this);
+        this.parentNode = null;
+    }
+    append(...children) { this.children.push(...this.adopt(children)); }
+    before(node) {
+        const parent = this.parentNode;
+        parent.adopt([node]);
+        parent.children.splice(parent.children.indexOf(this), 0, node);
+    }
+    replaceChildren(...children) {
+        for (const child of this.children) if (child instanceof Element) child.parentNode = null;
+        this.children = this.adopt(children);
+    }
     contains() { return false; }
     focus() {}
     setSelectionRange() {}
@@ -44,12 +67,13 @@ async function openClient({ richSafe = false } = {}) {
     const window = new EventTarget();
     const document = Object.assign(new EventTarget(), {
         body: new Element(), activeElement: null,
-        createElement: () => new Element(),
+        createElement: tag => new Element(tag),
         createElementNS: () => new Element(),
         getElementById: () => new Element(),
     });
     const pending = new Set();
     const calls = [];
+    const headers = [];
     let afterMove;
     let timerId = 0;
     const timers = new Map();
@@ -58,10 +82,13 @@ async function openClient({ richSafe = false } = {}) {
         GUARD_MESSAGE: "This note uses Markdown the rich editor can't keep exactly.",
         safeExternal: value => /^(https?:|mailto:)/.test(value),
         // Only the rendered view is inert. Real codec/schema and browser tests cover the rich view separately.
-        createRichEditor: () => ({ safe: richSafe, editor: { destroy() {}, isFocused: false, state: { selection: { from: 1 } } } }),
+        createRichEditor: ({ header }) => {
+            headers.push(header);
+            return { safe: richSafe, editor: { destroy() {}, commands: { focus() {} }, isFocused: false, state: { selection: { from: 1 } } } };
+        },
         matchMedia: () => Object.assign(new EventTarget(), { matches: false }),
         EventSource: class extends EventTarget { close() {} },
-        __ICONS__: new Proxy({}, { get: () => ({ width: 16, path: "" }) }),
+        __ICONS__: new Proxy({}, { get: (_target, name) => ({ width: 16, path: String(name) }) }),
         addEventListener: window.addEventListener.bind(window),
         setTimeout: callback => { timers.set(++timerId, callback); return timerId; },
         clearTimeout: id => timers.delete(id),
@@ -85,6 +112,7 @@ async function openClient({ richSafe = false } = {}) {
     const panel = {
         ...sandbox.client,
         calls,
+        richHeader: () => headers.at(-1),
         delayMove(handler) { afterMove = handler; },
         async settle() { while (pending.size) await Promise.all([...pending]); },
         async close() {
@@ -118,6 +146,117 @@ afterEach(async () => {
 });
 
 describe("Notes client persistence", () => {
+    const descendants = element => element.children.flatMap(child => child instanceof Element ? [child, ...descendants(child)] : []);
+    const text = node => typeof node === "string" ? node : node.children.map(text).join("");
+    const property = (panel, key) => descendants(panel.frontmatterView).find(node => node.getAttribute("data-property") === key);
+
+    test("frontmatter shows only creator and origin context, with read-only details that never save a draft", async () => {
+        const note = await library.create({ body: "# Metadata\nOriginal" }, {
+            ...context, actor: "agent", project: "owner/repo", branch: "feature/notes", sessionName: "Metadata session",
+        });
+        const path = join(root, note.path);
+        const raw = await readFile(path, "utf8");
+        await writeFile(path, raw.replace("\n---\n",
+            '\nstatus: ready\nreview: {required: false, round: 0}\nempty: ""\nnil: null\nconstructor: custom\ntext: "<img src=x onerror=alert(1)>"\n---\n'));
+        const before = await readFile(path);
+        const panel = await openClient();
+        expect(panel.frontmatterView.hidden).toBe(true);
+        await panel.openNote(note.id);
+        expect(panel.frontmatterView.hidden).toBe(false);
+        expect(panel.frontmatterDetails.hidden).toBe(true);
+        expect(panel.frontmatterContext.children.map(node => node.getAttribute("data-property")))
+            .toEqual(["created_by", "project", "session_name"]);
+        expect(text(property(panel, "created_by"))).toBe("Created by Agent");
+        expect(property(panel, "created_by").children[0].innerHTML).toBe("copilot");
+        expect(text(panel.frontmatterMore)).toBe("More");
+        panel.frontmatterMore.dispatchEvent(new Event("click"));
+        expect(panel.frontmatterDetails.hidden).toBe(false);
+        expect(panel.frontmatterMore.getAttribute("aria-expanded")).toBe("true");
+        expect(panel.frontmatterDetails.children.map(node => node.getAttribute("aria-label")))
+            .toEqual(["Properties", "Dates and origin", "Technical details"]);
+        expect(text(property(panel, "pinned"))).toBe("PinnedNo");
+        expect(text(property(panel, "review"))).toContain('"required": false');
+        expect(text(property(panel, "review"))).toContain('"round": 0');
+        expect(text(property(panel, "empty"))).toBe("empty(empty string)");
+        expect(text(property(panel, "nil"))).toBe("nilnull");
+        expect(text(property(panel, "constructor"))).toBe("constructorcustom");
+        expect(text(property(panel, "text"))).toContain("<img src=x onerror=alert(1)>");
+        expect(descendants(panel.frontmatterDetails).some(node =>
+            ["input", "textarea", "select", "button", "img", "script"].includes(node.tagName))).toBe(false);
+
+        panel.textarea.value = "# Metadata\nPending body edit";
+        panel.frontmatterMore.dispatchEvent(new Event("click"));
+        property(panel, "session_name").dispatchEvent(new Event("click"));
+        expect(property(panel, "session_name").getAttribute("aria-expanded")).toBe("true");
+        expect(panel.calls.filter(call => call.method === "POST" && call.path.startsWith("api/note/"))).toHaveLength(0);
+        expect(panel.textarea.value).toBe("# Metadata\nPending body edit");
+        expect(await readFile(path)).toEqual(before);
+    });
+
+    test("details refresh after external changes and body saves, retaining disclosure state only for the same note", async () => {
+        const note = await library.create({ body: "# Live metadata" }, { ...context, project: "origin" });
+        const other = await library.create({ body: "# Other" }, context);
+        const panel = await openClient();
+        await panel.openNote(note.id);
+        panel.frontmatterMore.dispatchEvent(new Event("click"));
+        property(panel, "project").dispatchEvent(new Event("click"));
+        await library.pin(note.id, true, note.version);
+        await panel.refresh();
+        expect(text(property(panel, "pinned"))).toBe("PinnedYes");
+        expect(panel.frontmatterDetails.hidden).toBe(false);
+        expect(property(panel, "project").getAttribute("aria-expanded")).toBe("true");
+        panel.textarea.value += "\nAn ordinary body edit";
+        expect(await panel.save()).toBe(true);
+        const saved = await library.read(note.id);
+        expect(descendants(property(panel, "updated")).find(node => node.tagName === "time").getAttribute("datetime"))
+            .toBe(saved.frontmatter.updated);
+        expect(panel.frontmatterDetails.hidden).toBe(false);
+        await panel.openNote(other.id);
+        expect(panel.frontmatterDetails.hidden).toBe(true);
+        expect(property(panel, "project")).toBeUndefined();
+        await panel.openNote(note.id);
+        expect(property(panel, "project").getAttribute("aria-expanded")).toBe("false");
+    });
+
+    test("human notes omit unavailable provenance, and drafts or malformed notes have no metadata view", async () => {
+        const note = await library.create({ body: "# Human" }, { actor: "user" });
+        const panel = await openClient();
+        await panel.openNote(note.id);
+        expect(text(property(panel, "created_by"))).toBe("Created by Human");
+        expect(property(panel, "created_by").children[0].innerHTML).toBe("person");
+        for (const key of ["project", "branch", "session_name", "session_id"]) expect(property(panel, key)).toBeUndefined();
+        expect(text(property(panel, "sessions"))).toBe("Editing sessionsNo sessions recorded");
+        await panel.compose();
+        expect(panel.frontmatterView.hidden).toBe(true);
+        const raw = "---\ninvalid: [\n---\n# Repair me";
+        await writeFile(join(root, "broken.md"), raw);
+        await panel.openNote("broken.md");
+        expect(panel.frontmatterView.hidden).toBe(true);
+        expect(panel.textarea.value).toBe(raw);
+        expect(await readFile(join(root, "broken.md"), "utf8")).toBe(raw);
+    });
+
+    test("properties sit below the opening heading in rich view and above the text in Markdown view", async () => {
+        const note = await library.create({ body: "# Placement\nbody" }, { ...context, project: "origin" });
+        const panel = await openClient({ richSafe: true });
+        await panel.openNote(note.id);
+        const slot = panel.richHeader();
+        expect(slot.getAttribute("class")).toBe("frontmatter-slot");
+        expect(panel.frontmatterView.parentNode).toBe(slot);
+        panel.toggleMarkdown();
+        expect(panel.frontmatterView.nextSibling).toBe(panel.textarea);
+        // Returning to rich view, or reloading after an external change, rebuilds the editor and its slot.
+        panel.toggleMarkdown();
+        const rebuilt = panel.richHeader();
+        expect(rebuilt).not.toBe(slot);
+        expect(panel.frontmatterView.parentNode).toBe(rebuilt);
+        expect(slot.children).toEqual([]);
+        await library.update(note.id, { body: "# Placement\nexternal", expectedVersion: note.version }, context);
+        await panel.refresh();
+        expect(panel.richHeader()).not.toBe(rebuilt);
+        expect(panel.frontmatterView.parentNode).toBe(panel.richHeader());
+    });
+
     test("same-note sync retains Markdown view while a different note chooses its own mode", async () => {
         const note = await library.create({ body: "# Plain view\noriginal" }, context);
         const other = await library.create({ body: "# Other\nrich" }, context);

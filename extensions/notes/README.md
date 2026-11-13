@@ -96,6 +96,19 @@ top-level blocks retain their source spelling when their new context permits;
 edited blocks use escaped GFM. Table cells accept one line of text.
 Rich clipboard input is plain text only, not active HTML or image uploads.
 
+A quiet, read-only row of property pills sits directly below the note's opening
+heading (or at the top when there is no heading, and above the text in Markdown
+view). It shows the creator (**Agent** with a Copilot icon or **Human** with a
+person icon), origin project, and original session name. Missing origin fields
+are omitted. Click, tap, or press Enter/Space on a project or session name to
+expand the full value. **More** stays beside the first row of pills at every
+width and reveals pin status and custom properties, followed by dates and origin,
+then technical identifiers. Values are displayed as text, with structured custom
+values formatted as JSON. The disclosure stays open during same-note refreshes
+and resets when switching notes. No frontmatter editing is included; the existing
+toolbar and context-menu Pin actions are unchanged. Unsaved new notes have no
+properties row. Malformed frontmatter still opens as raw Markdown for repair.
+
 The **Copilot** button opens an inline prompt. Enter saves all current changes,
 then sends the prompt with the note's absolute file path attached to this panel's
 owning session. Conflicts or save failures block sending. The SDK's
@@ -152,8 +165,8 @@ Each `.md` note has YAML frontmatter containing `id`, `created`, `updated`,
 `created_by`, `project`, `branch`, `session_id`, `session_name`, and `sessions`.
 Unavailable optional origin fields are omitted. Origin fields stay fixed;
 content edits update `updated` and add the editing session to `sessions`.
-Pinning uses `pinned: true` without advancing the edit date. Custom fields and
-YAML comments are preserved.
+The toolbar Pin action uses `pinned: true` without advancing the edit date.
+Custom fields and YAML comments are preserved.
 
 Session names, repository names, branches, and local project paths can be
 sensitive. Local paths may contain your username. Documents sync services

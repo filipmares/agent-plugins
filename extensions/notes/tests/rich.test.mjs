@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createRequire } from "node:module";
 import { markdownToDoc, docToMarkdown, roundTripSafe, sameMeaning, serializeEdit } from "../client/rich-codec.ts";
-import { editorExtensions, safeExternal, typedLink, typedTable } from "../client/rich-editor.ts";
+import { editorExtensions, headerPosition, safeExternal, typedLink, typedTable } from "../client/rich-editor.ts";
 import { parseMarkdown } from "../client/markdown.ts";
 
 const require = createRequire(new URL("../client/package.json", import.meta.url));
@@ -176,5 +176,16 @@ describe("rich Markdown boundary", () => {
         expect(undone(state.apply(insert).apply(convert)).doc.textContent).toBe("See [docs](https://example.com/a)");
         state = type(EditorState.create({ doc: empty, plugins: [history()] }), "| A | B |");
         expect(undone(state.apply(typedTable(state))).doc.textContent).toBe("| A | B |");
+    });
+});
+
+describe("note properties placement", () => {
+    test("follows an opening heading of any level, otherwise the top of the note", () => {
+        const doc = source => schema.nodeFromJSON(markdownToDoc(source));
+        expect(headerPosition(doc("# Title\n\nBody"))).toBe(doc("# Title").content.size);
+        expect(headerPosition(doc("### Title\n\nBody"))).toBe(doc("### Title").content.size);
+        expect(headerPosition(doc("Title line\n\nBody"))).toBe(0);
+        expect(headerPosition(doc("Body\n\n# Later heading"))).toBe(0);
+        expect(headerPosition(doc(""))).toBe(0);
     });
 });
