@@ -55,6 +55,8 @@ class Element extends EventTarget {
     replaceChildren(...children) { this.children = []; this.append(...children); }
     contains(target) { return target === this || this.children.some(child => child instanceof Element && child.contains(target)); }
     focus(options) {
+        const modal = this.ownerDocument?.body.querySelectorAll("dialog").find(dialog => dialog.hasAttribute("open"));
+        if (modal && !modal.contains(this)) return;
         for (let element = this; element; element = element.parentElement) {
             if (element.hidden || element.inert) return;
         }
@@ -331,6 +333,38 @@ describe("medium drawer focus", () => {
 
         panel.closeOverlayOnEscape(newFolder);
         expect(panel.overlayOpen).toBe(false);
+        expect(panel.activeElement).toBe(panel.sidebarToggle);
+    });
+
+    test("canceling a drawer dialog after resize restores the visible narrow control", async () => {
+        const panel = await openClient();
+        panel.setOverlay(true);
+        const newFolder = panel.sidebar.querySelectorAll("button").at(-1);
+        newFolder.focus();
+        newFolder.dispatchEvent(new Event("click"));
+        const dialog = panel.document.body.querySelector("dialog");
+
+        await panel.setViewport({ wide: false, narrow: true });
+        panel.sidebar.hidden = true;
+        dialog.close();
+        await Promise.resolve();
+
+        expect(panel.activeElement).toBe(panel.showFoldersButton);
+    });
+
+    test("canceling a sidebar dialog after wide-to-medium resize restores the toggle", async () => {
+        const panel = await openClient();
+        await panel.setViewport({ wide: true, narrow: false });
+        const newFolder = panel.sidebar.querySelectorAll("button").at(-1);
+        newFolder.focus();
+        newFolder.dispatchEvent(new Event("click"));
+        const dialog = panel.document.body.querySelector("dialog");
+
+        await panel.setViewport({ wide: false, narrow: false });
+        expect(panel.sidebar.inert).toBe(true);
+        dialog.close();
+        await Promise.resolve();
+
         expect(panel.activeElement).toBe(panel.sidebarToggle);
     });
 });

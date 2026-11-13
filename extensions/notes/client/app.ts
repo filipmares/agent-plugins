@@ -178,6 +178,13 @@ function selectedFolderButton() {
             .find(button => !button.disabled && !button.hidden && button.getClientRects().length > 0);
 }
 
+function focusTargetForViewport() {
+    if (viewport() !== "narrow") return sidebarToggle;
+    return pane === "folders"
+        ? selectedFolderButton()
+        : pane === "list" ? showFoldersButton : backToNotesButton;
+}
+
 document.addEventListener("focusin", event => rememberFocus(event.target));
 document.addEventListener("focusout", event => rememberFocus(event.target));
 
@@ -982,11 +989,19 @@ let dialogCount = 0;
 function modal<T>(title: string, build: (close: (value: T | null) => void) => Child[], initialFocus?: () => HTMLElement | null) {
     return new Promise<T | null>(resolve => {
         const id = `dialog-title-${++dialogCount}`;
+        const opener = document.activeElement as HTMLElement | null;
+        const sidebarOpener = !!opener && sidebar.contains(opener);
         let result: T | null = null;
         const dialog = h("dialog", { class: "dialog", "aria-labelledby": id });
         const close = (value: T | null) => { result = value; dialog.close(); };
         dialog.append(h("h2", { id, class: "dialog-title" }, title), ...build(close).filter(Boolean) as Node[]);
-        dialog.addEventListener("close", () => { dialog.remove(); resolve(result); });
+        dialog.addEventListener("close", () => {
+            dialog.remove();
+            resolve(result);
+            if (sidebarOpener) queueMicrotask(() => {
+                if (document.activeElement !== opener) focusTargetForViewport()?.focus();
+            });
+        });
         document.body.append(dialog);
         dialog.showModal();
         initialFocus?.()?.focus();
