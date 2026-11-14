@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runInNewContext } from "node:vm";
+import { FailureJournal } from "../failure-journal.mjs";
 import { createNotesServer } from "../server.mjs";
 import { NotesLibrary } from "../storage.mjs";
 import { pushRecovery, recoveryPath, saveUiState } from "../ui-state.mjs";
@@ -15,13 +16,14 @@ const lazy = instrumented.replace(/^const importEditor = .+;$/m, "");
 if (lazy === instrumented) throw new Error("Cannot replace the Notes editor loader.");
 const script = new Bun.Transpiler({ loader: "ts" }).transformSync(lazy + `
 globalThis.client = { state, textarea, toast, openNote, moveNote, save, resolveConflict, refresh, select, askInput, askStatus, askPanel, copilotButton, compose, toggleMarkdown, rows, renderList, listCount, formattingHelp,
+    flushDiagnostics,
     frontmatterView, frontmatterContext, frontmatterDetails, frontmatterMore, isPlain: () => plain,
     editorLoading, richElement, markdownButton, focusEditor, isWaiting: () => editorWaiting, listStatus: () => listStatus,
     saveButton, saveDetails, saveAnnouncement, saving: () => inflight,
     app, sidebar, listPane, editorPane, sidebarToggle, showFoldersButton, backToNotesButton, backdrop, setOverlay, rememberFocus, closeOverlayOnEscape, overlayOpen: () => overlay };
 `);
 const context = { sessionId: "client-test", actor: "user" };
-let fixture, root, library, server, statePath, clients;
+let fixture, root, library, server, statePath, diagnostics, clients;
 let scrollIntoViewTotal = 0;
 
 // Execute the entire client, including event listeners, without a browser dependency.
@@ -194,6 +196,7 @@ async function openClient({ richSafe = false, importEditor, respond, startupToas
         richHeader: () => headers.at(-1),
         scrollCalls: () => scrollIntoViewTotal,
         document,
+        window,
         app: sandbox.client.app,
         sidebar: sandbox.client.sidebar,
         listPane: sandbox.client.listPane,
@@ -221,6 +224,7 @@ async function openClient({ richSafe = false, importEditor, respond, startupToas
         delayNotes(handler) { afterNotes = handler; },
         interceptSave(handler) { beforeSave = handler; },
         richError(text) { richCallbacks.error(text); },
+        richFailure(error) { richCallbacks.failure(error); },
         richChange(text) { richCallbacks.change(text); },
         runTimers(delay) {
             for (const [id, timer] of [...timers]) {
@@ -240,7 +244,7 @@ async function openClient({ richSafe = false, importEditor, respond, startupToas
 }
 
 const startServer = (options = {}) => createNotesServer({
-    getLibrary: async () => library, getContext: async () => context, sessionId: context.sessionId, statePath, ...options,
+    getLibrary: async () => library, getContext: async () => context, sessionId: context.sessionId, statePath, diagnostics, ...options,
 });
 
 beforeEach(async () => {
@@ -248,6 +252,7 @@ beforeEach(async () => {
     root = join(fixture, "notes");
     library = new NotesLibrary(root, { trash: async () => { throw new Error("Unexpected trash call"); } });
     statePath = join(fixture, "state", "ui.json");
+    diagnostics = new FailureJournal({ path: join(fixture, "state", "failure-journal.jsonl") });
     clients = [];
     server = await startServer();
 });
@@ -256,6 +261,57 @@ afterEach(async () => {
     await Promise.all(clients.map(panel => panel.settle()));
     await server.close();
     await rm(fixture, { recursive: true, force: true });
+});
+
+test("records a rich-editor boundary failure without its message", async () => {
+    const panel = await openClient({ richSafe: true });
+    await panel.compose();
+    panel.richFailure(new Error("SENTINEL_EDITOR_EXCEPTION"));
+    panel.window.dispatchEvent(Object.assign(new Event("unhandledrejection"), { reason: "SENTINEL_REJECTION" }));
+    await panel.flushDiagnostics();
+    await panel.settle();
+    const journal = await readFile(diagnostics.path, "utf8");
+    expect(journal).toContain("notes.browser.editor_failure");
+    expect(journal).toContain("notes.browser.unhandled_rejection");
+    expect(journal).not.toContain("SENTINEL_EDITOR_EXCEPTION");
+    expect(journal).not.toContain("SENTINEL_REJECTION");
+});
+
+test("sends a correlated browser request failure with only route and operation context", async () => {
+    const panel = await openClient();
+    await panel.compose();
+    panel.interceptSave(() => { throw new Error("SENTINEL_TRANSPORT_ERROR"); });
+    panel.textarea.value = "# Private note body";
+    panel.textarea.dispatchEvent(new Event("input"));
+    expect(await panel.save()).toBe(false);
+    await panel.settle();
+    const entries = (await readFile(diagnostics.path, "utf8")).trim().split("\n").map(JSON.parse);
+    const failure = entries.find(entry => entry.eventName === "notes.browser.request_failure");
+    expect(failure.attributes.route).toBe("/api/note/create");
+    expect(failure.attributes.operationId).toMatch(/^[\da-f-]{36}$/i);
+    expect(failure.recentOperations.at(-1)).toMatchObject({
+        route: "/api/note/create", resultCode: "offline", operationId: failure.attributes.operationId,
+    });
+    expect(JSON.stringify(entries)).not.toContain("SENTINEL");
+    expect(JSON.stringify(entries)).not.toContain("Private note body");
+});
+
+test("records the startup step a stuck panel is waiting on, and nothing once startup is claimed", async () => {
+    const started = await openClient();
+    started.runTimers(30_000);
+    await started.flushDiagnostics();
+    const busy = await openClient({
+        startupToast: true,
+        respond: path => path === "api/startup"
+            ? new Response(JSON.stringify({ error: { code: "library_busy", message: "Still loading." } }), { status: 503 })
+            : undefined,
+    });
+    busy.runTimers(30_000);
+    await busy.flushDiagnostics();
+    await busy.settle();
+    const stalled = (await readFile(diagnostics.path, "utf8")).trim().split("\n").map(JSON.parse)
+        .filter(entry => entry.eventName === "notes.browser.startup_stalled");
+    expect(stalled.map(entry => entry.attributes.errorCode)).toEqual(["startup_claim_pending"]);
 });
 
 describe("save-state toolbar icon", () => {

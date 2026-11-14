@@ -7,6 +7,12 @@ and plugin versioning follows [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## [Unreleased]
 
+### Added — Notes local failure journal
+- Added a bounded, local-only diagnostic journal and reviewable issue-block renderer. Capture is structured and allowlisted; note content, exception messages and absolute paths are excluded.
+- Added browser-to-provider correlation IDs, failure deduplication, recent operation context, retention and privacy tests.
+- A panel that never finishes loading is journaled: the provider records the last stage its page reached (`notes.panel.startup_stalled`), the page records the step it is waiting on (`notes.browser.startup_stalled`), and requests carrying the panel's token that fail the Host or Origin check are recorded once per reason (`notes.request.rejected`), without the header values.
+- Bumped the plugin and marketplace manifests to `2.2.8`.
+
 ### Changed — Notes startup performance
 - The Notes panel now loads a small ES module shell (about 44 KB, down from 649 KB). The rich editor is a separate bundle, `vendor/notes-editor.js`, imported lazily. The note list renders without waiting for the editor; the editor pane shows a loading state until it is ready, then opens the note. If the editor bundle fails to load, the note opens as plain Markdown.
 - Startup fetches the panel state, notes and folders in parallel. List rendering reuses date formatters, computes "today" once per render, groups rows in one pass, and lets the browser skip off-screen rows (`content-visibility`).

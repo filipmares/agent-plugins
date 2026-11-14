@@ -28,6 +28,93 @@ class ApiError extends Error {
 }
 
 const NOTE_KEY = "application/x-copilot-note";
+const diagnosticRoutes = new Set([
+    "/api/ask", "/api/folder/create", "/api/folder/delete", "/api/folder/rename", "/api/folders",
+    "/api/image", "/api/note", "/api/note/create", "/api/note/delete", "/api/note/move",
+    "/api/note/pin", "/api/note/rescue", "/api/note/update", "/api/notes", "/api/open-link",
+    "/api/startup", "/api/state", "/api/ui",
+]);
+const expectedDiagnosticCodes = new Set([
+    "already_exists", "ambiguous_match", "ambiguous_path", "chat_unavailable", "conflict",
+    "delete_cancelled", "invalid_encoding", "invalid_frontmatter", "invalid_name", "invalid_path",
+    "invalid_request", "invalid_session", "match_not_found", "not_found", "note_too_large",
+    "request_too_large", "server_closed", "unsafe_path", "unsafe_url", "unsupported_media_type",
+]);
+const recentOperations: Array<{ operation?: string; route?: string; resultCode?: string; status?: number; durationMs?: number; operationId?: string }> = [];
+const queuedDiagnostics: object[] = [];
+let diagnosticsFlushing = false;
+let diagnosticsFlush = Promise.resolve();
+
+function requestRoute(path: string) {
+    const route = `/${path.split(/[?#]/, 1)[0].replace(/^\/+/, "")}`;
+    return diagnosticRoutes.has(route) ? route : null;
+}
+
+function browserStack(stack: unknown) {
+    if (typeof stack !== "string") return [];
+    return stack.split("\n").flatMap(line => {
+        const location = /\/(app|editor)\.js:(\d+):(\d+)/.exec(line);
+        if (!location) return [];
+        const functionName = /^\s*at ([A-Za-z_$][\w$]{0,63}) \(/.exec(line)?.[1];
+        return [{
+            file: `${location[1]}.js`,
+            ...(functionName ? { function: functionName } : {}),
+            line: Number(location[2]),
+            column: Number(location[3]),
+        }];
+    }).slice(0, 10);
+}
+
+function flushDiagnostics() {
+    if (diagnosticsFlushing) return diagnosticsFlush;
+    if (!queuedDiagnostics.length) return Promise.resolve();
+    diagnosticsFlushing = true;
+    diagnosticsFlush = (async () => {
+        try {
+            while (queuedDiagnostics.length) {
+                const response = await fetch("api/diagnostics", {
+                    method: "POST",
+                    keepalive: true,
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(queuedDiagnostics[0]),
+                });
+                if (!response.ok) break;
+                queuedDiagnostics.shift();
+            }
+        } catch { /* a later Notes request will retry the in-memory queue */ }
+        finally { diagnosticsFlushing = false; }
+    })();
+    return diagnosticsFlush;
+}
+
+function captureBrowserFailure(eventName: string, errorCode: string, error: unknown, detail: Record<string, unknown> = {}) {
+    queuedDiagnostics.push({
+        eventName,
+        errorCode,
+        ...detail,
+        stack: browserStack(error instanceof Error ? error.stack : undefined),
+        recentOperations: recentOperations.slice(),
+    });
+    if (queuedDiagnostics.length > 10) queuedDiagnostics.shift();
+    flushDiagnostics();
+}
+
+addEventListener("error", event => {
+    const error = (event as ErrorEvent).error;
+    captureBrowserFailure("notes.browser.unhandled_error", "unexpected_error", error);
+});
+addEventListener("unhandledrejection", event => {
+    captureBrowserFailure("notes.browser.unhandled_rejection", "unexpected_error", (event as PromiseRejectionEvent).reason);
+});
+// A panel that has not claimed startup by then is journaled with the step it is waiting on. The provider
+// keeps its own watchdog for a page that never loads this script or cannot reach the API.
+let stateLoaded = false;
+let startupClaimed = false;
+setTimeout(() => {
+    if (startupClaimed) return;
+    const stage = !stateLoaded ? "state_pending" : listStatus === "ready" ? "startup_claim_pending" : "lists_pending";
+    captureBrowserFailure("notes.browser.startup_stalled", stage, undefined);
+}, 30_000);
 const wide = matchMedia("(min-width: 960px)");
 const narrow = matchMedia("(max-width: 639.98px)");
 
@@ -84,16 +171,43 @@ const iconButton = (name: string, label: string, onclick: (event: MouseEvent) =>
     h("button", { type: "button", class: "icon-button", "aria-label": label, title: label, onclick, ...props }, icon(name));
 
 async function request<T>(path: string, body?: unknown): Promise<T> {
+    const route = requestRoute(path);
+    const operationId = crypto.randomUUID();
+    const started = Date.now();
     let response: Response;
     try {
-        response = await fetch(path, body === undefined ? {} : {
-            method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+        const headers = { "X-Notes-Operation-Id": operationId };
+        response = await fetch(path, body === undefined ? { headers } : {
+            method: "POST", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify(body),
         });
     } catch {
+        if (route) {
+            recentOperations.push({ route, resultCode: "offline", durationMs: Date.now() - started, operationId });
+            if (recentOperations.length > 20) recentOperations.shift();
+            captureBrowserFailure("notes.browser.request_failure", "offline", undefined, {
+                route, durationMs: Date.now() - started, operationId,
+            });
+        }
         throw new ApiError("offline", "Notes is not responding. Reopen the panel if this continues.");
     }
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new ApiError(data.error?.code ?? "io_error", data.error?.message ?? `Request failed (${response.status}).`);
+    const durationMs = Date.now() - started;
+    const errorCode = data.error?.code ?? "io_error";
+    if (route) {
+        recentOperations.push({
+            route, status: response.status, resultCode: response.ok ? "ok" : errorCode, durationMs, operationId,
+        });
+        if (recentOperations.length > 20) recentOperations.shift();
+    }
+    if (!response.ok) {
+        if (route && !expectedDiagnosticCodes.has(errorCode)) {
+            captureBrowserFailure("notes.browser.request_failure", errorCode, undefined, {
+                route, durationMs, status: response.status, operationId,
+            });
+        }
+        throw new ApiError(errorCode, data.error?.message ?? `Request failed (${response.status}).`);
+    }
+    flushDiagnostics();
     return data as T;
 }
 
@@ -558,6 +672,7 @@ function prepareEditor() {
             element: richElement, body: textarea.value, noteKey: openKey, header: richHeader,
             change: body => { textarea.value = body; editorError = false; editorErrorText = ""; changedText(); },
             blur: () => void save(),
+            failure: error => captureBrowserFailure("notes.browser.editor_failure", "unexpected_error", error),
             error: text => { editorError = true; editorErrorText = text; clearTimeout(saveTimer); renderSaveStatus(); },
             notice: showToast,
             link: () => editLink(), open: url => void openExternal(url),
@@ -567,6 +682,7 @@ function prepareEditor() {
         plain = guarded;
         markOnce("editor");
     } catch (error) {
+        captureBrowserFailure("notes.browser.editor_failure", "unexpected_error", error);
         rich?.destroy();
         rich = null;
         richHeader = null;
@@ -782,8 +898,33 @@ addEventListener("pagehide", () => {
         ? { draft: state.draft.key, folder: state.draft.folder, body: textarea.value }
         : { id: keyOf(state.note!), folder: state.note!.folder, body: textarea.value, expectedVersion: state.note!.version,
             ...(state.conflict ? { stash: true } : {}) };
-    void fetch("api/note/rescue", { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
-        .catch(() => {});
+    const operationId = crypto.randomUUID();
+    const started = Date.now();
+    void fetch("api/note/rescue", {
+        method: "POST", keepalive: true,
+        headers: { "Content-Type": "application/json", "X-Notes-Operation-Id": operationId },
+        body: JSON.stringify(body),
+    }).then(async response => {
+        const data = await response.json().catch(() => ({}));
+        const errorCode = data.error?.code ?? (response.ok ? "ok" : "io_error");
+        recentOperations.push({
+            route: "/api/note/rescue", status: response.status, resultCode: errorCode,
+            durationMs: Date.now() - started, operationId,
+        });
+        if (recentOperations.length > 20) recentOperations.shift();
+        if (!response.ok && !expectedDiagnosticCodes.has(errorCode)) {
+            captureBrowserFailure("notes.browser.request_failure", errorCode, undefined, {
+                route: "/api/note/rescue", durationMs: Date.now() - started,
+                status: response.status, operationId,
+            });
+        }
+    }).catch(error => {
+        recentOperations.push({ route: "/api/note/rescue", resultCode: "offline", durationMs: Date.now() - started, operationId });
+        if (recentOperations.length > 20) recentOperations.shift();
+        captureBrowserFailure("notes.browser.request_failure", "offline", error, {
+            route: "/api/note/rescue", durationMs: Date.now() - started, operationId,
+        });
+    });
 });
 
 // ---------- Navigation ----------
@@ -1832,6 +1973,7 @@ async function start(gen = navGen) {
         return renderList();
     }
     state.context = initial.context;
+    stateLoaded = true;
     copilotButton.hidden = !state.context.sessionId;
     const stale = gen !== navGen;
     state.ui = stale ? { ...initial.ui, selection: state.ui.selection, noteId: state.ui.noteId } : initial.ui;
@@ -1864,6 +2006,7 @@ async function finishStartup(gen: number, stale: boolean, restoring: () => Promi
     if (claim) {
         try {
             claimed = await request<Startup>("api/startup", {});
+            startupClaimed = true;
         } catch (error) {
             // Nothing was handed over, so claiming again is safe. The restored note waits too: recovered text
             // shown later must not replace a note the user has started editing. A pending reveal still arrives as an event.

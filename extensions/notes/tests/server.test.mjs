@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { retryTransient } from "../filesystem.mjs";
 import { NotesError } from "../errors.mjs";
+import { FailureJournal } from "../failure-journal.mjs";
 import { MAX_REQUEST_BYTES, createNotesServer, resolveTarget, waitForLibrary } from "../server.mjs";
 import { createPanelRegistry } from "../panels.mjs";
 import { NotesLibrary } from "../storage.mjs";
@@ -154,6 +155,83 @@ describe("Notes panel server", () => {
         await start(undefined, { sendMessage: async () => { throw new Error("Attachment refused by runtime"); } });
         const current = await library.read(note.id);
         expect((await ask(current.version)).status).toBe(500);
+    });
+
+    test("captures provider and browser failures without retaining prompts or untrusted fields", async () => {
+        const diagnostics = new FailureJournal({ path: join(fixture, "state", "failure-journal.jsonl") });
+        await start(undefined, {
+            diagnostics,
+            sendMessage: async () => { throw new Error("SENTINEL_EXCEPTION"); },
+        });
+        const note = await library.create({ body: "# Secret title\nSecret body" }, { sessionId: "session-a", actor: "user" });
+        const operationId = "2e0f0bf2-a992-4dcb-b06b-0b57ea1e9e15";
+        const failed = await call("api/ask", {
+            method: "POST",
+            headers: { "X-Notes-Operation-Id": operationId },
+            body: { id: note.id, expectedVersion: note.version, prompt: "SENTINEL_PROMPT" },
+        });
+        expect(failed.status).toBe(500);
+
+        const browser = await call("api/diagnostics", {
+            method: "POST",
+            body: {
+                eventName: "notes.browser.unhandled_error",
+                errorCode: "unexpected_error",
+                operationId,
+                route: "/api/ask",
+                stack: [{ file: "app.js", function: "render", line: 1, column: 24 }],
+                recentOperations: [{ route: "/api/ask", resultCode: "unexpected_error", operationId, durationMs: 42 }],
+            },
+        });
+        expect(browser.status).toBe(202);
+        expect((await call("api/diagnostics", {
+            method: "POST",
+            body: { eventName: "notes.browser.unhandled_error", errorCode: "io_error", exception: "SENTINEL_UNTRUSTED" },
+        })).status).toBe(400);
+
+        const journal = await readFile(diagnostics.path, "utf8");
+        expect(journal).not.toContain("SENTINEL");
+        expect(journal).not.toContain(fixture);
+        const events = journal.trim().split("\n").map(JSON.parse);
+        const providerFailure = events.find(event => event.eventName === "notes.request.failure");
+        const browserFailure = events.find(event => event.eventName === "notes.browser.unhandled_error");
+        expect(providerFailure.attributes).toMatchObject({ route: "/api/ask", operationId });
+        expect(browserFailure.attributes).toMatchObject({ route: "/api/ask", operationId });
+        expect(browserFailure.stack).toEqual([{ file: "app.js", function: "render", line: 1, column: 24 }]);
+    });
+
+    test("journals a panel that never claims startup, and token-bearing trust rejections once per reason", async () => {
+        const diagnostics = new FailureJournal({ path: join(fixture, "state", "failure-journal.jsonl") });
+        const entries = async () => (await readFile(diagnostics.path, "utf8").catch(() => "")).trim().split("\n").filter(Boolean).map(JSON.parse);
+        const until = async check => { for (let i = 0; i < 100 && !check(await entries()); i++) await new Promise(resolve => setTimeout(resolve, 20)); };
+        await start(undefined, { diagnostics, startupWatchdogMs: 500 });
+        expect((await call("")).status).toBe(200);
+        const note = { body: "# Hello", folder: "" };
+        expect((await call("/not-the-token/", { base: new URL(server.url).origin })).status).toBe(404);
+        for (let i = 0; i < 2; i++) expect((await call("api/folders", { headers: { Host: "sentinel-host.example" } })).status).toBe(404);
+        expect((await call("api/folders", { headers: { Origin: "http://sentinel-origin.example" } })).status).toBe(404);
+        expect((await call("api/note/create", { method: "POST", body: note, headers: { Origin: "null" } })).status).toBe(404);
+        expect((await call("api/note/create", { method: "POST", body: note, headers: { Origin: null } })).status).toBe(404);
+        await until(records => records.some(record => record.eventName === "notes.panel.startup_stalled"));
+
+        const records = await entries();
+        expect(JSON.stringify(records)).not.toContain("sentinel");
+        const rejected = records.filter(record => record.eventName === "notes.request.rejected");
+        expect(rejected.map(record => [record.attributes.errorCode, record.occurrences]).sort()).toEqual([
+            ["host_mismatch", 1], ["origin_mismatch", 1], ["origin_missing", 1], ["origin_null", 1],
+        ]);
+        // The page loaded but its script was never requested; rejected requests do not count as progress.
+        expect(records.find(record => record.eventName === "notes.panel.startup_stalled").attributes.errorCode).toBe("script_not_requested");
+
+        await server.close();
+        await rm(diagnostics.path);
+        await start(undefined, { diagnostics, startupWatchdogMs: 50 });
+        await claimStartup();
+        await server.close();
+        await start(undefined, { diagnostics, startupWatchdogMs: 50 });
+        await server.close();
+        await new Promise(resolve => setTimeout(resolve, 150));
+        expect(await entries()).toEqual([]);
     });
 
     test("serves the shell with a strict CSP behind a capability token, exact Host and same-origin POSTs", async () => {

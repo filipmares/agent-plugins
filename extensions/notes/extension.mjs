@@ -5,6 +5,7 @@ import { createPanelRegistry } from "./panels.mjs";
 import { readSessionContext, resolveNotesDirectory } from "./platform.mjs";
 import { createNotesServer, resolveTarget, waitForLibrary } from "./server.mjs";
 import { NotesLibrary } from "./storage.mjs";
+import { FailureJournal, failureJournalPath } from "./failure-journal.mjs";
 import { uiStatePath } from "./ui-state.mjs";
 
 let session;
@@ -14,7 +15,16 @@ async function getLibrary() {
     if (!library) {
         library = resolveNotesDirectory().then(async directory => {
             const notes = new NotesLibrary(directory);
-            await notes.startWatching(notifyPanels, { log });
+            await notes.startWatching(notifyPanels, {
+                log,
+                onFailure: error => diagnostics.recordFailure({
+                    eventName: "notes.watcher.degraded",
+                    errorCode: error?.code,
+                    severityText: "WARN",
+                    attributes: { component: "watcher" },
+                    stack: error?.stack,
+                }),
+            });
             activeLibrary = notes;
             return notes;
         });
@@ -26,6 +36,7 @@ async function getLibrary() {
 const panels = createPanelRegistry();
 const notifyPanels = () => panels.notify();
 const log = (message, options) => session?.log(`[notes] ${message}`, options);
+const diagnostics = new FailureJournal({ path: failureJournalPath(), log });
 
 const targetSchema = {
     type: "object",
@@ -59,6 +70,7 @@ async function openPanel(ctx) {
                 sessionId: ctx.sessionId,
                 statePath: uiStatePath(),
                 target,
+                diagnostics,
                 sendMessage: (options, sessionId) => {
                     if (sessionId !== session.sessionId) throw new NotesError("chat_unavailable", "The owning session changed. Reopen this Notes panel.");
                     return session.send(options);
@@ -68,6 +80,12 @@ async function openPanel(ctx) {
         );
         return { url: panel.url, title: "Notes" };
     } catch (error) {
+        await diagnostics.recordFailure({
+            eventName: "notes.canvas.open_failure",
+            errorCode: error?.code,
+            attributes: { component: "canvas" },
+            stack: error?.stack,
+        });
         throw canvasError(error);
     }
 }
@@ -78,6 +96,7 @@ session = await joinSession({
         getContext: readSessionContext,
         confirmPermanent: message => session.ui.confirm(message),
         log,
+        diagnostics,
     })],
     canvases: [
         createCanvas({
@@ -107,7 +126,22 @@ session = await joinSession({
             onClose: ctx => panels.close(ctx.instanceId),
         }),
     ],
+}).catch(async error => {
+    await diagnostics.recordFailure({
+        eventName: "notes.provider.failure",
+        errorCode: error?.code,
+        attributes: { component: "provider" },
+        stack: error?.stack,
+    });
+    throw error;
 });
 
 process.once("exit", () => activeLibrary?.close());
-session.on("session.shutdown", () => { void library?.then(notes => notes.close(), () => {}); });
+session.on("session.shutdown", () => {
+    void library?.then(notes => notes.close()).catch(error => diagnostics.recordFailure({
+        eventName: "notes.session.shutdown_failure",
+        errorCode: error?.code,
+        attributes: { component: "provider" },
+        stack: error?.stack,
+    }));
+});

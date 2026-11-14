@@ -2,7 +2,7 @@
 
 Markdown notes for the GitHub Copilot app, with rich and plain editing,
 session provenance, live sync, and Ask Copilot. Shipped with the
-`agent-plugins` plugin as of 2.2.0.
+`agent-plugins` plugin as of 2.2.7.
 
 ## Installation
 
@@ -238,8 +238,16 @@ Custom fields and YAML comments are preserved.
 
 Session names, repository names, branches, and local project paths can be
 sensitive. Local paths may contain your username. Documents sync services
-sync this metadata along with note content. Notes does not send telemetry.
-Uninstalling the extension does not delete the library.
+sync this metadata along with note content. Notes does not send telemetry or
+upload diagnostics. It keeps a local failure journal under
+`$COPILOT_HOME/extensions/notes/artifacts/`, capped at 30 days and 1 MiB.
+Journal records contain allowlisted diagnostic metadata only—not note content,
+titles, prompts, arbitrary exception messages, session names or absolute paths.
+A panel that has not finished loading after 30 seconds is recorded with the
+last startup stage it reached. The issue-block renderer is not exposed in the
+UI yet. See the
+[failure-capture design](./docs/failure-capture.md). Uninstalling the extension
+does not delete the library or diagnostic journal.
 
 Discovery **writes frontmatter to plain Markdown files**, preserving the body
 and original modified time. Adopted files have no invented origin; they enter
