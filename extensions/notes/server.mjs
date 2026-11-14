@@ -5,6 +5,7 @@ import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { NotesError } from "./errors.mjs";
+import { PANEL_STARTUP_WATCHDOG_MS } from "./failure-journal.mjs";
 import { openExternalLink } from "./platform.mjs";
 import { loadUiState, popRecovery, pushRecovery, recoveryPath, saveUiState } from "./ui-state.mjs";
 
@@ -160,7 +161,7 @@ export const LIBRARY_WAIT_MS = 15_000;
 
 // A panel that has not claimed startup by then is journaled with the last stage it reached.
 // Longer than LIBRARY_WAIT_MS, so a slow library first shows up as library_busy.
-export const STARTUP_WATCHDOG_MS = 30_000;
+export const STARTUP_WATCHDOG_MS = PANEL_STARTUP_WATCHDOG_MS;
 const STARTUP_STAGES = ["page_not_requested", "script_not_requested", "api_not_reached", "startup_incomplete"];
 
 // Waits for the shared library without resetting or retrying its initialization.
@@ -197,7 +198,7 @@ export async function resolveTarget(getLibrary, target = {}) {
     return resolved;
 }
 
-export async function createNotesServer({ getLibrary, getContext, sessionId, statePath, target, onChange, log, sendMessage, diagnostics, openLink = openExternalLink, libraryWaitMs = LIBRARY_WAIT_MS, startupWatchdogMs = STARTUP_WATCHDOG_MS }) {
+export async function createNotesServer({ getLibrary, getContext, sessionId, statePath, target, onChange, log, sendMessage, diagnostics, onStartup, onStartupStalled, onPanelClose, openLink = openExternalLink, libraryWaitMs = LIBRARY_WAIT_MS, startupWatchdogMs = STARTUP_WATCHDOG_MS }) {
     // Reads answer library_busy rather than hanging while the first scan runs; writes still queue for it.
     const readLibrary = () => waitForLibrary(getLibrary, libraryWaitMs);
     const token = randomBytes(32).toString("hex");
@@ -408,6 +409,7 @@ export async function createNotesServer({ getLibrary, getContext, sessionId, sta
                 const claimed = { target: pendingTarget, recovery };
                 pendingTarget = null;
                 clearTimeout(startupWatchdog);
+                await onStartup?.();
                 return sendJson(res, 200, claimed);
             }
             if (route === "/api/open-link") {
@@ -490,7 +492,7 @@ export async function createNotesServer({ getLibrary, getContext, sessionId, sta
             errorCode: STARTUP_STAGES[startupStage],
             severityText: "WARN",
             attributes: { component: "provider", durationMs: startupWatchdogMs },
-        }), startupWatchdogMs);
+        }).then(recorded => recorded && onStartupStalled?.()), startupWatchdogMs);
         startupWatchdog.unref?.();
     }
 
@@ -513,6 +515,7 @@ export async function createNotesServer({ getLibrary, getContext, sessionId, sta
             if (closed) return;
             closed = true;
             clearTimeout(startupWatchdog);
+            await onPanelClose?.();
             for (const stream of streams) stream.end();
             streams.clear();
             server.closeAllConnections?.();

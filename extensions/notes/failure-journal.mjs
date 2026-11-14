@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { arch, hostname, release } from "node:os";
 import { dirname, join } from "node:path";
-import { lstat, mkdir, open, readFile, rename, rm, unlink, writeFile } from "node:fs/promises";
+import { lstat, mkdir, open, readFile, readdir, rename, rm, unlink, writeFile } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import { isTransientFsError, retryTransient } from "./filesystem.mjs";
 import { copilotHome } from "./platform.mjs";
@@ -9,6 +9,7 @@ import { copilotHome } from "./platform.mjs";
 export const MAX_JOURNAL_BYTES = 1024 * 1024;
 export const MAX_BUNDLE_BYTES = 20 * 1024;
 export const FAILURE_JOURNAL_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+export const PANEL_STARTUP_WATCHDOG_MS = 30_000;
 const MAX_RECENT_OPERATIONS = 20;
 const MAX_STACK_FRAMES = 10;
 const LOCK_TIMEOUT_MS = 5000;
@@ -22,7 +23,7 @@ const EXPECTED_CODES = new Set([
 const NOTES_CODES = new Set([
     ...EXPECTED_CODES, "asset_link_unsupported", "delete_incomplete", "documents_unavailable",
     "io_error", "library_busy", "lock_changed", "move_incomplete", "offline", "open_failed",
-    "platform_unsupported", "session_metadata_unavailable", "server_closed", "trash_unavailable",
+    "platform_unsupported", "session_metadata_unavailable", "server_closed", "startup_abandoned", "trash_unavailable",
     // Trust-check rejections of requests that carried the panel's capability token.
     "host_mismatch", "origin_missing", "origin_mismatch", "origin_null",
     // The last startup stage a stalled panel reached, from the provider's and the browser's side.
@@ -46,7 +47,8 @@ const ROUTES = new Set([
 const EVENTS = new Set([
     "notes.browser.editor_failure", "notes.browser.request_failure", "notes.browser.startup_stalled",
     "notes.browser.unhandled_error", "notes.browser.unhandled_rejection", "notes.canvas.open_failure",
-    "notes.panel.startup_stalled", "notes.provider.failure", "notes.request.failure", "notes.request.rejected",
+    "notes.panel.startup_abandoned", "notes.panel.startup_stalled", "notes.provider.failure",
+    "notes.request.failure", "notes.request.rejected",
     "notes.session.shutdown_failure", "notes.tool.failure", "notes.watcher.degraded",
 ]);
 const BROWSER_FILES = new Set(["app.js", "editor.js"]);
@@ -291,6 +293,11 @@ function safeEnvironment(value = {}) {
     return environment;
 }
 
+function processExists(pid) {
+    try { process.kill(pid, 0); return true; }
+    catch (error) { return error?.code !== "ESRCH"; }
+}
+
 export function defaultEnvironment() {
     return safeEnvironment({
         notesVersion: process.env.COPILOT_PLUGIN_VERSION,
@@ -313,6 +320,93 @@ export class FailureJournal {
         this.log = log;
         this.environment = safeEnvironment(environment);
         this.now = now;
+    }
+
+    #warnStorageFailure() {
+        if (this.#warned) return;
+        this.#warned = true;
+        try { this.log?.("Notes diagnostic journal could not save a failure.", { level: "warning" }); }
+        catch { /* logging must not affect the Notes operation */ }
+    }
+
+    async beginPanelStartup() {
+        const directory = `${this.path}.pending`;
+        const markerPath = join(directory, `${randomBytes(16).toString("hex")}.json`);
+        try {
+            await mkdir(directory, { recursive: true, mode: 0o700 });
+            await writeFile(markerPath, JSON.stringify({
+                pid: process.pid,
+                startedAt: this.now().toISOString(),
+            }), { flag: "wx", mode: 0o600 });
+        } catch {
+            this.#warnStorageFailure();
+            return undefined;
+        }
+
+        let completed = false;
+        return async () => {
+            if (completed) return;
+            try {
+                await retryTransient(() => unlink(markerPath));
+                completed = true;
+            } catch (error) {
+                if (error?.code === "ENOENT") completed = true;
+                else this.#warnStorageFailure();
+            }
+        };
+    }
+
+    async recoverAbandonedPanelStarts() {
+        const directory = `${this.path}.pending`;
+        let entries;
+        try {
+            entries = await readdir(directory, { withFileTypes: true });
+        } catch (error) {
+            if (error?.code !== "ENOENT") this.#warnStorageFailure();
+            return 0;
+        }
+
+        let recovered = 0;
+        for (const entry of entries) {
+            const name = entry.name;
+            const match = /^([a-f\d]{32}\.json)(?:\.claim\.(\d+)\.[a-f\d]{8})?$/i.exec(name);
+            if (!entry.isFile() || !match) continue;
+            const markerPath = join(directory, name);
+
+            let marker;
+            try { marker = JSON.parse(await readFile(markerPath, "utf8")); }
+            catch (error) {
+                if (error?.code !== "ENOENT" && !(error instanceof SyntaxError)) this.#warnStorageFailure();
+                continue;
+            }
+            const startedAt = Date.parse(marker.startedAt);
+            if (!Number.isSafeInteger(marker.pid) || marker.pid < 1 || !Number.isFinite(startedAt)) continue;
+            const ageMs = Math.max(0, Date.parse(this.now().toISOString()) - startedAt);
+            if (ageMs < PANEL_STARTUP_WATCHDOG_MS
+                && (processExists(marker.pid) || (match[2] && processExists(Number(match[2]))))) continue;
+
+            const claimPath = `${markerPath}.claim.${process.pid}.${randomBytes(4).toString("hex")}`;
+            try { await retryTransient(() => rename(markerPath, claimPath)); }
+            catch (error) {
+                if (error?.code !== "ENOENT") this.#warnStorageFailure();
+                continue;
+            }
+
+            const recorded = await this.recordFailure({
+                eventName: "notes.panel.startup_abandoned",
+                errorCode: "startup_abandoned",
+                severityText: "WARN",
+                attributes: { component: "provider", durationMs: Math.min(600_000, ageMs) },
+            });
+            if (!recorded) continue;
+            try {
+                await retryTransient(() => unlink(claimPath));
+                recovered++;
+            } catch (error) {
+                if (error?.code !== "ENOENT") this.#warnStorageFailure();
+            }
+        }
+        return recovered;
     }
 
     recordOperation(operation) {
@@ -363,11 +457,7 @@ export class FailureJournal {
         try {
             return await run;
         } catch {
-            if (!this.#warned) {
-                this.#warned = true;
-                try { this.log?.("Notes diagnostic journal could not save a failure.", { level: "warning" }); }
-                catch { /* logging must not affect the Notes operation */ }
-            }
+            this.#warnStorageFailure();
             return false;
         }
     }

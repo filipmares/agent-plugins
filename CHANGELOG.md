@@ -7,6 +7,10 @@ and plugin versioning follows [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## [Unreleased]
 
+### Fixed — Notes startup failure capture
+- Added a private per-panel startup marker so an extension process killed before the 30-second watchdog runs is recorded as `notes.panel.startup_abandoned` on the next Notes launch.
+- Bumped the plugin and marketplace manifests to `2.2.9`.
+
 ### Added — Notes local failure journal
 - Added a bounded, local-only diagnostic journal and reviewable issue-block renderer. Capture is structured and allowlisted; note content, exception messages and absolute paths are excluded.
 - Added browser-to-provider correlation IDs, failure deduplication, recent operation context, retention and privacy tests.

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FAILURE_JOURNAL_RETENTION_MS, MAX_BUNDLE_BYTES, MAX_JOURNAL_BYTES, FailureJournal } from "../failure-journal.mjs";
@@ -96,6 +96,32 @@ describe("Notes failure journal", () => {
             })));
         const records = (await readFile(first.path, "utf8")).trim().split("\n").map(JSON.parse);
         expect(records).toHaveLength(12);
+    });
+
+    test("recovers a panel startup marker after its owning process exits", async () => {
+        const journal = await createJournal();
+        const finishStartup = await journal.beginPanelStartup();
+        const pending = `${journal.path}.pending`;
+        const [name] = await readdir(pending);
+        expect(name).toMatch(/^[a-f\d]{32}\.json$/i);
+
+        await journal.recoverAbandonedPanelStarts();
+        expect(await readdir(pending)).toHaveLength(1);
+        await finishStartup();
+        expect(await readdir(pending)).toEqual([]);
+
+        await mkdir(pending, { recursive: true });
+        await writeFile(join(pending, `${"a".repeat(32)}.json`), JSON.stringify({
+            pid: 2_147_483_647, startedAt: new Date().toISOString(),
+        }));
+        expect(await journal.recoverAbandonedPanelStarts()).toBe(1);
+        const records = (await readFile(journal.path, "utf8")).trim().split("\n").map(JSON.parse);
+        expect(records).toHaveLength(1);
+        expect(records[0]).toMatchObject({
+            eventName: "notes.panel.startup_abandoned",
+            attributes: { component: "provider", errorCode: "startup_abandoned" },
+        });
+        expect(await readdir(pending)).toEqual([]);
     });
 
     test("keeps successful operations in memory and attaches only the latest 20 to a failure", async () => {

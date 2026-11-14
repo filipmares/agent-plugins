@@ -37,6 +37,7 @@ const panels = createPanelRegistry();
 const notifyPanels = () => panels.notify();
 const log = (message, options) => session?.log(`[notes] ${message}`, options);
 const diagnostics = new FailureJournal({ path: failureJournalPath(), log });
+await diagnostics.recoverAbandonedPanelStarts();
 
 const targetSchema = {
     type: "object",
@@ -64,19 +65,30 @@ async function openPanel(ctx) {
         const panel = await panels.open(
             ctx.instanceId,
             () => resolveTarget(libraryForTarget, ctx.input ?? {}),
-            target => createNotesServer({
-                getLibrary,
-                getContext: () => readSessionContext(ctx.sessionId, { allowMissing: true }),
-                sessionId: ctx.sessionId,
-                statePath: uiStatePath(),
-                target,
-                diagnostics,
-                sendMessage: (options, sessionId) => {
-                    if (sessionId !== session.sessionId) throw new NotesError("chat_unavailable", "The owning session changed. Reopen this Notes panel.");
-                    return session.send(options);
-                },
-                log,
-            }),
+            async target => {
+                const finishStartup = await diagnostics.beginPanelStartup();
+                try {
+                    return await createNotesServer({
+                        getLibrary,
+                        getContext: () => readSessionContext(ctx.sessionId, { allowMissing: true }),
+                        sessionId: ctx.sessionId,
+                        statePath: uiStatePath(),
+                        target,
+                        diagnostics,
+                        onStartup: finishStartup,
+                        onStartupStalled: finishStartup,
+                        onPanelClose: finishStartup,
+                        sendMessage: (options, sessionId) => {
+                            if (sessionId !== session.sessionId) throw new NotesError("chat_unavailable", "The owning session changed. Reopen this Notes panel.");
+                            return session.send(options);
+                        },
+                        log,
+                    });
+                } catch (error) {
+                    await finishStartup?.();
+                    throw error;
+                }
+            },
         );
         return { url: panel.url, title: "Notes" };
     } catch (error) {
