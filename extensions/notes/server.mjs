@@ -1,7 +1,7 @@
 // One loopback server per open Notes panel.
 // Trust model: 127.0.0.1 only, a 256-bit capability path, exact Host checks,
 // same-origin POSTs with JSON bodies, no CORS, and a strict CSP.
-import { randomBytes, timingSafeEqual } from "node:crypto";
+import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { NotesError } from "./errors.mjs";
@@ -98,18 +98,18 @@ function send(res, status, type, body) {
 
 const sendJson = (res, status, value) => send(res, status, "application/json; charset=utf-8", JSON.stringify(value));
 
-async function readJson(req) {
+async function readJson(req, maxBytes = MAX_REQUEST_BYTES) {
     if (!/^application\/json(?:\s*;|$)/i.test(req.headers["content-type"] ?? "")) {
         throw new NotesError("unsupported_media_type", "Send application/json.");
     }
-    if (Number(req.headers["content-length"] ?? 0) > MAX_REQUEST_BYTES) {
+    if (Number(req.headers["content-length"] ?? 0) > maxBytes) {
         throw new NotesError("request_too_large", "The request is too large.");
     }
     const chunks = [];
     let size = 0;
     for await (const chunk of req) {
         size += chunk.length;
-        if (size > MAX_REQUEST_BYTES) throw new NotesError("request_too_large", "The request is too large.");
+        if (size > maxBytes) throw new NotesError("request_too_large", "The request is too large.");
         chunks.push(chunk);
     }
     try {
@@ -117,6 +117,33 @@ async function readJson(req) {
     } catch {
         throw new NotesError("invalid_request", "The request body is not valid JSON.");
     }
+}
+
+function diagnosticFields(body) {
+    const allowed = new Set(["eventName", "errorCode", "operationId", "route", "durationMs", "status", "stack", "recentOperations"]);
+    if (!body || typeof body !== "object" || Array.isArray(body)
+        || Object.keys(body).some(key => !allowed.has(key))
+        || !["notes.browser.editor_failure", "notes.browser.request_failure", "notes.browser.startup_stalled", "notes.browser.unhandled_error", "notes.browser.unhandled_rejection"].includes(body.eventName)
+        || typeof body.errorCode !== "string" || body.errorCode.length > 48
+        || (body.operationId !== undefined && typeof body.operationId !== "string")
+        || (body.route !== undefined && typeof body.route !== "string")
+        || (body.durationMs !== undefined && !Number.isFinite(body.durationMs))
+        || (body.status !== undefined && !Number.isSafeInteger(body.status))
+        || (body.stack !== undefined && (!Array.isArray(body.stack) || body.stack.length > 10))
+        || (body.recentOperations !== undefined && (!Array.isArray(body.recentOperations) || body.recentOperations.length > 20))) {
+        throw new NotesError("invalid_request", "Diagnostic event does not match the expected shape.");
+    }
+    const frameKeys = new Set(["file", "function", "line", "column"]);
+    if (body.stack?.some(frame => !frame || typeof frame !== "object" || Array.isArray(frame)
+        || Object.keys(frame).some(key => !frameKeys.has(key)))) {
+        throw new NotesError("invalid_request", "Diagnostic stack frame does not match the expected shape.");
+    }
+    const operationKeys = new Set(["operation", "route", "resultCode", "durationMs", "operationId", "status"]);
+    if (body.recentOperations?.some(operation => !operation || typeof operation !== "object" || Array.isArray(operation)
+        || Object.keys(operation).some(key => !operationKeys.has(key)))) {
+        throw new NotesError("invalid_request", "Diagnostic operation does not match the expected shape.");
+    }
+    return body;
 }
 
 function findFolder(node, path) {
@@ -130,6 +157,11 @@ function findFolder(node, path) {
 
 // How long a read waits for the library's first scan before answering library_busy. The scan keeps running.
 export const LIBRARY_WAIT_MS = 15_000;
+
+// A panel that has not claimed startup by then is journaled with the last stage it reached.
+// Longer than LIBRARY_WAIT_MS, so a slow library first shows up as library_busy.
+export const STARTUP_WATCHDOG_MS = 30_000;
+const STARTUP_STAGES = ["page_not_requested", "script_not_requested", "api_not_reached", "startup_incomplete"];
 
 // Waits for the shared library without resetting or retrying its initialization.
 export async function waitForLibrary(getLibrary, timeoutMs = LIBRARY_WAIT_MS) {
@@ -165,7 +197,7 @@ export async function resolveTarget(getLibrary, target = {}) {
     return resolved;
 }
 
-export async function createNotesServer({ getLibrary, getContext, sessionId, statePath, target, onChange, log, sendMessage, openLink = openExternalLink, libraryWaitMs = LIBRARY_WAIT_MS }) {
+export async function createNotesServer({ getLibrary, getContext, sessionId, statePath, target, onChange, log, sendMessage, diagnostics, openLink = openExternalLink, libraryWaitMs = LIBRARY_WAIT_MS, startupWatchdogMs = STARTUP_WATCHDOG_MS }) {
     // Reads answer library_busy rather than hanging while the first scan runs; writes still queue for it.
     const readLibrary = () => waitForLibrary(getLibrary, libraryWaitMs);
     const token = randomBytes(32).toString("hex");
@@ -179,8 +211,17 @@ export async function createNotesServer({ getLibrary, getContext, sessionId, sta
     let closed = false;
     let authority = "";
     let origin = "";
+    let startupStage = 0;
+    let startupWatchdog;
+    const rejections = new Set();
 
     const userContext = async () => ({ ...await getContext(), actor: "user" });
+    const reportProviderFailure = error => diagnostics?.recordFailure({
+        eventName: "notes.provider.failure",
+        errorCode: error?.code,
+        attributes: { component: "provider" },
+        stack: error?.stack,
+    });
     // The session this panel's notes belong to: none when the app opened it without a session, which has no metadata to read.
     const panelContext = () => getContext().catch(() => ({ sessionId }));
     const changed = () => { try { onChange?.(); } catch { /* listeners must not fail the request */ } };
@@ -190,6 +231,20 @@ export async function createNotesServer({ getLibrary, getContext, sessionId, sta
         const expected = Buffer.from(token);
         const given = Buffer.from(segment);
         return given.length === expected.length && timingSafeEqual(given, expected);
+    }
+
+    // Journals each kind of trust-check rejection once per panel: the panel's own page cannot report it.
+    async function rejectRequest(reason, route) {
+        if (!rejections.has(reason)) {
+            rejections.add(reason);
+            await diagnostics?.recordFailure({
+                eventName: "notes.request.rejected",
+                errorCode: reason,
+                severityText: "WARN",
+                attributes: { component: "provider", route, status: 404 },
+            });
+        }
+        throw new NotesError("not_found", "Not found.");
     }
 
     async function list(url) {
@@ -273,12 +328,15 @@ export async function createNotesServer({ getLibrary, getContext, sessionId, sta
 
     async function handle(req, res) {
         if (closed) throw new NotesError("server_closed", "This Notes panel is closed.");
-        if (req.headers.host !== authority) throw new NotesError("not_found", "Not found.");
-        const requestOrigin = req.headers.origin;
-        if (requestOrigin !== undefined && requestOrigin !== origin) throw new NotesError("not_found", "Not found.");
         const url = new URL(req.url ?? "/", origin);
+        // Checked first so only requests from this panel's page are journaled, not probes or favicon fetches.
         if (!checkToken(url.pathname)) throw new NotesError("not_found", "Not found.");
         const route = url.pathname.slice(base.length) || "/";
+        if (req.headers.host !== authority) await rejectRequest("host_mismatch", route);
+        const requestOrigin = req.headers.origin;
+        if (requestOrigin !== undefined && requestOrigin !== origin) await rejectRequest(requestOrigin === "null" ? "origin_null" : "origin_mismatch", route);
+        if (req.method === "POST" && requestOrigin !== origin && (ROUTES[route] || route === "/api/diagnostics")) await rejectRequest("origin_missing", route);
+        startupStage = Math.max(startupStage, route === "/" ? 1 : route === "/app.js" ? 2 : route.startsWith("/api/") ? 3 : 0);
 
         if (req.method === "GET") {
             switch (route) {
@@ -292,7 +350,7 @@ export async function createNotesServer({ getLibrary, getContext, sessionId, sta
                     const context = await panelContext();
                     return sendJson(res, 200, {
                         context: { sessionId: context.sessionId ?? null, project: context.project ?? null, sessionName: context.sessionName ?? null },
-                        ui: await loadUiState(statePath),
+                        ui: await loadUiState(statePath, reportProviderFailure),
                     });
                 }
                 case "/api/folders": return sendJson(res, 200, await (await readLibrary()).folders());
@@ -324,14 +382,32 @@ export async function createNotesServer({ getLibrary, getContext, sessionId, sta
                 }
             }
         }
-        if (req.method === "POST" && ROUTES[route]) {
-            if (requestOrigin !== origin) throw new NotesError("not_found", "Not found.");
-            const body = fields(await readJson(req), ROUTES[route]);
+        if (req.method === "POST" && (ROUTES[route] || route === "/api/diagnostics")) {
+            const body = route === "/api/diagnostics"
+                ? diagnosticFields(await readJson(req, 64 * 1024))
+                : fields(await readJson(req), ROUTES[route]);
+            if (route === "/api/diagnostics") {
+                const recorded = await diagnostics?.recordFailure({
+                    eventName: body.eventName,
+                    errorCode: body.errorCode,
+                    attributes: {
+                        component: "browser",
+                        route: body.route,
+                        durationMs: body.durationMs,
+                        status: body.status,
+                        operationId: body.operationId,
+                    },
+                    stack: body.stack,
+                    recentOperations: body.recentOperations,
+                });
+                return sendJson(res, 202, { recorded: recorded === true });
+            }
             if (route === "/api/ui") return sendJson(res, 200, await saveUiState(statePath, body.state));
             if (route === "/api/startup") {
-                const recovery = await popRecovery(recoveryPath(statePath));
+                const recovery = await popRecovery(recoveryPath(statePath), reportProviderFailure);
                 const claimed = { target: pendingTarget, recovery };
                 pendingTarget = null;
+                clearTimeout(startupWatchdog);
                 return sendJson(res, 200, claimed);
             }
             if (route === "/api/open-link") {
@@ -362,16 +438,44 @@ export async function createNotesServer({ getLibrary, getContext, sessionId, sta
     }
 
     const server = createServer((req, res) => {
-        handle(req, res).catch(error => {
+        const started = Date.now();
+        const url = new URL(req.url ?? "/", "http://127.0.0.1");
+        const route = url.pathname.slice(base.length) || "/";
+        const track = route !== "/api/diagnostics" && route !== "/api/events" && route.startsWith("/api/");
+        const operationId = typeof req.headers["x-notes-operation-id"] === "string"
+            && /^[\da-f-]{36}$/i.test(req.headers["x-notes-operation-id"])
+            ? req.headers["x-notes-operation-id"] : randomUUID();
+        handle(req, res).then(() => {
+            if (track) diagnostics?.recordOperation({
+                component: "provider", route, status: res.statusCode,
+                durationMs: Date.now() - started, operationId, resultCode: "ok",
+            });
+        }).catch(async error => {
             const known = error instanceof NotesError;
+            const status = known ? STATUS[error.code] ?? 400 : 500;
+            const code = known ? error.code : error?.code ?? "unexpected_error";
+            if (track) {
+                diagnostics?.recordOperation({
+                    component: "provider", route, status,
+                    durationMs: Date.now() - started, operationId, resultCode: code,
+                });
+                await diagnostics?.recordFailure({
+                    eventName: "notes.request.failure",
+                    errorCode: code,
+                    attributes: { component: "provider", route, status, durationMs: Date.now() - started, operationId },
+                    stack: error?.stack,
+                });
+            }
             if (!known) log?.(`Notes request failed: ${error.code ?? error.message}`, { level: "error" });
             if (res.headersSent) return res.destroy();
             if (error.code === "request_too_large") res.setHeader("Connection", "close");
-            sendJson(res, known ? STATUS[error.code] ?? 400 : 500, {
+            sendJson(res, status, {
                 error: known
                     ? { code: error.code, message: error.message, ...(error.details ? { details: error.details } : {}) }
                     : { code: "io_error", message: `Notes could not complete the request (${error.code ?? "unexpected error"}).` },
             });
+        }).catch(() => {
+            if (!res.headersSent) sendJson(res, 500, { error: { code: "io_error", message: "Notes could not complete the request." } });
         });
     });
     await new Promise((resolve, reject) => {
@@ -380,6 +484,15 @@ export async function createNotesServer({ getLibrary, getContext, sessionId, sta
     });
     authority = `127.0.0.1:${server.address().port}`;
     origin = `http://${authority}`;
+    if (diagnostics) {
+        startupWatchdog = setTimeout(() => void diagnostics.recordFailure({
+            eventName: "notes.panel.startup_stalled",
+            errorCode: STARTUP_STAGES[startupStage],
+            severityText: "WARN",
+            attributes: { component: "provider", durationMs: startupWatchdogMs },
+        }), startupWatchdogMs);
+        startupWatchdog.unref?.();
+    }
 
     function emit(event, data) {
         for (const stream of streams) {
@@ -399,6 +512,7 @@ export async function createNotesServer({ getLibrary, getContext, sessionId, sta
         async close() {
             if (closed) return;
             closed = true;
+            clearTimeout(startupWatchdog);
             for (const stream of streams) stream.end();
             streams.clear();
             server.closeAllConnections?.();

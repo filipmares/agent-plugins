@@ -197,6 +197,7 @@ function headerExtension(header: HTMLElement) {
 export function createRichEditor(options: {
     element: HTMLElement; body: string; noteKey: () => string | null; header?: HTMLElement;
     change: (body: string) => void; blur: () => void; error: (message: string) => void; notice: (message: string) => void;
+    failure?: (error: unknown) => void;
     link: () => void; open: (url: string) => void;
 }) {
     let baseline: JSONContent;
@@ -279,7 +280,10 @@ export function createRichEditor(options: {
         },
         onUpdate: ({ editor }) => {
             try { options.change(serializeEdit(editor.getJSON(), options.body, baseline)); }
-            catch (error) { options.error(error instanceof Error ? error.message : String(error)); }
+            catch (error) {
+                options.failure?.(error);
+                options.error(error instanceof Error ? error.message : String(error));
+            }
         },
         onBlur: options.blur,
     });

@@ -46,7 +46,14 @@ async function writeAtomic(path, value) {
 
 const ENTRY_KEY = /^\d{15}-[0-9a-f]{12}$/;
 const newEntryKey = () => `${String(Date.now()).padStart(15, "0")}-${randomBytes(6).toString("hex")}`;
-const entryFiles = async (dir) => (await readdir(dir).catch(() => [])).filter(name => name.endsWith(".json") && ENTRY_KEY.test(name.slice(0, -5))).sort();
+const entryFiles = async (dir, onFailure) => {
+    try {
+        return (await readdir(dir)).filter(name => name.endsWith(".json") && ENTRY_KEY.test(name.slice(0, -5))).sort();
+    } catch (error) {
+        if (error?.code !== "ENOENT") onFailure?.(error);
+        return [];
+    }
+};
 
 // A key handed out with a recovery names its entry when it is kept again, so resending the same text
 // (as a closing panel does while its first stash is still in flight) replaces the entry rather than duplicating it.
@@ -60,8 +67,8 @@ export async function pushRecovery(dir, { noteId = null, folder = "", body, key 
     }));
 }
 
-export async function popRecovery(dir) {
-    for (const name of await entryFiles(dir)) {
+export async function popRecovery(dir, onFailure) {
+    for (const name of await entryFiles(dir, onFailure)) {
         const path = join(dir, name);
         if (!await claimEntry(path)) continue;
         let draft = null;
@@ -71,9 +78,12 @@ export async function popRecovery(dir) {
                 // A fresh key, so text kept again joins the back of the queue rather than blocking newer entries.
                 draft = { noteId: entry.noteId, folder: entry.folder, body: entry.body, key: newEntryKey() };
             }
-        } catch { /* skip unreadable or already-consumed entries */ }
+        } catch (error) {
+            if (error?.code !== "ENOENT") onFailure?.(error);
+        }
         // A failed cleanup must not lose a draft that was already read; the marker left behind prevents a second delivery.
-        await removeEntry(path).catch(() => {});
+        try { await removeEntry(path); }
+        catch (error) { onFailure?.(error); }
         if (draft) return draft;
     }
     return null;
@@ -94,10 +104,11 @@ export function validateUiState(value) {
     return { sidebar: value.sidebar, selection: { ...value.selection }, noteId: value.noteId, collapsed: [...value.collapsed] };
 }
 
-export async function loadUiState(path) {
+export async function loadUiState(path, onFailure) {
     try {
         return validateUiState(JSON.parse(await readFile(path, "utf8")));
-    } catch {
+    } catch (error) {
+        if (error?.code !== "ENOENT") onFailure?.(error);
         return structuredClone(DEFAULT_UI_STATE);
     }
 }

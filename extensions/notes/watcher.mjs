@@ -1,9 +1,12 @@
 import { watch } from "node:fs";
 
 // Each provider watches one library, even when it has several panels or only the tool.
-export function watchLibrary(directory, rescan, { log = () => {}, watchFs = watch, intervalMs = 30000, debounceMs = 150 } = {}) {
+export function watchLibrary(directory, rescan, { log = () => {}, onFailure, watchFs = watch, intervalMs = 30000, debounceMs = 150 } = {}) {
     let closed = false, running = false, pending = false, timer, watcher;
-    const report = error => log(`Notes live sync: ${error.message}. The periodic rescan remains enabled.`, { level: "warning" });
+    const report = error => {
+        onFailure?.(error);
+        log(`Notes live sync: ${error.message}. The periodic rescan remains enabled.`, { level: "warning" });
+    };
     async function refresh() {
         if (closed) return;
         if (running) { pending = true; return; }
