@@ -2,7 +2,7 @@
 
 Markdown notes for the GitHub Copilot app, with rich and plain editing,
 session provenance, live sync, and Ask Copilot. Shipped with the
-`agent-plugins` plugin as of 2.2.7.
+`agent-plugins` plugin as of 2.2.9.
 
 ## Installation
 
@@ -244,8 +244,9 @@ upload diagnostics. It keeps a local failure journal under
 Journal records contain allowlisted diagnostic metadata only—not note content,
 titles, prompts, arbitrary exception messages, session names or absolute paths.
 A panel that has not finished loading after 30 seconds is recorded with the
-last startup stage it reached. The issue-block renderer is not exposed in the
-UI yet. See the
+last startup stage it reached. If the extension process is killed before then,
+the next Notes launch records the abandoned startup. The issue-block renderer
+is not exposed in the UI yet. See the
 [failure-capture design](./docs/failure-capture.md). Uninstalling the extension
 does not delete the library or diagnostic journal.
 

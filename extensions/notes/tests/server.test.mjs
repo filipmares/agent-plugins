@@ -202,9 +202,10 @@ describe("Notes panel server", () => {
 
     test("journals a panel that never claims startup, and token-bearing trust rejections once per reason", async () => {
         const diagnostics = new FailureJournal({ path: join(fixture, "state", "failure-journal.jsonl") });
+        let finished = 0;
         const entries = async () => (await readFile(diagnostics.path, "utf8").catch(() => "")).trim().split("\n").filter(Boolean).map(JSON.parse);
         const until = async check => { for (let i = 0; i < 100 && !check(await entries()); i++) await new Promise(resolve => setTimeout(resolve, 20)); };
-        await start(undefined, { diagnostics, startupWatchdogMs: 500 });
+        await start(undefined, { diagnostics, startupWatchdogMs: 500, onStartupStalled: () => { finished++; } });
         expect((await call("")).status).toBe(200);
         const note = { body: "# Hello", folder: "" };
         expect((await call("/not-the-token/", { base: new URL(server.url).origin })).status).toBe(404);
@@ -222,12 +223,18 @@ describe("Notes panel server", () => {
         ]);
         // The page loaded but its script was never requested; rejected requests do not count as progress.
         expect(records.find(record => record.eventName === "notes.panel.startup_stalled").attributes.errorCode).toBe("script_not_requested");
+        expect(finished).toBe(1);
 
         await server.close();
         await rm(diagnostics.path);
-        await start(undefined, { diagnostics, startupWatchdogMs: 50 });
+        let claimed = 0, closed = 0;
+        await start(undefined, {
+            diagnostics, startupWatchdogMs: 50, onStartup: () => { claimed++; }, onPanelClose: () => { closed++; },
+        });
         await claimStartup();
+        expect(claimed).toBe(1);
         await server.close();
+        expect(closed).toBe(1);
         await start(undefined, { diagnostics, startupWatchdogMs: 50 });
         await server.close();
         await new Promise(resolve => setTimeout(resolve, 150));
