@@ -113,11 +113,12 @@ function browserFrames(value) {
     });
 }
 
-function safeAttributes({ component, route, operation, status, durationMs, operationId, resultCode, errorCode } = {}) {
+function safeAttributes({ component, route, operation, status, durationMs, operationId, resultCode, errorCode, openingMode } = {}) {
     const attributes = {};
     if (COMPONENTS.has(component)) attributes.component = component;
     if (safeRoute(route)) attributes.route = route;
     if (safeOperation(operation)) attributes.operation = operation;
+    if (["session", "standalone", "unknown"].includes(openingMode)) attributes.openingMode = openingMode;
     if (errorCode !== undefined) attributes.errorCode = safeCode(errorCode);
     if (Number.isSafeInteger(status) && status >= 100 && status <= 599) attributes.status = status;
     if (Number.isFinite(durationMs) && durationMs >= 0 && durationMs <= 600_000) {
@@ -162,8 +163,9 @@ function safeIncident(value) {
     const component = attributes.component;
     if (!component) return null;
     const frames = safeFrameList(value.stack, component);
+    const environment = safeEnvironment(value.environment);
     const fingerprint = createHash("sha256").update(JSON.stringify([
-        value.eventName, attributes.errorCode, attributes.component, attributes.route, attributes.operation, frames.slice(0, 3),
+        value.eventName, attributes.errorCode, attributes.component, attributes.route, attributes.operation, frames.slice(0, 3), environment,
     ])).digest("hex").slice(0, 24);
     const timestamp = typeof value.timestamp === "string" && Number.isFinite(Date.parse(value.timestamp))
         ? new Date(value.timestamp).toISOString() : new Date().toISOString();
@@ -172,6 +174,7 @@ function safeIncident(value) {
         severityText: value.severityText === "WARN" ? "WARN" : "ERROR",
         eventName: value.eventName,
         attributes,
+        environment,
         ...(frames.length ? { stack: frames } : {}),
         ...(Array.isArray(value.recentOperations) ? { recentOperations: safeRecentOperations(value.recentOperations) } : {}),
         fingerprint,
@@ -280,14 +283,18 @@ function safeVersion(value) {
 }
 
 function safeEnvironment(value = {}) {
-    const environment = {};
+    value ??= {};
+    const environment = Object.fromEntries([
+        "notesVersion", "copilotAppVersion", "copilotSdkVersion", "nodeVersion",
+        "platform", "osVersion", "architecture",
+    ].map(key => [key, "unknown"]));
     for (const [key, name] of [
         ["notesVersion", "notesVersion"], ["copilotAppVersion", "copilotAppVersion"],
         ["copilotSdkVersion", "copilotSdkVersion"], ["nodeVersion", "nodeVersion"],
         ["platform", "platform"], ["osVersion", "osVersion"], ["architecture", "architecture"],
     ]) {
         const version = ["notesVersion", "copilotAppVersion", "copilotSdkVersion", "nodeVersion"].includes(key);
-        const item = version ? safeVersion(value[name]) : value[name];
+        const item = version && value[name] !== "unknown" ? safeVersion(value[name]) : value[name];
         if (typeof item === "string" && item.length <= 128 && /^[A-Za-z0-9._+-]+$/.test(item)) environment[key] = item;
     }
     return environment;
@@ -314,6 +321,7 @@ export class FailureJournal {
     #operations = [];
     #queue = Promise.resolve();
     #warned = false;
+    #environmentPromise;
 
     constructor({ path = failureJournalPath(), log, environment = defaultEnvironment(), now = () => new Date() } = {}) {
         this.path = path;
@@ -329,7 +337,7 @@ export class FailureJournal {
         catch { /* logging must not affect the Notes operation */ }
     }
 
-    async beginPanelStartup() {
+    async beginPanelStartup(openingMode = "unknown") {
         const directory = `${this.path}.pending`;
         const markerPath = join(directory, `${randomBytes(16).toString("hex")}.json`);
         try {
@@ -337,6 +345,7 @@ export class FailureJournal {
             await writeFile(markerPath, JSON.stringify({
                 pid: process.pid,
                 startedAt: this.now().toISOString(),
+                openingMode: ["session", "standalone"].includes(openingMode) ? openingMode : "unknown",
             }), { flag: "wx", mode: 0o600 });
         } catch {
             this.#warnStorageFailure();
@@ -396,7 +405,11 @@ export class FailureJournal {
                 eventName: "notes.panel.startup_abandoned",
                 errorCode: "startup_abandoned",
                 severityText: "WARN",
-                attributes: { component: "provider", durationMs: Math.min(600_000, ageMs) },
+                attributes: {
+                    component: "provider",
+                    durationMs: Math.min(600_000, ageMs),
+                    openingMode: marker.openingMode,
+                },
             });
             if (!recorded) continue;
             try {
@@ -418,6 +431,7 @@ export class FailureJournal {
 
     async recordFailure(event) {
         const now = this.now().toISOString();
+        const environment = await this.#captureEnvironment();
         const component = event?.attributes?.component;
         const incident = safeIncident({
             ...event,
@@ -426,6 +440,7 @@ export class FailureJournal {
             firstSeen: now,
             lastSeen: now,
             occurrences: 1,
+            environment,
             stack: typeof event?.stack === "string" ? stackFrames(event.stack)
                 : safeFrameList(event?.stack, component),
             recentOperations: event?.recentOperations ?? this.#operations,
@@ -466,14 +481,8 @@ export class FailureJournal {
         await this.#queue;
         const now = Date.parse(this.now().toISOString());
         const records = trimRecords(await readRecords(this.path), now).reverse();
-        let notesVersion = this.environment.notesVersion;
-        if (!notesVersion) {
-            try {
-                const manifest = JSON.parse(await readFile(new URL("../../.github/plugin/plugin.json", import.meta.url), "utf8"));
-                notesVersion = safeVersion(manifest.version);
-            } catch { /* standalone extension imports may not include the repository manifest */ }
-        }
-        const lines = [JSON.stringify({ schemaVersion: 1, environment: safeEnvironment({ ...this.environment, notesVersion }) })];
+        const environment = await this.#captureEnvironment();
+        const lines = [JSON.stringify({ schemaVersion: 2, environment })];
         for (const record of records) {
             const candidate = [...lines, JSON.stringify(record)].join("\n");
             const bundle = `\`\`\`json\n${candidate}\n\`\`\``;
@@ -481,6 +490,20 @@ export class FailureJournal {
             lines.push(JSON.stringify(record));
         }
         return `\`\`\`json\n${lines.join("\n")}\n\`\`\``;
+    }
+
+    async #captureEnvironment() {
+        this.#environmentPromise ??= (async () => {
+            const environment = { ...this.environment };
+            if (environment.notesVersion === "unknown") {
+                try {
+                    const manifest = JSON.parse(await readFile(new URL("../../.github/plugin/plugin.json", import.meta.url), "utf8"));
+                    environment.notesVersion = safeVersion(manifest.version) ?? "unknown";
+                } catch { /* standalone extension imports may not include the repository manifest */ }
+            }
+            return safeEnvironment(environment);
+        })();
+        return this.#environmentPromise;
     }
 }
 

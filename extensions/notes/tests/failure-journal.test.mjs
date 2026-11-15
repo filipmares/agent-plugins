@@ -17,6 +17,58 @@ async function createJournal(options = {}) {
 }
 
 describe("Notes failure journal", () => {
+    test("captures safe environment and standalone/session mode with each incident", async () => {
+        const journal = await createJournal({
+            environment: {
+                notesVersion: "2.2.9", copilotAppVersion: "1.4.1", copilotSdkVersion: "1.0.0",
+                nodeVersion: "24.22.1", platform: "win32", osVersion: "10.0.22631", architecture: "x64",
+            },
+        });
+        const failure = {
+            eventName: "notes.panel.startup_stalled",
+            errorCode: "startup_incomplete",
+            attributes: { component: "provider", openingMode: "standalone" },
+        };
+        expect(await journal.recordFailure(failure)).toBe(true);
+        const updatedEnvironment = new FailureJournal({
+            path: journal.path,
+            environment: {
+                notesVersion: "2.2.10", copilotAppVersion: "1.4.2", copilotSdkVersion: "1.0.0",
+                nodeVersion: "24.22.1", platform: "win32", osVersion: "10.0.22631", architecture: "x64",
+            },
+        });
+        expect(await updatedEnvironment.recordFailure(failure)).toBe(true);
+
+        const records = (await readFile(journal.path, "utf8")).trim().split("\n").map(JSON.parse);
+        expect(records).toHaveLength(2);
+        expect(records.map(record => record.environment.copilotAppVersion).sort()).toEqual(["1.4.1", "1.4.2"]);
+        expect(records[0].attributes).toMatchObject({ openingMode: "standalone" });
+        const bundle = await journal.renderIssueBundle();
+        expect(bundle).toContain('"schemaVersion":2');
+        expect(bundle).toContain('"openingMode":"standalone"');
+        expect(bundle).toContain('"copilotAppVersion":"1.4.1"');
+        const incidents = bundle.split("\n").slice(2, -1).map(JSON.parse);
+        expect(incidents.map(incident => incident.environment.copilotAppVersion).sort()).toEqual(["1.4.1", "1.4.2"]);
+    });
+
+    test("uses unknown values for unavailable environment metadata and rejects unsafe values", async () => {
+        const journal = await createJournal({
+            environment: { copilotAppVersion: "C:\\Users\\private\\app", nodeVersion: "24.22.1" },
+        });
+        await journal.recordFailure({
+            eventName: "notes.panel.startup_stalled",
+            errorCode: "startup_incomplete",
+            attributes: { component: "provider", openingMode: "unexpected-private-value" },
+        });
+        const [record] = (await readFile(journal.path, "utf8")).trim().split("\n").map(JSON.parse);
+        expect(record.environment).toMatchObject({
+            copilotAppVersion: "unknown", copilotSdkVersion: "unknown", nodeVersion: "24.22.1",
+            notesVersion: "2.2.10", platform: "unknown", osVersion: "unknown", architecture: "unknown",
+        });
+        expect(record.attributes).not.toHaveProperty("openingMode");
+        expect(JSON.stringify(record)).not.toContain("C:\\Users");
+    });
+
     test("deduplicates safe failures and removes exception text and absolute paths", async () => {
         const journal = await createJournal({
             environment: {
@@ -56,7 +108,7 @@ describe("Notes failure journal", () => {
         expect(record.recentOperations[0]).not.toHaveProperty("noteBody");
 
         const bundle = await journal.renderIssueBundle();
-        expect(bundle).toContain('"schemaVersion":1');
+        expect(bundle).toContain('"schemaVersion":2');
         expect(bundle).toContain('"notesVersion":"2.2.7"');
         expect(bundle).toContain('"occurrences":2');
         expect(bundle).not.toContain("SENTINEL");
@@ -100,7 +152,7 @@ describe("Notes failure journal", () => {
 
     test("recovers a panel startup marker after its owning process exits", async () => {
         const journal = await createJournal();
-        const finishStartup = await journal.beginPanelStartup();
+        const finishStartup = await journal.beginPanelStartup("standalone");
         const pending = `${journal.path}.pending`;
         const [name] = await readdir(pending);
         expect(name).toMatch(/^[a-f\d]{32}\.json$/i);
@@ -112,14 +164,14 @@ describe("Notes failure journal", () => {
 
         await mkdir(pending, { recursive: true });
         await writeFile(join(pending, `${"a".repeat(32)}.json`), JSON.stringify({
-            pid: 2_147_483_647, startedAt: new Date().toISOString(),
+            pid: 2_147_483_647, startedAt: new Date().toISOString(), openingMode: "standalone",
         }));
         expect(await journal.recoverAbandonedPanelStarts()).toBe(1);
         const records = (await readFile(journal.path, "utf8")).trim().split("\n").map(JSON.parse);
         expect(records).toHaveLength(1);
         expect(records[0]).toMatchObject({
             eventName: "notes.panel.startup_abandoned",
-            attributes: { component: "provider", errorCode: "startup_abandoned" },
+            attributes: { component: "provider", errorCode: "startup_abandoned", openingMode: "standalone" },
         });
         expect(await readdir(pending)).toEqual([]);
     });

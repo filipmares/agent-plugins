@@ -16,7 +16,7 @@ const lazy = instrumented.replace(/^const importEditor = .+;$/m, "");
 if (lazy === instrumented) throw new Error("Cannot replace the Notes editor loader.");
 const script = new Bun.Transpiler({ loader: "ts" }).transformSync(lazy + `
 globalThis.client = { state, textarea, toast, openNote, moveNote, save, resolveConflict, refresh, select, askInput, askStatus, askPanel, copilotButton, compose, toggleMarkdown, rows, renderList, listCount, formattingHelp,
-    flushDiagnostics,
+    flushDiagnostics, showDiagnostics, diagnosticsButton,
     frontmatterView, frontmatterContext, frontmatterDetails, frontmatterMore, isPlain: () => plain,
     editorLoading, richElement, markdownButton, focusEditor, isWaiting: () => editorWaiting, listStatus: () => listStatus,
     saveButton, saveDetails, saveAnnouncement, saving: () => inflight,
@@ -113,7 +113,7 @@ class Element extends EventTarget {
         if (selector === "*") return descendants;
         if (selector === "[aria-current='true']") return descendants.filter(element => element.getAttribute("aria-current") === "true");
         if (selector === "button" || selector.startsWith("button")) return descendants.filter(element => element.tagName === "button");
-        if (selector === "input" || selector === "dialog") return descendants.filter(element => element.tagName === selector);
+        if (selector === "input" || selector === "dialog" || selector === "pre") return descendants.filter(element => element.tagName === selector);
         const match = selector.match(/\.([\w-]+)(?::not\(\.([\w-]+)\))?/);
         if (!match) return [];
         const [, className, exclusion] = match;
@@ -136,6 +136,7 @@ async function openClient({ richSafe = false, importEditor, respond, startupToas
     const pending = new Set();
     const calls = [];
     const headers = [];
+    const clipboard = [];
     let afterMove;
     let afterNotes;
     let beforeSave;
@@ -146,6 +147,7 @@ async function openClient({ richSafe = false, importEditor, respond, startupToas
     let eventSources = 0;
     const sandbox = {
         window, document, URLSearchParams, Event, crypto, queueMicrotask,
+        navigator: { clipboard: { writeText: async text => clipboard.push(text) } },
         GUARD_MESSAGE: "This note uses Markdown the rich editor can't keep exactly.",
         safeExternal: value => /^(https?:|mailto:)/.test(value),
         // Only the rendered view is inert. Real codec/schema and browser tests cover the rich view separately.
@@ -192,6 +194,7 @@ async function openClient({ richSafe = false, importEditor, respond, startupToas
     const panel = {
         ...sandbox.client,
         calls,
+        clipboard,
         eventSources: () => eventSources,
         richHeader: () => headers.at(-1),
         scrollCalls: () => scrollIntoViewTotal,
@@ -312,6 +315,25 @@ test("records the startup step a stuck panel is waiting on, and nothing once sta
     const stalled = (await readFile(diagnostics.path, "utf8")).trim().split("\n").map(JSON.parse)
         .filter(entry => entry.eventName === "notes.browser.startup_stalled");
     expect(stalled.map(entry => entry.attributes.errorCode)).toEqual(["startup_claim_pending"]);
+});
+
+test("previews the sanitized diagnostic report before copying it", async () => {
+    const text = element => element.children.map(child => child instanceof Element ? text(child) : child).join("");
+    const panel = await openClient();
+    panel.diagnosticsButton.dispatchEvent(new Event("click"));
+    await panel.settle();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const dialog = panel.document.body.querySelector("dialog");
+    expect(dialog).not.toBeNull();
+    expect(text(dialog)).toContain("Review this sanitized report before sharing.");
+    const preview = dialog.querySelector("pre");
+    expect(text(preview)).toContain('"schemaVersion":2');
+    expect(panel.clipboard).toEqual([]);
+    const copy = dialog.querySelectorAll("button").find(button => text(button) === "Copy diagnostics");
+    copy.dispatchEvent(new Event("click"));
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(panel.clipboard).toEqual([text(preview)]);
+    expect(panel.toast.textContent).toBe("Diagnostics copied. Review them before sharing.");
 });
 
 describe("save-state toolbar icon", () => {

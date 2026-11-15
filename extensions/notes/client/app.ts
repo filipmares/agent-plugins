@@ -291,6 +291,9 @@ const askPanel = h("div", { id: "ask-note", class: "ask-note", hidden: true }, a
 const emptyEditor = h("div", { class: "empty-editor" }, icon("note"), h("p", {}, "No note selected"));
 const formattingHelp = h("footer", { class: "editor-help", hidden: true },
     h("button", { type: "button", class: "text-button", onclick: () => void showFormattingHelp() }, "Formatting help"));
+const diagnosticsButton = h("button", {
+    type: "button", class: "text-button", onclick: () => void showDiagnostics(),
+}, "View diagnostics");
 const pinButton = iconButton("pin", "Pin note", () => state.note && void togglePin(state.note));
 const moveButton = iconButton("file-moved", "Move note to folder", () => state.note && void moveDialog(state.note));
 const trashButton = iconButton("trash", "Delete note", () => state.note && void deleteNote(state.note));
@@ -304,6 +307,7 @@ sidebar.append(
         iconButton("x", "Close folders", () => setOverlay(false), { class: "icon-button medium-only" })),
     h("div", { class: "sidebar-scroll" }, smart, tree),
     h("footer", { class: "sidebar-footer" },
+        diagnosticsButton,
         h("button", { type: "button", class: "text-button", onclick: () => void newFolder("") }, icon("plus"), "New Folder")),
 );
 const listPane = h("section", { class: "list-pane", "aria-label": "Note list" },
@@ -1360,6 +1364,33 @@ function showFormattingHelp() {
         h("div", { class: "dialog-actions" },
             h("button", { type: "button", class: "button", onclick: () => close(null) }, "Close")),
     ]);
+}
+
+async function showDiagnostics() {
+    try {
+        const { issueBundle } = await request<{ issueBundle: string }>("api/diagnostics");
+        let copyButton: HTMLElement | null = null;
+        const preview = h("pre", { class: "diagnostics-preview", "aria-label": "Sanitized Notes diagnostic report" }, issueBundle);
+        await modal<void>("Notes diagnostics", close => [
+            h("p", { class: "dialog-text" }, "Review this sanitized report before sharing. Note content, titles, prompts and local paths are excluded."),
+            preview,
+            h("div", { class: "dialog-actions" },
+                h("button", { type: "button", class: "button", onclick: () => close(null) }, "Close"),
+                copyButton = h("button", {
+                    type: "button", class: "button primary", onclick: () => {
+                        void (async () => {
+                            try {
+                                await navigator.clipboard.writeText(issueBundle);
+                                close(null);
+                                showToast("Diagnostics copied. Review them before sharing.");
+                            } catch { showToast("Could not copy diagnostics. Select the report text to copy it."); }
+                        })();
+                    },
+                }, "Copy diagnostics")),
+        ], () => copyButton);
+    } catch (error) {
+        showToast(`Could not load Notes diagnostics. ${message(error)}`);
+    }
 }
 
 async function confirmDialog({ title, text, confirm }: { title: string; text: string; confirm: string }) {
