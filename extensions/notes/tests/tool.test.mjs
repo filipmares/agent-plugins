@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { NotesError } from "../errors.mjs";
 import { retryTransient } from "../filesystem.mjs";
-import { createNotesTool } from "../notes-tool.mjs";
+import { createNotesDiagnosticsTool, createNotesTool } from "../notes-tool.mjs";
 import { NotesLibrary } from "../storage.mjs";
 
 let fixture, library, tool, calls, confirmations, logs;
@@ -128,5 +128,16 @@ describe("notes_manage", () => {
         expect(changes).toBe(1);
         await run({ operation: "delete", noteId: note.id, expectedVersion: note.version });
         expect(changes).toBe(2);
+    });
+});
+
+describe("notes_diagnostics", () => {
+    test("returns the sanitized report without opening the Notes library", async () => {
+        const diagnostics = { renderIssueBundle: async () => "```json\n{\"schemaVersion\":2}\n```" };
+        const tool = createNotesDiagnosticsTool({ diagnostics });
+        const result = await tool.handler({}, { sessionId: "session-a" });
+        expect(tool.name).toBe("notes_diagnostics");
+        expect(result).toEqual({ resultType: "success", textResultForLlm: "```json\n{\"schemaVersion\":2}\n```" });
+        expect(calls).toEqual([]);
     });
 });

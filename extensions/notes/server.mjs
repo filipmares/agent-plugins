@@ -198,7 +198,7 @@ export async function resolveTarget(getLibrary, target = {}) {
     return resolved;
 }
 
-export async function createNotesServer({ getLibrary, getContext, sessionId, statePath, target, onChange, log, sendMessage, diagnostics, onStartup, onStartupStalled, onPanelClose, openLink = openExternalLink, libraryWaitMs = LIBRARY_WAIT_MS, startupWatchdogMs = STARTUP_WATCHDOG_MS }) {
+export async function createNotesServer({ getLibrary, getContext, sessionId, statePath, target, onChange, log, sendMessage, diagnostics, openingMode = "unknown", onStartup, onStartupStalled, onPanelClose, openLink = openExternalLink, libraryWaitMs = LIBRARY_WAIT_MS, startupWatchdogMs = STARTUP_WATCHDOG_MS }) {
     // Reads answer library_busy rather than hanging while the first scan runs; writes still queue for it.
     const readLibrary = () => waitForLibrary(getLibrary, libraryWaitMs);
     const token = randomBytes(32).toString("hex");
@@ -220,7 +220,7 @@ export async function createNotesServer({ getLibrary, getContext, sessionId, sta
     const reportProviderFailure = error => diagnostics?.recordFailure({
         eventName: "notes.provider.failure",
         errorCode: error?.code,
-        attributes: { component: "provider" },
+        attributes: { component: "provider", openingMode },
         stack: error?.stack,
     });
     // The session this panel's notes belong to: none when the app opened it without a session, which has no metadata to read.
@@ -242,7 +242,7 @@ export async function createNotesServer({ getLibrary, getContext, sessionId, sta
                 eventName: "notes.request.rejected",
                 errorCode: reason,
                 severityText: "WARN",
-                attributes: { component: "provider", route, status: 404 },
+                attributes: { component: "provider", route, status: 404, openingMode },
             });
         }
         throw new NotesError("not_found", "Not found.");
@@ -354,6 +354,8 @@ export async function createNotesServer({ getLibrary, getContext, sessionId, sta
                         ui: await loadUiState(statePath, reportProviderFailure),
                     });
                 }
+                case "/api/diagnostics":
+                    return sendJson(res, 200, { issueBundle: await diagnostics.renderIssueBundle() });
                 case "/api/folders": return sendJson(res, 200, await (await readLibrary()).folders());
                 case "/api/notes": return sendJson(res, 200, await list(url));
                 case "/api/note": {
@@ -397,6 +399,7 @@ export async function createNotesServer({ getLibrary, getContext, sessionId, sta
                         durationMs: body.durationMs,
                         status: body.status,
                         operationId: body.operationId,
+                        openingMode,
                     },
                     stack: body.stack,
                     recentOperations: body.recentOperations,
@@ -464,7 +467,7 @@ export async function createNotesServer({ getLibrary, getContext, sessionId, sta
                 await diagnostics?.recordFailure({
                     eventName: "notes.request.failure",
                     errorCode: code,
-                    attributes: { component: "provider", route, status, durationMs: Date.now() - started, operationId },
+                    attributes: { component: "provider", route, status, durationMs: Date.now() - started, operationId, openingMode },
                     stack: error?.stack,
                 });
             }
@@ -491,7 +494,7 @@ export async function createNotesServer({ getLibrary, getContext, sessionId, sta
             eventName: "notes.panel.startup_stalled",
             errorCode: STARTUP_STAGES[startupStage],
             severityText: "WARN",
-            attributes: { component: "provider", durationMs: startupWatchdogMs },
+            attributes: { component: "provider", durationMs: startupWatchdogMs, openingMode },
         }).then(recorded => recorded && onStartupStalled?.()), startupWatchdogMs);
         startupWatchdog.unref?.();
     }

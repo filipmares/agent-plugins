@@ -2,7 +2,7 @@
 
 Markdown notes for the GitHub Copilot app, with rich and plain editing,
 session provenance, live sync, and Ask Copilot. Shipped with the
-`agent-plugins` plugin as of 2.2.9.
+`agent-plugins` plugin as of 2.2.10.
 
 ## Installation
 
@@ -243,12 +243,22 @@ upload diagnostics. It keeps a local failure journal under
 `$COPILOT_HOME/extensions/notes/artifacts/`, capped at 30 days and 1 MiB.
 Journal records contain allowlisted diagnostic metadata only—not note content,
 titles, prompts, arbitrary exception messages, session names or absolute paths.
-A panel that has not finished loading after 30 seconds is recorded with the
-last startup stage it reached. If the extension process is killed before then,
-the next Notes launch records the abandoned startup. The issue-block renderer
-is not exposed in the UI yet. See the
-[failure-capture design](./docs/failure-capture.md). Uninstalling the extension
-does not delete the library or diagnostic journal.
+Each incident records the Notes, Copilot app, SDK and Node versions, OS and
+architecture, using `unknown` when unavailable, plus whether it opened
+standalone or in a session. A panel that has not finished loading after 30
+seconds is recorded with the last startup stage it reached. If the extension
+process is killed before then, the next Notes launch records the abandoned
+startup.
+
+Select **View diagnostics** in the Folders sidebar to review the sanitized
+report before copying it. The read-only `notes_diagnostics` tool returns the
+same report to Copilot when called, so Copilot can help interpret it. Opening
+the preview stays local; the tool returns the report into that conversation,
+and neither path posts it to an issue automatically. These reports cannot
+capture failures before the Notes extension starts, including
+Copilot's control-runtime startup failures; those require diagnostics from the
+Copilot app itself. See the [failure-capture design](./docs/failure-capture.md).
+Uninstalling the extension does not delete the library or diagnostic journal.
 
 Discovery **writes frontmatter to plain Markdown files**, preserving the body
 and original modified time. Adopted files have no invented origin; they enter
@@ -279,7 +289,11 @@ to the OS opener. No Markdown HTML is instantiated as DOM.
 
 ## Copilot tool
 
-`notes_manage` is available without opening the canvas:
+`notes_manage` and the read-only `notes_diagnostics` tool are available without
+opening the canvas. `notes_diagnostics` returns the same bounded, sanitized
+report as **View diagnostics** into the Copilot conversation when called.
+Copilot can help interpret it or prepare an issue, but does not file one
+automatically.
 
 | Operation | Inputs |
 | --- | --- |

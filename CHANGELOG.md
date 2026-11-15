@@ -7,6 +7,13 @@ and plugin versioning follows [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## [Unreleased]
 
+### Added — Notes diagnostics for users
+- Added a preview-and-copy flow in the Notes sidebar and a read-only `notes_diagnostics` tool, both using the same bounded, sanitized local report.
+- Clarified that calling `notes_diagnostics` returns the report to the Copilot conversation; nothing is posted to an issue automatically.
+- Snapshotted allowlisted app/plugin/SDK/runtime environment versions and standalone-versus-session opening mode per incident; unavailable versions are labeled `unknown`.
+- Documented that failures before the Notes extension starts require Copilot app diagnostics.
+- Bumped the plugin and marketplace manifests to `2.2.10`.
+
 ### Fixed — Notes startup failure capture
 - Added a private per-panel startup marker so an extension process killed before the 30-second watchdog runs is recorded as `notes.panel.startup_abandoned` on the next Notes launch.
 - Bumped the plugin and marketplace manifests to `2.2.9`.

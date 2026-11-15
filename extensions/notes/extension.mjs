@@ -1,6 +1,6 @@
 import { CanvasError, joinSession, createCanvas } from "@github/copilot-sdk/extension";
 import { NotesError } from "./errors.mjs";
-import { createNotesTool } from "./notes-tool.mjs";
+import { createNotesDiagnosticsTool, createNotesTool } from "./notes-tool.mjs";
 import { createPanelRegistry } from "./panels.mjs";
 import { readSessionContext, resolveNotesDirectory } from "./platform.mjs";
 import { createNotesServer, resolveTarget, waitForLibrary } from "./server.mjs";
@@ -59,6 +59,13 @@ function canvasError(error) {
 const libraryForTarget = () => waitForLibrary(getLibrary);
 
 async function openPanel(ctx) {
+    let openingMode = "unknown";
+    if (typeof ctx.sessionId === "string" && /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(ctx.sessionId)) {
+        try {
+            const context = await readSessionContext(ctx.sessionId, { allowMissing: true });
+            openingMode = context.sessionId ? "session" : "standalone";
+        } catch { /* Broken session metadata is not classified as sessionless. */ }
+    }
     // Start the first scan alongside the panel; the client shows loading until it finishes.
     getLibrary().catch(() => { /* the panel's reads report it, and the next call retries */ });
     try {
@@ -66,12 +73,13 @@ async function openPanel(ctx) {
             ctx.instanceId,
             () => resolveTarget(libraryForTarget, ctx.input ?? {}),
             async target => {
-                const finishStartup = await diagnostics.beginPanelStartup();
+                const finishStartup = await diagnostics.beginPanelStartup(openingMode);
                 try {
                     return await createNotesServer({
                         getLibrary,
                         getContext: () => readSessionContext(ctx.sessionId, { allowMissing: true }),
                         sessionId: ctx.sessionId,
+                        openingMode,
                         statePath: uiStatePath(),
                         target,
                         diagnostics,
@@ -95,7 +103,7 @@ async function openPanel(ctx) {
         await diagnostics.recordFailure({
             eventName: "notes.canvas.open_failure",
             errorCode: error?.code,
-            attributes: { component: "canvas" },
+            attributes: { component: "canvas", openingMode },
             stack: error?.stack,
         });
         throw canvasError(error);
@@ -103,13 +111,16 @@ async function openPanel(ctx) {
 }
 
 session = await joinSession({
-    tools: [createNotesTool({
-        getLibrary,
-        getContext: readSessionContext,
-        confirmPermanent: message => session.ui.confirm(message),
-        log,
-        diagnostics,
-    })],
+    tools: [
+        createNotesTool({
+            getLibrary,
+            getContext: readSessionContext,
+            confirmPermanent: message => session.ui.confirm(message),
+            log,
+            diagnostics,
+        }),
+        createNotesDiagnosticsTool({ diagnostics }),
+    ],
     canvases: [
         createCanvas({
             id: "notes",

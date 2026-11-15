@@ -36,6 +36,18 @@ export const notesParameters = {
     additionalProperties: false,
 };
 
+export function createNotesDiagnosticsTool({ diagnostics }) {
+    return {
+        name: "notes_diagnostics",
+        description: "Return the sanitized local Notes failure report to this Copilot conversation for debugging or filing an issue. It includes safe version and startup metadata, never note content or local paths; it is not posted anywhere automatically.",
+        parameters: { type: "object", properties: {}, additionalProperties: false },
+        handler: async () => ({
+            resultType: "success",
+            textResultForLlm: await diagnostics.renderIssueBundle(),
+        }),
+    };
+}
+
 function validate(args) {
     if (!args || typeof args !== "object" || Array.isArray(args)
         || !Object.hasOwn(args, "operation") || !Object.hasOwn(operations, args.operation)) {

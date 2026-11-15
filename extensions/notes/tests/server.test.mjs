@@ -161,6 +161,7 @@ describe("Notes panel server", () => {
         const diagnostics = new FailureJournal({ path: join(fixture, "state", "failure-journal.jsonl") });
         await start(undefined, {
             diagnostics,
+            openingMode: "standalone",
             sendMessage: async () => { throw new Error("SENTINEL_EXCEPTION"); },
         });
         const note = await library.create({ body: "# Secret title\nSecret body" }, { sessionId: "session-a", actor: "user" });
@@ -195,9 +196,28 @@ describe("Notes panel server", () => {
         const events = journal.trim().split("\n").map(JSON.parse);
         const providerFailure = events.find(event => event.eventName === "notes.request.failure");
         const browserFailure = events.find(event => event.eventName === "notes.browser.unhandled_error");
-        expect(providerFailure.attributes).toMatchObject({ route: "/api/ask", operationId });
-        expect(browserFailure.attributes).toMatchObject({ route: "/api/ask", operationId });
+        expect(providerFailure.attributes).toMatchObject({ route: "/api/ask", operationId, openingMode: "standalone" });
+        expect(browserFailure.attributes).toMatchObject({ route: "/api/ask", operationId, openingMode: "standalone" });
         expect(browserFailure.stack).toEqual([{ file: "app.js", function: "render", line: 1, column: 24 }]);
+    });
+
+    test("serves the sanitized issue report only through the panel capability URL", async () => {
+        const diagnostics = new FailureJournal({
+            path: join(fixture, "state", "failure-journal.jsonl"),
+            environment: { notesVersion: "2.2.9", copilotAppVersion: "1.4.1" },
+        });
+        await diagnostics.recordFailure({
+            eventName: "notes.panel.startup_stalled",
+            errorCode: "startup_incomplete",
+            attributes: { component: "provider", openingMode: "standalone" },
+        });
+        await start(undefined, { diagnostics, openingMode: "standalone" });
+        const response = await call("api/diagnostics");
+        expect(response.status).toBe(200);
+        expect(response.json.issueBundle).toContain('"schemaVersion":2');
+        expect(response.json.issueBundle).toContain('"openingMode":"standalone"');
+        expect(response.json.issueBundle).toContain('"copilotAppVersion":"1.4.1"');
+        expect((await call("api/diagnostics", { base: new URL(server.url).origin })).status).toBe(404);
     });
 
     test("journals a panel that never claims startup, and token-bearing trust rejections once per reason", async () => {
@@ -205,7 +225,7 @@ describe("Notes panel server", () => {
         let finished = 0;
         const entries = async () => (await readFile(diagnostics.path, "utf8").catch(() => "")).trim().split("\n").filter(Boolean).map(JSON.parse);
         const until = async check => { for (let i = 0; i < 100 && !check(await entries()); i++) await new Promise(resolve => setTimeout(resolve, 20)); };
-        await start(undefined, { diagnostics, startupWatchdogMs: 500, onStartupStalled: () => { finished++; } });
+        await start(undefined, { diagnostics, openingMode: "standalone", startupWatchdogMs: 500, onStartupStalled: () => { finished++; } });
         expect((await call("")).status).toBe(200);
         const note = { body: "# Hello", folder: "" };
         expect((await call("/not-the-token/", { base: new URL(server.url).origin })).status).toBe(404);
@@ -222,7 +242,10 @@ describe("Notes panel server", () => {
             ["host_mismatch", 1], ["origin_mismatch", 1], ["origin_missing", 1], ["origin_null", 1],
         ]);
         // The page loaded but its script was never requested; rejected requests do not count as progress.
-        expect(records.find(record => record.eventName === "notes.panel.startup_stalled").attributes.errorCode).toBe("script_not_requested");
+        expect(records.find(record => record.eventName === "notes.panel.startup_stalled").attributes).toMatchObject({
+            errorCode: "script_not_requested", openingMode: "standalone",
+        });
+        await new Promise(resolve => setTimeout(resolve, 0));
         expect(finished).toBe(1);
 
         await server.close();
