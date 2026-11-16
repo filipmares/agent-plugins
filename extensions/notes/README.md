@@ -154,18 +154,12 @@ top-level blocks retain their source spelling when their new context permits;
 edited blocks use escaped GFM. Table cells accept one line of text.
 Rich clipboard input is plain text only, not active HTML or image uploads.
 
-A quiet, read-only row of property pills sits directly below the note's opening
-heading (or at the top when there is no heading, and above the text in Markdown
-view). It shows the creator (**Agent** with a Copilot icon or **Human** with a
-person icon), origin project, and original session name. Missing origin fields
-are omitted. Click, tap, or press Enter/Space on a project or session name to
-expand the full value. **More** stays beside the first row of pills at every
-width and reveals pin status and custom properties, followed by dates and origin,
-then technical identifiers. Values are displayed as text, with structured custom
-values formatted as JSON. The disclosure stays open during same-note refreshes
-and resets when switching notes. No frontmatter editing is included; the existing
-toolbar and context-menu Pin actions are unchanged. Unsaved new notes have no
-properties row. Malformed frontmatter still opens as raw Markdown for repair.
+The toolbar keeps the note title visible independently of Markdown headings.
+Select it to rename the note; the title is stored in frontmatter and changing
+it does not rewrite the body. The **Properties** disclosure shows creator,
+origin, pin status, custom properties, dates, and technical identifiers as
+read-only values. Malformed frontmatter hides properties and disables title
+renaming so the raw Markdown can be repaired.
 
 The **Copilot** button opens an inline prompt. Enter saves all current changes,
 then sends the prompt with the note's absolute file path attached to this panel's
@@ -237,6 +231,9 @@ runtime folder override. The directory is created lazily on first use.
 
 Each `.md` note has YAML frontmatter containing `id`, `created`, `updated`,
 `created_by`, `project`, `branch`, `session_id`, `session_name`, and `sessions`.
+The optional `title` is independent of the Markdown body and appears in the
+toolbar and note list; older notes without it continue to use their first line.
+Renaming a note updates `title` without changing the Markdown heading.
 Unavailable optional origin fields are omitted. Origin fields stay fixed;
 content edits update `updated` and add the editing session to `sessions`.
 The toolbar Pin action uses `pinned: true` without advancing the edit date.
@@ -256,10 +253,11 @@ seconds is recorded with the last startup stage it reached. If the extension
 process is killed before then, the next Notes launch records the abandoned
 startup.
 
-Select **View diagnostics** in the Folders sidebar to review the sanitized
-report before copying it. The read-only `notes_diagnostics` tool returns the
-same report to Copilot when called, so Copilot can help interpret it. Opening
-the preview stays local; the tool returns the report into that conversation,
+Open **Settings** from the Folders sidebar and select **View** under
+Diagnostics to review the sanitized report before copying it. The read-only
+`notes_diagnostics` tool returns the same report to Copilot when called, so
+Copilot can help interpret it. Opening the preview stays local; the tool
+returns the report into that conversation,
 and neither path posts it to an issue automatically. These reports cannot
 capture failures before the Notes extension starts, including
 Copilot's control-runtime startup failures; those require diagnostics from the

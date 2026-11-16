@@ -9,7 +9,7 @@ const digest = (content: string | Buffer) => createHash("sha256").update(content
 const ICONS = [
     "alert", "check", "chevron-down", "chevron-left", "chevron-right", "circle", "code", "comment-discussion", "compose", "copilot",
     "file-directory", "file-moved", "note", "pencil", "person", "pin", "pin-slash", "plus", "repo",
-    "search", "sidebar-collapse", "sidebar-expand", "sync", "trash", "x",
+    "gear", "search", "sidebar-collapse", "sidebar-expand", "sync", "trash", "x",
 ];
 
 export async function sourceHash() {

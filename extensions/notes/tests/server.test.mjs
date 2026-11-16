@@ -323,6 +323,21 @@ describe("Notes panel server", () => {
         expect((await call("api/note?id=missing.md")).status).toBe(404);
     });
 
+    test("persists an independent note title through the title endpoint", async () => {
+        await start();
+        const created = await call("api/note/create", {
+            method: "POST", body: { body: "# Monday 11/16\nPlan", folder: "", title: "Weekly planning" },
+        });
+        expect(created.json.title).toBe("Weekly planning");
+        const renamed = await call("api/note/title", {
+            method: "POST", body: { id: created.json.id, title: "Sprint plan", expectedVersion: created.json.version },
+        });
+        expect(renamed.json).toMatchObject({
+            title: "Sprint plan", body: "# Monday 11/16\nPlan", frontmatter: { title: "Sprint plan" },
+        });
+        expect(renamed.json.path).toBe("sprint-plan.md");
+    });
+
     test("a panel opened without a session saves notes without provenance and has no session view or Ask Copilot", async () => {
         const sent = [];
         // The app still hands a sessionless panel a synthetic session ID, but nothing is known about that session.
@@ -414,9 +429,14 @@ describe("Notes panel server", () => {
         expect((await rescue({ id: created.json.id, folder: "", body: "# Plan\nfour", expectedVersion: saved.json.version })).json.body).toContain("four");
 
         await library.update(created.json.id, { body: "# Plan\nagent", expectedVersion: (await library.read(created.json.id)).version }, { sessionId: "s", actor: "agent" });
-        expect((await rescue({ id: created.json.id, folder: "", body: "# Plan\nmine", expectedVersion: saved.json.version })).json).toEqual({ recovered: true });
+        expect((await rescue({
+            id: created.json.id, folder: "", body: "# Plan\nmine", title: "Independent title",
+            expectedVersion: saved.json.version,
+        })).json).toEqual({ recovered: true });
         expect((await library.read(created.json.id)).body).toContain("agent");
-        expect((await claimStartup()).recovery).toMatchObject({ noteId: created.json.id, folder: "", body: "# Plan\nmine" });
+        expect((await claimStartup()).recovery).toMatchObject({
+            noteId: created.json.id, folder: "", body: "# Plan\nmine", title: "Independent title",
+        });
         expect((await claimStartup()).recovery).toBeNull();
 
         // Stash-only rescue never writes over this panel's own newer save.
@@ -425,6 +445,38 @@ describe("Notes panel server", () => {
         expect((await rescue({ id: own.id, folder: "", body: "# Plan\nolder", stash: true })).json).toEqual({ recovered: true });
         expect((await library.read(own.id)).body).toContain("newest");
         expect((await claimStartup()).recovery.body).toBe("# Plan\nolder");
+    });
+
+    test.each([["unchanged body", "# Plan\nBody"], ["updated body", "# Plan\nRescued"]])(
+        "stashes a title when rescue loses a concurrent title update (%s)", async (_case, body) => {
+        await start();
+        const created = await call("api/note/create", { method: "POST", body: { body: "# Plan\nBody", folder: "" } });
+        library.setTitle = async () => { throw new NotesError("conflict", "The note changed elsewhere."); };
+
+        const rescued = await call("api/note/rescue", { method: "POST", body: {
+            id: created.json.id, folder: "", body, title: "Pending title",
+            expectedVersion: created.json.version,
+        } });
+
+        expect(rescued.json).toEqual({ recovered: true });
+        expect((await claimStartup()).recovery).toMatchObject({
+            noteId: created.json.id, body, title: "Pending title",
+        });
+    });
+
+    test("stashes a pending title when rescue reads a version newer than its base", async () => {
+        await start();
+        const created = await call("api/note/create", { method: "POST", body: { body: "# Plan\nBody", folder: "" } });
+        await library.setTitle(created.json.id, "External title", created.json.version, { sessionId: "s", actor: "agent" });
+
+        const rescued = await call("api/note/rescue", { method: "POST", body: {
+            id: created.json.id, folder: "", body: created.json.body, title: "Pending title",
+            expectedVersion: created.json.version,
+        } });
+
+        expect(rescued.json).toEqual({ recovered: true });
+        expect((await library.read(created.json.id)).title).toBe("External title");
+        expect((await claimStartup()).recovery).toMatchObject({ title: "Pending title", body: created.json.body });
     });
 
     test("delivers each queued recovery entry exactly once to panels loading at the same time", async () => {
