@@ -7,6 +7,10 @@ and plugin versioning follows [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## [Unreleased]
 
+### Changed — Frameless Notes editing
+- Removed the focus outline from the rich-text note editing surface while keeping focus indicators on toolbar and navigation controls.
+- Bumped the plugin and marketplace manifests to `3.0.1`.
+
 ### Changed — plugin distribution
 - The plugin now bundles three skills; bumped the plugin and marketplace manifests to `3.0.0`.
 

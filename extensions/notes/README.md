@@ -2,7 +2,7 @@
 
 Markdown notes for the GitHub Copilot app, with rich and plain editing,
 session provenance, live sync, and Ask Copilot. Shipped with the
-`agent-plugins` plugin as of 3.0.0.
+`agent-plugins` plugin as of 3.0.1.
 
 ## Installation
 
