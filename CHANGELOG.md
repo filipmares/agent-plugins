@@ -7,6 +7,11 @@ and plugin versioning follows [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## [Unreleased]
 
+### Added — Independent Notes titles
+- Added an editable toolbar title stored in frontmatter, independent of Markdown headings; moved creator and read-only properties into the toolbar.
+- Added responsive toolbar actions and explicit save-state labels.
+- Bumped the plugin and marketplace manifests to `2.2.13`.
+
 ### Changed — Notes settings access
 - Replaced the Folders sidebar's diagnostics text link with a Settings gear and a responsive Settings dialog; diagnostics is now the dialog's Diagnostics section.
 - Bumped the plugin and marketplace manifests to `2.2.12`.

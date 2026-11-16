@@ -37,6 +37,9 @@ export function localTimestamp(value = new Date()) {
 
 function metadataWarning(data) {
     if (data.id !== undefined && (typeof data.id !== "string" || !ULID.test(data.id))) return "id must be a ULID.";
+    if (data.title !== undefined && (typeof data.title !== "string" || !data.title.trim() || data.title.length > 240)) {
+        return "title must be a non-empty string of at most 240 characters.";
+    }
     for (const key of ["created", "updated"]) {
         if (data[key] !== undefined && (typeof data[key] !== "string" || !Number.isFinite(Date.parse(data[key])))) {
             return `${key} must be an ISO date string.`;

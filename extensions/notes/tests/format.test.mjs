@@ -18,6 +18,8 @@ describe("Markdown preservation", () => {
         "---\nx: 1\nx: 2\n---\n# Duplicate",
         "---\n- a\n- b\n---\n# Sequence",
         "---\nid: not-a-ulid\n---\n# Reserved",
+        "---\ntitle: ''\n---\n# Empty title",
+        `---\ntitle: ${"x".repeat(241)}\n---\n# Long title`,
         "---\nsessions: nope\n---\n# Reserved",
         "---\nx: !unknown value\n---\n# Tag",
         "---\nx: .inf\n---\n# Non-JSON number",

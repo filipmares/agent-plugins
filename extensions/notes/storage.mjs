@@ -18,9 +18,15 @@ const folderOf = path => posix.dirname(path) === "." ? "" : posix.dirname(path);
 const joinPath = (parent, name) => parent ? `${parent}/${name}` : name;
 const assetPath = path => path.slice(0, -3) + ".assets";
 const compareNames = (a, b) => a.localeCompare(b, "en", { sensitivity: "base", numeric: true }) || a.localeCompare(b, "en");
+const requireNoteTitle = value => {
+    requireString(value, "title");
+    const title = value.trim();
+    if (title.length > 240) throw new NotesError("invalid_name", "A note title must not exceed 240 characters.");
+    return title;
+};
 
 function hasAutomaticName(note) {
-    const base = slug(titleOf(note.body));
+    const base = slug(note.metadata.title ?? titleOf(note.body));
     const stem = posix.basename(note.path).slice(0, -3);
     const suffix = /-(?:[2-9]|[1-9]\d+)$/.exec(stem)?.[0];
     return !note.warning && !!note.metadata.created_by
@@ -44,7 +50,7 @@ function summary(note) {
     return {
         id: note.metadata.id ?? null,
         path: note.path,
-        title: titleOf(note.body),
+        title: note.metadata.title ?? titleOf(note.body),
         folder: folderOf(note.path),
         updated: note.metadata.updated ?? null,
         lastEdited: new Date(Math.max(Date.parse(note.metadata.updated) || 0, note.stats.mtimeMs)).toISOString(),
@@ -319,17 +325,19 @@ export class NotesLibrary {
         return this.#read(root, destination);
     }
 
-    async create({ body, folder = "" }, context) {
+    async create({ body, folder = "", title }, context) {
         assertContext(context);
         const content = newNoteBody(body);
+        const noteTitle = title === undefined ? titleOf(content) : requireNoteTitle(title);
         return this.#locked(async root => {
             const parent = await this.#folder(root, folder, true);
-            const path = await this.#availablePath(root, parent, slug(titleOf(content)));
+            const path = await this.#availablePath(root, parent, slug(noteTitle));
             const date = localTimestamp(this.#now());
             const metadata = {
                 id: newId(new Date(date).getTime()),
                 created: date,
                 updated: date,
+                ...(title === undefined ? {} : { title: noteTitle }),
                 created_by: context.actor,
                 ...(context.project ? { project: context.project } : {}),
                 ...(context.branch ? { branch: context.branch } : {}),
@@ -407,7 +415,7 @@ export class NotesLibrary {
                 if (parent !== undefined && !inFolder(folderOf(note.path), parent)) continue;
                 const text = note.warning ? note.body : markdownText(note.body);
                 const folded = foldText(text);
-                const title = titleOf(note.body);
+                const title = note.metadata.title ?? titleOf(note.body);
                 if (!words.every(word => folded.includes(word) || foldText(title).includes(word))) continue;
                 const match = words.length ? Math.max(0, folded.indexOf(words[0])) : 0;
                 const start = Math.max(0, match - 40);
@@ -436,9 +444,10 @@ export class NotesLibrary {
                 updated: localTimestamp(this.#now()),
                 sessions: sessionsWith(note.metadata.sessions, context),
             };
-            const oldSlug = slug(titleOf(note.body));
-            if (hasAutomaticName(note) && slug(titleOf(body)) !== oldSlug) {
-                const destination = await this.#availablePath(root, folderOf(note.path), slug(titleOf(body)));
+            const oldSlug = slug(note.metadata.title ?? titleOf(note.body));
+            const nextTitle = note.metadata.title ?? titleOf(body);
+            if (hasAutomaticName(note) && slug(nextTitle) !== oldSlug) {
+                const destination = await this.#availablePath(root, folderOf(note.path), slug(nextTitle));
                 return payload(await this.#relocate(root, note, destination, body, changes));
             }
             let raw;
@@ -484,6 +493,29 @@ export class NotesLibrary {
             note => note.body + (note.body === "" || note.body.endsWith("\n") ? "" : note.eol) + text);
     }
 
+    async setTitle(noteId, title, expectedVersion, context) {
+        assertContext(context);
+        const value = requireNoteTitle(title);
+        return this.#locked(async root => {
+            const note = this.#find(await this.#scan(root), noteId);
+            requireVersion(expectedVersion, note.version);
+            if (note.warning) throw new NotesError("invalid_frontmatter", "Repair the frontmatter in plain Markdown before changing the title.");
+            if (note.metadata.title === value) return payload(note);
+            const changes = {
+                title: value,
+                updated: localTimestamp(this.#now()),
+                sessions: sessionsWith(note.metadata.sessions, context),
+            };
+            const destination = hasAutomaticName(note)
+                ? await this.#availablePath(root, folderOf(note.path), slug(value))
+                : note.path;
+            if (destination !== note.path) return payload(await this.#relocate(root, note, destination, note.body, changes));
+            const raw = serializeNote(note, note.body, changes);
+            await writeNoteFile(root, note.path, raw, note.version);
+            return payload(await this.#read(root, note.path));
+        });
+    }
+
     async pin(noteId, pinned, expectedVersion) {
         if (typeof pinned !== "boolean") throw new NotesError("invalid_request", "pinned must be a boolean.");
         return this.#locked(async root => {
@@ -504,7 +536,7 @@ export class NotesLibrary {
             if (parent === folderOf(note.path)) return payload(note);
             const automatic = hasAutomaticName(note);
             const destination = await this.#availablePath(root, parent,
-                automatic ? slug(titleOf(note.body)) : posix.basename(note.path).slice(0, -3), automatic ? 40 : 240);
+                automatic ? slug(note.metadata.title ?? titleOf(note.body)) : posix.basename(note.path).slice(0, -3), automatic ? 40 : 240);
             return payload(await this.#relocate(root, note, destination, note.body, {}, note.stats));
         });
     }
