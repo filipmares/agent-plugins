@@ -125,7 +125,7 @@ button:disabled { cursor: default; opacity: 0.45; }
 .folder-button[aria-current="true"] .icon, .folder-button[aria-current="true"] .folder-count { color: var(--fg); }
 .folder-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .folder-count { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
-.sidebar-footer { padding: 8px; border-top: 1px solid var(--border); }
+.sidebar-footer { display: flex; align-items: center; justify-content: space-between; padding: 8px; border-top: 1px solid var(--border); }
 .text-button {
     display: inline-flex;
     align-items: center;
@@ -442,6 +442,27 @@ button.frontmatter-item:hover { border-color: color-mix(in srgb, var(--fg) 28%, 
     color: var(--fg);
     box-shadow: 0 16px 48px var(--shadow-color);
 }
+.settings-dialog {
+    position: relative;
+    width: min(480px, calc(100vw - 32px));
+    max-height: min(520px, calc(100vh - 32px));
+    overflow: auto;
+}
+.settings-dialog .dialog-title { padding-right: 36px; }
+.settings-close { position: absolute; top: 12px; right: 12px; }
+.settings-section { padding-top: 16px; border-top: 1px solid var(--border); }
+.settings-section-title {
+    margin: 0 0 12px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: var(--font-weight-normal, 400);
+    text-transform: uppercase;
+}
+.settings-row { display: flex; align-items: center; gap: 12px; }
+.settings-row-copy { flex: 1; min-width: 0; }
+.settings-row-copy strong { font-weight: var(--font-weight-semibold, 600); }
+.settings-row-copy p { margin: 2px 0 0; color: var(--muted); font-size: 12px; line-height: 16px; }
+.settings-row .button { flex: none; }
 .dialog::backdrop { background: var(--overlay-color); }
 .dialog-title { margin: 0 0 8px; font-size: 15px; line-height: 20px; }
 .dialog-text { margin: 0 0 16px; color: var(--muted); }
@@ -516,6 +537,15 @@ button.frontmatter-item:hover { border-color: color-mix(in srgb, var(--fg) 28%, 
 
 /* Narrow: one pane at a time. */
 @media (max-width: 639.98px) {
+    .settings-dialog {
+        width: 100vw;
+        height: 100vh;
+        height: 100dvh;
+        max-height: none;
+        margin: 0;
+        border: 0;
+        border-radius: 0;
+    }
     .app, .app.sidebar-hidden { grid-template-columns: minmax(0, 1fr); }
     .app .sidebar, .app.sidebar-hidden .sidebar {
         position: static;

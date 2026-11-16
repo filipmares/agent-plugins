@@ -7,6 +7,10 @@ and plugin versioning follows [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## [Unreleased]
 
+### Changed — Notes settings access
+- Replaced the Folders sidebar's diagnostics text link with a Settings gear and a responsive Settings dialog; diagnostics is now the dialog's Diagnostics section.
+- Bumped the plugin and marketplace manifests to `2.2.12`.
+
 ### Added — Notes canvas icon
 - Added an original canvas icon (`extensions/notes/assets/icon.png`, source `icon.svg`): a white spiral notepad on an amber tile, sized to sit with the app's built-in canvas icons.
 - The Notes canvas declares it as `icon`. The runtime accepts and resolves the path, but the Copilot app does not yet render extension canvas icons, so this is forward-compatible and has no visible effect today.
