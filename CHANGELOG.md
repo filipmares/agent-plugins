@@ -7,6 +7,9 @@ and plugin versioning follows [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## [Unreleased]
 
+### Added — Notes benchmark baseline
+- Include the initial application scan in Notes startup measurements, generate parser-validated bulk fixtures, and measure rendered note opening, search, and warm views with repeated-sample p90 and explicit runtime limitations.
+
 ### Changed — Frameless Notes editing
 - Removed the focus outline from the rich-text note editing surface while keeping focus indicators on toolbar and navigation controls.
 - Bumped the plugin and marketplace manifests to `3.0.1`.
