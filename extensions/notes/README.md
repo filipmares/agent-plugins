@@ -87,6 +87,12 @@ and informational highlights. The documented canvas contract has no dedicated
 sidebar or selection tokens, so those surfaces derive from its foreground
 and background tokens rather than depending on app-internal variables.
 
+The canvas declares `assets/icon.png` (an amber tile with a white notepad) as
+its icon. The runtime accepts and resolves it, but the Copilot app does not yet
+show icons for extension canvases, so the Canvases sidebar still uses the
+generic icon. The SDK's `createCanvas` drops `icon`, so the extension sets it
+on the declaration directly.
+
 - Smart views: All Notes, This Project, and This Session. Folders support
   create, rename (double-click), delete with a recursive count, collapse, and
   dragging notes onto a folder to move them. A panel opened without a session
@@ -435,6 +441,8 @@ Remark serialization replaces hand-written escaping, with a stricter fidelity
 guard. The verbatim MIT notice is in `third-party-licenses/hubble.md.txt`, and
 the upstream paths/commit/license digest are recorded in the vendor manifest.
 Icons are [Primer Octicons](https://github.com/primer/octicons) (MIT).
+The canvas icon (`assets/icon.png`, from `assets/icon.svg`) is an original
+design for this extension.
 Deferred features are tracked in
 [issue #60](https://github.com/filipmares/agent-plugins/issues/60).
 
