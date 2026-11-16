@@ -8,7 +8,7 @@ Skills are packaged instructions (and optional supporting files) that extend an 
 
 ### GitHub Copilot CLI
 
-This repo is also a [Copilot CLI plugin marketplace](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/plugins-marketplace). Register it once, then install the bundled plugin (five skills, the **Copilot Code Review** agent, and the **RPI Artifact Navigator** and **Notes** canvases):
+This repo is also a [Copilot CLI plugin marketplace](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/plugins-marketplace). Register it once, then install the bundled plugin (three skills, the **Copilot Code Review** agent, and the **RPI Artifact Navigator** and **Notes** canvases):
 
 ```bash
 copilot plugin marketplace add filipmares/agent-plugins
@@ -111,8 +111,6 @@ All skills live under [`skills/`](./skills) at the repo root. Each is a self-con
 | Skill | Description |
 | --- | --- |
 | [`cli-skill-generator`](./skills/cli-skill-generator) | Discover commands of any CLI tool and generate a complete skill bundle documenting it. |
-| [`plugin-analyzer`](./skills/plugin-analyzer) | Analyze a skill/plugin with multiple AI models in parallel, synthesize consensus findings, and optionally file GitHub issues. |
-| [`consensus-planner`](./skills/consensus-planner) | Multi-model iterative consensus planning — spawns parallel agents to create, critique, and converge on an implementation plan. |
 | [`copilot-migrate`](./skills/copilot-migrate) | Move a GitHub Copilot installation between machines, across operating systems, rewriting the absolute paths stored in its databases. |
 | [`agent-merge`](./skills/agent-merge) | Scope discipline for unattended PR-review rounds — decide which review comments to implement, record each decision as a hidden marker, and audit them later. |
 
@@ -124,12 +122,6 @@ After installing through Copilot CLI, skills load automatically when their trigg
 agent-plugins/
 ├── skills/                   # Each subdirectory is one skills.sh skill
 │   ├── cli-skill-generator/
-│   │   ├── SKILL.md
-│   │   └── references/
-│   ├── plugin-analyzer/
-│   │   ├── SKILL.md
-│   │   └── references/
-│   ├── consensus-planner/
 │   │   ├── SKILL.md
 │   │   └── references/
 │   ├── copilot-migrate/

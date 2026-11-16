@@ -7,6 +7,9 @@ and plugin versioning follows [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## [Unreleased]
 
+### Changed — plugin distribution
+- The plugin now bundles three skills; bumped the plugin and marketplace manifests to `3.0.0`.
+
 ### Added — Independent Notes titles
 - Added an editable toolbar title stored in frontmatter, independent of Markdown headings; moved creator and read-only properties into the toolbar.
 - Added responsive toolbar actions and explicit save-state labels.
@@ -120,7 +123,7 @@ and plugin versioning follows [Semantic Versioning](https://semver.org/spec/v2.0
 - `scripts/agent-merge-stats.mjs` (Node 18+, stdlib only, needs an authenticated `gh`) reads those markers back across every PR in a repo so the decisions can be audited on evidence: `--deferred` lists the suggestions the rule turned away with links for bulk triage, `--malformed` lists markers outside the vocabulary alongside the token each should have been. Read-only; with no `--repo` it censuses whichever repository the working directory belongs to.
 
 ### Added — Copilot CLI plugin marketplace
-- Added `.github/plugin/marketplace.json` and `.github/plugin/plugin.json` so `copilot plugin marketplace add filipmares/agent-plugins` works again. The repo root is the plugin source, and all four skills under `skills/` install as one `agent-plugins` plugin.
+- Added `.github/plugin/marketplace.json` and `.github/plugin/plugin.json` so `copilot plugin marketplace add filipmares/agent-plugins` works again. The repo root is the plugin source, and all skills under `skills/` install as one `agent-plugins` plugin.
 
 ### Added — copilot-migrate v1.0.0
 - New skill: move a GitHub Copilot app installation between machines, including across operating systems.
@@ -130,36 +133,13 @@ and plugin versioning follows [Semantic Versioning](https://semver.org/spec/v2.0
 ### Changed — repository restructure
 - **BREAKING**: switched distribution from a Claude Code plugin marketplace (`marketplace.json`, `.claude-plugin/plugin.json`) to [skills.sh](https://skills.sh)-only. Install via `npx skills add filipmares/agent-plugins`.
 - Flattened `plugins/<plugin>/skills/<skill>/` to `skills/<skill>/` at the repo root.
-- Renamed each skill's frontmatter `name` to its globally unique form (`cli-skill-generator`, `plugin-analyzer`, `consensus-planner`) and added `license` / `metadata.author` / `metadata.version`.
+- Updated skill frontmatter with globally unique names and added `license` / `metadata.author` / `metadata.version`.
 - Replaced `.templates/plugin-template/` with `.templates/skill-template/`.
 - Replaced `scripts/validate-plugin.ts` and `scripts/list-plugins.ts` with `validate-skill.ts` and `list-skills.ts`.
 - Rewrote `README.md`, `CONTRIBUTING.md`, `CLAUDE.md`, and `scripts/README.md` for the skills.sh workflow.
 
-### Changed — consensus-planner v1.3.0
-- Multi-select model picker replaces iterative single-select loop in Step 2 ([#36](https://github.com/filipmares/agent-plugins/pull/36))
-
 ### Fixed
 - Add `version` field to all plugin entries in `marketplace.json` so marketplace installs correctly record plugin versions ([#35](https://github.com/filipmares/agent-plugins/pull/35))
-
-## 2026-02-11
-
-### Added — consensus-planner v1.2.0
-- Dedicated synthesis prompt template for Step 5 ([#33](https://github.com/filipmares/agent-plugins/pull/33))
-- Disagreement ledger to feedback prompt for structured convergence ([#32](https://github.com/filipmares/agent-plugins/pull/32))
-- Output structure validation with single retry after plan collection ([#31](https://github.com/filipmares/agent-plugins/pull/31))
-- Single retry for failed agents in Steps 3 and 4 ([#30](https://github.com/filipmares/agent-plugins/pull/30))
-- Explicit Assumptions section to planning prompt ([#28](https://github.com/filipmares/agent-plugins/pull/28))
-- Fixed-format complexity and file count fields to planning prompt ([#27](https://github.com/filipmares/agent-plugins/pull/27))
-- Context exclusion patterns to Step 1d glob ([#26](https://github.com/filipmares/agent-plugins/pull/26))
-
-### Fixed — consensus-planner
-- Multi-select model selection UX with iterative `ask_user` loop ([#29](https://github.com/filipmares/agent-plugins/pull/29))
-
-### Added — consensus-planner v1.0.0
-- Multi-model iterative consensus planning plugin ([#17](https://github.com/filipmares/agent-plugins/pull/17))
-
-### Added — plugin-analyzer v1.0.0
-- Plugin analyzer with multi-model analysis capabilities ([#16](https://github.com/filipmares/agent-plugins/pull/16))
 
 ## 2026-02-09
 
