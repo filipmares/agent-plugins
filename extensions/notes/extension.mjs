@@ -110,6 +110,15 @@ async function openPanel(ctx) {
     }
 }
 
+// createCanvas does not forward `icon`, but the runtime accepts it on the declaration
+// (a .png path relative to this extension). Purely cosmetic, so never block startup.
+function withIcon(canvas, icon) {
+    try {
+        canvas.declaration.icon ??= icon;
+    } catch {}
+    return canvas;
+}
+
 session = await joinSession({
     tools: [
         createNotesTool({
@@ -122,7 +131,7 @@ session = await joinSession({
         createNotesDiagnosticsTool({ diagnostics }),
     ],
     canvases: [
-        createCanvas({
+        withIcon(createCanvas({
             id: "notes",
             displayName: "Notes",
             description: "Apple Notes-style Markdown notes stored in Documents/Copilot Notes, with session provenance when opened from a session.",
@@ -147,7 +156,7 @@ session = await joinSession({
             ],
             open: openPanel,
             onClose: ctx => panels.close(ctx.instanceId),
-        }),
+        }), "assets/icon.png"),
     ],
 }).catch(async error => {
     await diagnostics.recordFailure({
