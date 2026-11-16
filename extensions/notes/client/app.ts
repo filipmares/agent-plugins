@@ -292,9 +292,7 @@ const askPanel = h("div", { id: "ask-note", class: "ask-note", hidden: true }, a
 const emptyEditor = h("div", { class: "empty-editor" }, icon("note"), h("p", {}, "No note selected"));
 const formattingHelp = h("footer", { class: "editor-help", hidden: true },
     h("button", { type: "button", class: "text-button", onclick: () => void showFormattingHelp() }, "Formatting help"));
-const diagnosticsButton = h("button", {
-    type: "button", class: "text-button", onclick: () => void showDiagnostics(),
-}, "View diagnostics");
+const settingsButton = iconButton("gear", "Settings", () => void showSettings());
 const toolbarActions = h("button", {
     type: "button", class: "toolbar-label-button toolbar-actions", "aria-haspopup": "menu", "aria-expanded": "false",
     onclick: (event: MouseEvent) => openToolbarActions(event),
@@ -309,8 +307,8 @@ sidebar.append(
         iconButton("x", "Close folders", () => setOverlay(false), { class: "icon-button medium-only" })),
     h("div", { class: "sidebar-scroll" }, smart, tree),
     h("footer", { class: "sidebar-footer" },
-        diagnosticsButton,
-        h("button", { type: "button", class: "text-button", onclick: () => void newFolder("") }, icon("plus"), "New Folder")),
+        h("button", { type: "button", class: "text-button", onclick: () => void newFolder("") }, icon("plus"), "New Folder"),
+        settingsButton),
 );
 const listPane = h("section", { class: "list-pane", "aria-label": "Note list" },
     h("header", { class: "pane-header" },
@@ -1369,13 +1367,13 @@ function menuAt(event: MouseEvent | KeyboardEvent, target: HTMLElement) {
 }
 
 let dialogCount = 0;
-function modal<T>(title: string, build: (close: (value: T | null) => void) => Child[], initialFocus?: () => HTMLElement | null) {
+function modal<T>(title: string, build: (close: (value: T | null) => void) => Child[], initialFocus?: () => HTMLElement | null, className = "") {
     return new Promise<T | null>(resolve => {
         const id = `dialog-title-${++dialogCount}`;
         const opener = document.activeElement as HTMLElement | null;
         const sidebarOpener = !!opener && sidebar.contains(opener);
         let result: T | null = null;
-        const dialog = h("dialog", { class: "dialog", "aria-labelledby": id });
+        const dialog = h("dialog", { class: `dialog${className ? ` ${className}` : ""}`, "aria-labelledby": id });
         const close = (value: T | null) => { result = value; dialog.close(); };
         dialog.append(h("h2", { id, class: "dialog-title" }, title), ...build(close).filter(Boolean) as Node[]);
         dialog.addEventListener("close", () => {
@@ -1442,6 +1440,26 @@ async function showDiagnostics() {
     } catch (error) {
         showToast(`Could not load Notes diagnostics. ${message(error)}`);
     }
+}
+
+let settingsOpen = false;
+async function showSettings() {
+    if (settingsOpen) return;
+    settingsOpen = true;
+    let viewButton: HTMLButtonElement | null = null;
+    try {
+        const openDiagnostics = await modal<boolean>("Settings", close => [
+            iconButton("x", "Close Settings", () => close(null), { class: "icon-button settings-close" }),
+            h("section", { class: "settings-section", "aria-labelledby": "settings-diagnostics" },
+                h("h3", { id: "settings-diagnostics", class: "settings-section-title" }, "Diagnostics"),
+                h("div", { class: "settings-row" },
+                    h("div", { class: "settings-row-copy" },
+                        h("strong", {}, "Notes diagnostics"),
+                        h("p", {}, "Review and copy a sanitized report when you file a bug.")),
+                    viewButton = h("button", { type: "button", class: "button", onclick: () => close(true) }, "View"))),
+        ], () => viewButton, "settings-dialog");
+        if (openDiagnostics) await showDiagnostics();
+    } finally { settingsOpen = false; }
 }
 
 async function confirmDialog({ title, text, confirm }: { title: string; text: string; confirm: string }) {
