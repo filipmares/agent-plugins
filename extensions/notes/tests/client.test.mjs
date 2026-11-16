@@ -16,7 +16,7 @@ const lazy = instrumented.replace(/^const importEditor = .+;$/m, "");
 if (lazy === instrumented) throw new Error("Cannot replace the Notes editor loader.");
 const script = new Bun.Transpiler({ loader: "ts" }).transformSync(lazy + `
 globalThis.client = { state, textarea, toast, openNote, moveNote, save, resolveConflict, refresh, select, askInput, askStatus, askPanel, copilotButton, compose, toggleMarkdown, rows, renderList, listCount, formattingHelp,
-    flushDiagnostics, showDiagnostics, diagnosticsButton,
+    flushDiagnostics, showDiagnostics, settingsButton,
     frontmatterView, frontmatterContext, frontmatterDetails, frontmatterMore, isPlain: () => plain,
     editorLoading, richElement, markdownButton, focusEditor, isWaiting: () => editorWaiting, listStatus: () => listStatus,
     saveButton, saveDetails, saveAnnouncement, saving: () => inflight,
@@ -317,10 +317,21 @@ test("records the startup step a stuck panel is waiting on, and nothing once sta
     expect(stalled.map(entry => entry.attributes.errorCode)).toEqual(["startup_claim_pending"]);
 });
 
-test("previews the sanitized diagnostic report before copying it", async () => {
+test("opens diagnostics from Settings and previews the sanitized report before copying it", async () => {
     const text = element => element.children.map(child => child instanceof Element ? text(child) : child).join("");
     const panel = await openClient();
-    panel.diagnosticsButton.dispatchEvent(new Event("click"));
+    expect(panel.settingsButton.getAttribute("aria-label")).toBe("Settings");
+    panel.settingsButton.dispatchEvent(new Event("click"));
+    panel.settingsButton.dispatchEvent(new Event("click"));
+    await Promise.resolve();
+    const settingsDialogs = panel.document.body.querySelectorAll("dialog").filter(dialog => dialog.hasAttribute("open"));
+    expect(settingsDialogs).toHaveLength(1);
+    const settings = settingsDialogs[0];
+    expect(text(settings)).toContain("Settings");
+    expect(text(settings)).toContain("Diagnostics");
+    expect(text(settings)).toContain("Notes diagnostics");
+    settings.querySelectorAll("button").find(button => text(button) === "View").dispatchEvent(new Event("click"));
+    await new Promise(resolve => setTimeout(resolve, 0));
     await panel.settle();
     await new Promise(resolve => setTimeout(resolve, 0));
     const dialog = panel.document.body.querySelector("dialog");
@@ -667,7 +678,7 @@ describe("medium drawer focus", () => {
     test("Escape closes a drawer-opened native dialog before closing the drawer", async () => {
         const panel = await openClient();
         panel.setOverlay(true);
-        const newFolder = panel.sidebar.querySelectorAll("button").at(-1);
+        const newFolder = panel.sidebar.querySelector(".text-button");
         newFolder.focus();
         newFolder.dispatchEvent(new Event("click"));
         const dialog = panel.document.body.querySelector("dialog");

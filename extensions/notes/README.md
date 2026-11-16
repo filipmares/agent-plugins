@@ -2,7 +2,7 @@
 
 Markdown notes for the GitHub Copilot app, with rich and plain editing,
 session provenance, live sync, and Ask Copilot. Shipped with the
-`agent-plugins` plugin as of 2.2.11.
+`agent-plugins` plugin as of 2.2.12.
 
 ## Installation
 
@@ -256,10 +256,11 @@ seconds is recorded with the last startup stage it reached. If the extension
 process is killed before then, the next Notes launch records the abandoned
 startup.
 
-Select **View diagnostics** in the Folders sidebar to review the sanitized
-report before copying it. The read-only `notes_diagnostics` tool returns the
-same report to Copilot when called, so Copilot can help interpret it. Opening
-the preview stays local; the tool returns the report into that conversation,
+Open **Settings** from the Folders sidebar and select **View** under
+Diagnostics to review the sanitized report before copying it. The read-only
+`notes_diagnostics` tool returns the same report to Copilot when called, so
+Copilot can help interpret it. Opening the preview stays local; the tool
+returns the report into that conversation,
 and neither path posts it to an issue automatically. These reports cannot
 capture failures before the Notes extension starts, including
 Copilot's control-runtime startup failures; those require diagnostics from the
