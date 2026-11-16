@@ -63,7 +63,7 @@ describe("Notes failure journal", () => {
         const [record] = (await readFile(journal.path, "utf8")).trim().split("\n").map(JSON.parse);
         expect(record.environment).toMatchObject({
             copilotAppVersion: "unknown", copilotSdkVersion: "unknown", nodeVersion: "24.22.1",
-            notesVersion: "2.2.13", platform: "unknown", osVersion: "unknown", architecture: "unknown",
+            notesVersion: "3.0.1", platform: "unknown", osVersion: "unknown", architecture: "unknown",
         });
         expect(record.attributes).not.toHaveProperty("openingMode");
         expect(JSON.stringify(record)).not.toContain("C:\\Users");

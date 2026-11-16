@@ -1,7 +1,7 @@
 {
   "name": "agent-plugins",
   "description": "Developer skills, Copilot canvas extensions, and agents.",
-  "version": "2.2.13",
+  "version": "3.0.1",
   "author": {
     "name": "filipmares"
   },
