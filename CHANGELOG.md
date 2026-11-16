@@ -7,6 +7,11 @@ and plugin versioning follows [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## [Unreleased]
 
+### Added — Independent Notes titles
+- Added an editable toolbar title stored in frontmatter, independent of Markdown headings; moved creator and read-only properties into the toolbar.
+- Added responsive toolbar actions and explicit save-state labels.
+- Bumped the plugin and marketplace manifests to `2.2.12`.
+
 ### Added — Notes diagnostics for users
 - Added a preview-and-copy flow in the Notes sidebar and a read-only `notes_diagnostics` tool, both using the same bounded, sanitized local report.
 - Clarified that calling `notes_diagnostics` returns the report to the Copilot conversation; nothing is posted to an issue automatically.

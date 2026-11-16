@@ -19,7 +19,7 @@ type Selection = { view: "all" | "project" | "session" } | { folder: string };
 type UiState = { sidebar: boolean; selection: Selection; noteId: string | null; collapsed: string[] };
 type Target = { view?: "all" | "project" | "session"; folder?: string; noteId?: string };
 // `key` names the server's entry, so sending the same recovered text twice keeps one copy.
-type Recovery = { noteId: string | null; folder: string; body: string; key?: string };
+type Recovery = { noteId: string | null; folder: string; body: string; title?: string; key?: string };
 type MenuItem = { label: string; icon?: string; action: () => void; disabled?: boolean; destructive?: boolean } | "-";
 type Child = Node | string | null | undefined | false;
 
@@ -30,7 +30,7 @@ class ApiError extends Error {
 const NOTE_KEY = "application/x-copilot-note";
 const diagnosticRoutes = new Set([
     "/api/ask", "/api/folder/create", "/api/folder/delete", "/api/folder/rename", "/api/folders",
-    "/api/image", "/api/note", "/api/note/create", "/api/note/delete", "/api/note/move",
+    "/api/image", "/api/note", "/api/note/create", "/api/note/delete", "/api/note/move", "/api/note/title",
     "/api/note/pin", "/api/note/rescue", "/api/note/update", "/api/notes", "/api/open-link",
     "/api/startup", "/api/state", "/api/ui",
 ]);
@@ -125,7 +125,8 @@ const state = {
     notes: [] as Summary[],
     query: "",
     note: null as Note | null,
-    draft: null as { folder: string; key: string } | null,
+    draft: null as { folder: string; key: string; title: string | null } | null,
+    pendingTitle: null as string | null,
     sent: "",
     conflict: false,
     recovered: false,
@@ -242,17 +243,16 @@ const frontmatterDetails = h("div", { id: "frontmatter-details", class: "frontma
 const frontmatterMore = h("button", {
     type: "button", class: "frontmatter-more", "aria-expanded": "false", "aria-controls": "frontmatter-details",
     onclick: () => setFrontmatterOpen(frontmatterDetails.hidden === true),
-}, "More", icon("chevron-down"));
+}, "Properties", icon("chevron-down"));
 const frontmatterView = h("section", { class: "frontmatter-view", "aria-label": "Note properties", hidden: true },
     h("div", { class: "frontmatter-strip" }, frontmatterContext, frontmatterMore), frontmatterDetails);
+const toolbarTitle = h("button", { type: "button", class: "toolbar-title", onclick: () => void editNoteTitle() });
 const banner = h("div", { class: "banner", role: "status", hidden: true });
 const fidelityBanner = h("div", { class: "banner", role: "status", hidden: true });
 const textarea = h("textarea", { class: "note-text", "aria-label": "Note", spellcheck: "true", hidden: true });
 const richElement = h("div", { class: "rich-note", hidden: true });
 const editorLoading = h("div", { class: "editor-loading", role: "status", hidden: true }, "Loading editor…");
 let rich: Editor | null = null;
-// Each rich editor owns a slot below its opening heading; Markdown view keeps the properties above the text instead.
-let richHeader: HTMLElement | null = null;
 let heldFrontmatterFocus: string | null = null;
 let plain = false;
 let guarded = false;
@@ -277,7 +277,8 @@ const saveButton = iconButton("check", "Saved", () => {
         renderSaveStatus();
     }
 }, { class: "icon-button save-button", "aria-controls": "save-details", "aria-expanded": "false", hidden: true });
-const markdownButton = iconButton("code", "View as Markdown", () => toggleMarkdown());
+const markdownButton = h("button", { type: "button", class: "toolbar-label-button markdown-button", onclick: () => toggleMarkdown() },
+    icon("code"), h("span", {}, "Markdown"));
 const copilotButton = iconButton("copilot", "Ask Copilot about this note", () => {
     if (!askPanel.hidden) return hideAsk();
     askPanel.hidden = false;
@@ -294,9 +295,10 @@ const formattingHelp = h("footer", { class: "editor-help", hidden: true },
 const diagnosticsButton = h("button", {
     type: "button", class: "text-button", onclick: () => void showDiagnostics(),
 }, "View diagnostics");
-const pinButton = iconButton("pin", "Pin note", () => state.note && void togglePin(state.note));
-const moveButton = iconButton("file-moved", "Move note to folder", () => state.note && void moveDialog(state.note));
-const trashButton = iconButton("trash", "Delete note", () => state.note && void deleteNote(state.note));
+const toolbarActions = h("button", {
+    type: "button", class: "toolbar-label-button toolbar-actions", "aria-haspopup": "menu", "aria-expanded": "false",
+    onclick: (event: MouseEvent) => openToolbarActions(event),
+}, "Actions", icon("chevron-down"));
 const sidebarToggle = iconButton("sidebar-collapse", "Hide folders", toggleSidebar, { class: "icon-button hide-narrow" });
 const toast = h("div", { class: "toast", role: "alert", hidden: true });
 const showFoldersButton = iconButton("chevron-left", "Show folders", () => setPane("folders"), { class: "icon-button narrow-only" });
@@ -322,10 +324,11 @@ const listPane = h("section", { class: "list-pane", "aria-label": "Note list" },
 const editorPane = h("main", { class: "editor-pane", "aria-label": "Editor" },
     h("header", { class: "pane-header editor-toolbar" },
         backToNotesButton,
-        h("span", { class: "spacer" }), saveButton, saveSeparator, markdownButton, copilotButton, pinButton, moveButton, trashButton),
+        toolbarTitle, frontmatterView,
+        h("span", { class: "spacer" }), saveButton, saveSeparator, markdownButton, toolbarActions),
     h("div", { class: "editor-feedback" }, saveDetails, askStatus, saveAnnouncement),
     askPanel, banner, fidelityBanner,
-    h("div", { class: "editor-scroll" }, frontmatterView, textarea, richElement, editorLoading, emptyEditor),
+    h("div", { class: "editor-scroll" }, textarea, richElement, editorLoading, emptyEditor),
     formattingHelp,
 );
 const backdrop = h("div", { class: "backdrop", onclick: () => setOverlay(false) });
@@ -546,8 +549,10 @@ let refreshPending = false;
 // Bumped whenever the editor switches note, so slower reads cannot overwrite what is now open.
 let navGen = 0;
 
-const newDraft = (folder: string) => ({ folder, key: crypto.randomUUID() });
-const dirty = () => (state.draft ? /[^#\s]/.test(textarea.value) : state.note !== null && textarea.value !== state.sent);
+const newDraft = (folder: string, title: string | null = null) => ({ folder, key: crypto.randomUUID(), title });
+const dirty = () => (state.draft
+    ? /[^#\s]/.test(textarea.value) || state.draft.title !== null
+    : state.note !== null && (textarea.value !== state.sent || state.pendingTitle !== null));
 
 function resetSaveStatus() {
     saveFailure = null;
@@ -579,7 +584,9 @@ function renderSaveStatus() {
     saveButton.setAttribute("aria-label", label);
     saveButton.title = label;
     saveButton.className = `icon-button save-button${saving ? " saving" : ""}${failed || paused ? " attention" : ""}`;
-    saveButton.replaceChildren(icon(paused || failed ? "alert" : saving ? "sync" : unsaved || state.draft ? "circle" : "check"));
+    const shortLabel = paused ? "Paused" : failed ? "Retry save" : saving ? "Saving…" : unsaved || state.draft ? "Unsaved" : "Saved";
+    saveButton.replaceChildren(icon(paused || failed ? "alert" : saving ? "sync" : unsaved || state.draft ? "circle" : "check"),
+        h("span", { class: "save-label" }, shortLabel));
     const showDetails = active && (saveDetailsOpen || !!saveFailure || editorError);
     saveDetails.hidden = !showDetails;
     saveDetails.textContent = active ? detail : "";
@@ -642,7 +649,6 @@ function prepareEditor() {
     editorPane.querySelector(".link-popover")?.remove();
     rich?.destroy();
     rich = null;
-    richHeader = null;
     richElement.replaceChildren();
     editorError = false;
     editorErrorText = "";
@@ -671,9 +677,8 @@ function prepareEditor() {
         return;
     }
     try {
-        richHeader = h("div", { class: "frontmatter-slot" });
         const result = editorModule.createRichEditor({
-            element: richElement, body: textarea.value, noteKey: openKey, header: richHeader,
+            element: richElement, body: textarea.value, noteKey: openKey,
             change: body => { textarea.value = body; editorError = false; editorErrorText = ""; changedText(); },
             blur: () => void save(),
             failure: error => captureBrowserFailure("notes.browser.editor_failure", "unexpected_error", error),
@@ -689,7 +694,6 @@ function prepareEditor() {
         captureBrowserFailure("notes.browser.editor_failure", "unexpected_error", error);
         rich?.destroy();
         rich = null;
-        richHeader = null;
         plain = true;
         showToast(`Rich editing is unavailable. Your Markdown is unchanged. ${message(error)}`);
     }
@@ -798,15 +802,26 @@ async function save(): Promise<boolean> {
     if (state.conflict || editorError) { renderSaveStatus(); return false; }
     if (!dirty()) { saveFailure = null; renderSaveStatus(); return true; }
     const text = textarea.value;
+    const draft = state.draft;
+    const pendingTitle = state.pendingTitle;
     inflight = (async () => {
         try {
-            const created = state.draft !== null;
-            const note = state.draft
-                ? await request<Note>("api/note/create", { body: text, folder: state.draft.folder, draft: state.draft.key })
-                : await request<Note>("api/note/update", { id: keyOf(state.note!), body: text, expectedVersion: state.note!.version });
+            const created = draft !== null;
+            let note = draft
+                ? await request<Note>("api/note/create", {
+                    body: text, title: draft.title ?? titleFromText(text), folder: draft.folder, draft: draft.key,
+                })
+                : state.note!;
+            if (!created && text !== state.sent) {
+                note = await request<Note>("api/note/update", { id: keyOf(note), body: text, expectedVersion: note.version });
+            }
+            if (!created && pendingTitle !== null && note.frontmatter.title !== pendingTitle) {
+                note = await request<Note>("api/note/title", { id: keyOf(note), title: pendingTitle, expectedVersion: note.version });
+            }
             state.draft = null;
             state.note = note;
             state.sent = text;
+            if (state.pendingTitle === pendingTitle) state.pendingTitle = null;
             saveFailure = null;
             // The library may canonicalise the title or rewrite asset links; adopt that unless the user kept typing.
             if (note.body !== text) {
@@ -868,6 +883,7 @@ function discardEditor() {
     navGen++;
     state.note = null;
     state.draft = null;
+    state.pendingTitle = null;
     state.conflict = false;
     state.recovered = false;
     editorError = false;
@@ -885,7 +901,8 @@ function discardEditor() {
 
 function changedText() {
     const row = rows.querySelector(".row[aria-selected='true'] .row-title-text");
-    if (row) row.textContent = titleFromText(textarea.value);
+    if (row) row.textContent = currentTitle();
+    renderToolbarTitle();
     if (!dirty()) saveFailure = null;
     renderSaveStatus();
     if (!state.conflict) scheduleSave();
@@ -899,8 +916,9 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
 addEventListener("pagehide", () => {
     if (!dirty() && !state.conflict) return;
     const body = state.draft
-        ? { draft: state.draft.key, folder: state.draft.folder, body: textarea.value }
+        ? { draft: state.draft.key, folder: state.draft.folder, body: textarea.value, title: state.draft.title ?? titleFromText(textarea.value) }
         : { id: keyOf(state.note!), folder: state.note!.folder, body: textarea.value, expectedVersion: state.note!.version,
+            ...(state.pendingTitle !== null ? { title: state.pendingTitle } : {}),
             ...(state.conflict ? { stash: true } : {}) };
     const operationId = crypto.randomUUID();
     const started = Date.now();
@@ -948,6 +966,7 @@ async function openNote(key: string, { focus = false } = {}) {
         if (!(await flush({ keepDraft: true })) || gen !== navGen) return;
         state.note = note;
         state.draft = null;
+        state.pendingTitle = null;
         state.conflict = false;
         state.recovered = false;
         setText(note.body, { resetView: true });
@@ -976,6 +995,7 @@ async function compose() {
     state.note = null;
     state.conflict = false;
     state.recovered = false;
+    state.pendingTitle = null;
     resetSaveStatus();
     state.draft = newDraft("folder" in selection && !state.query.trim() ? selection.folder : "");
     textarea.value = "# ";
@@ -1048,8 +1068,9 @@ async function refresh() {
         if (!(error instanceof ApiError && error.code === "not_found") || stale()) return;
         if (dirty()) {
             navGen++;
-            state.draft = newDraft(state.note!.folder);
+            state.draft = newDraft(state.note!.folder, state.pendingTitle ?? state.note!.title);
             state.note = null;
+            state.pendingTitle = null;
             state.conflict = false;
             state.recovered = false;
             showToast("This note was removed elsewhere. Your text will be saved as a new note.");
@@ -1072,6 +1093,7 @@ async function resolveConflict(keepMine: boolean) {
         state.note = fresh;
         state.conflict = false;
         state.recovered = false;
+        if (!keepMine) state.pendingTitle = null;
         if (keepMine) {
             // Compare against what is on disk now, so text undone back to the old version still gets saved.
             state.sent = fresh.body;
@@ -1176,8 +1198,33 @@ function noteMenu(note: Summary, x: number, y: number) {
         { label: note.pinned ? "Unpin Note" : "Pin Note", icon: note.pinned ? "pin-slash" : "pin", action: () => void togglePin(note) },
         { label: "Move to…", icon: "file-moved", action: () => void moveDialog(note) },
         "-",
-        { label: "Delete", icon: "trash", destructive: true, action: () => void deleteNote(note) },
+        { label: "Move to Trash", icon: "trash", destructive: true, action: () => void deleteNote(note) },
     ]);
+}
+
+function openToolbarActions(event: MouseEvent) {
+    if (menu && menuReturn === toolbarActions) {
+        closeMenu();
+        return;
+    }
+    const note = state.note;
+    const items: MenuItem[] = [];
+    if (!wide.matches) items.push({
+        label: plain ? "View as rich text" : "View as Markdown",
+        icon: "code", disabled: !!note?.warning || editorWaiting, action: () => toggleMarkdown(),
+    });
+    if (note && !copilotButton.hidden) items.push({
+        label: "Ask Copilot", icon: "copilot", action: () => copilotButton.dispatchEvent(new Event("click")),
+    });
+    if (note) items.push(
+        { label: note.pinned ? "Unpin note" : "Pin note", icon: note.pinned ? "pin-slash" : "pin", action: () => void togglePin(note) },
+        { label: "Move to folder…", icon: "file-moved", action: () => void moveDialog(note) },
+        "-",
+        { label: "Move to Trash", icon: "trash", destructive: true, action: () => void deleteNote(note) },
+    );
+    if (!items.length) return;
+    const [x, y] = menuAt(event, toolbarActions);
+    showMenu(x, y, items, toolbarActions);
 }
 
 // ---------- Folder actions ----------
@@ -1278,12 +1325,14 @@ let menuReturn: HTMLElement | null = null;
 function closeMenu(restore = false) {
     menu?.remove();
     menu = null;
+    if (menuReturn?.getAttribute("aria-haspopup") === "menu") menuReturn.setAttribute("aria-expanded", "false");
     if (restore) menuReturn?.focus();
 }
 
-function showMenu(x: number, y: number, items: MenuItem[]) {
+function showMenu(x: number, y: number, items: MenuItem[], returnTarget?: HTMLElement) {
     closeMenu();
-    menuReturn = document.activeElement as HTMLElement | null;
+    menuReturn = returnTarget ?? document.activeElement as HTMLElement | null;
+    if (menuReturn?.getAttribute("aria-haspopup") === "menu") menuReturn.setAttribute("aria-expanded", "true");
     menu = h("div", { class: "menu", role: "menu" }, ...items.map(item => item === "-"
         ? h("div", { class: "menu-separator", role: "separator" })
         : h("button", {
@@ -1307,7 +1356,9 @@ function showMenu(x: number, y: number, items: MenuItem[]) {
     menu.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
 }
 
-document.addEventListener("pointerdown", event => { if (menu && !menu.contains(event.target as Node)) closeMenu(); }, true);
+document.addEventListener("pointerdown", event => {
+    if (menu && !menu.contains(event.target as Node) && !toolbarActions.contains(event.target as Node)) closeMenu();
+}, true);
 addEventListener("blur", () => closeMenu());
 addEventListener("resize", () => closeMenu());
 
@@ -1402,8 +1453,8 @@ async function confirmDialog({ title, text, confirm }: { title: string; text: st
     }, () => button)) === true;
 }
 
-function promptDialog({ title, label, value, confirm }: { title: string; label: string; value: string; confirm: string }) {
-    const input = h("input", { type: "text", class: "text-input", "aria-label": label, value, maxlength: "255", spellcheck: "false" });
+function promptDialog({ title, label, value, confirm, maxLength = 255 }: { title: string; label: string; value: string; confirm: string; maxLength?: number }) {
+    const input = h("input", { type: "text", class: "text-input", "aria-label": label, value, maxlength: String(maxLength), spellcheck: "false" });
     return modal<string>(title, close => {
         const submit = () => input.value.trim() || null;
         input.addEventListener("keydown", event => {
@@ -1411,6 +1462,39 @@ function promptDialog({ title, label, value, confirm }: { title: string; label: 
         });
         return [input, actions(close, confirm, submit)];
     }, () => { queueMicrotask(() => input.select()); return input; });
+}
+
+async function editNoteTitle() {
+    if (!state.note && !state.draft) return;
+    clearTimeout(saveTimer);
+    while (inflight) await inflight;
+    if (state.note && !(await flush({ keepDraft: true }))) return;
+    const gen = navGen;
+    const draftKey = state.draft?.key;
+    const noteKey = state.note ? keyOf(state.note) : null;
+    const value = await promptDialog({
+        title: "Rename note", label: "Note title", value: currentTitle(), confirm: "Save title", maxLength: 240,
+    });
+    if (gen !== navGen) {
+        if (dirty()) scheduleSave();
+        return;
+    }
+    if (value === null) {
+        if (dirty()) scheduleSave();
+        return;
+    }
+    if (draftKey && state.draft?.key === draftKey) {
+        state.draft.title = value;
+        renderEditor();
+        renderList(true);
+        scheduleSave();
+        return;
+    }
+    if (noteKey && state.note && keyOf(state.note) === noteKey) {
+        state.pendingTitle = state.note.frontmatter.title === value ? null : value;
+        renderEditor();
+        if (state.pendingTitle !== null) await save();
+    }
 }
 
 function chooseDialog(title: string, folders: { node: FolderNode; depth: number }[], current: string) {
@@ -1615,7 +1699,7 @@ function renderList(preserveScroll = false) {
     const children: HTMLElement[] = [];
     if (state.draft) {
         children.push(h("div", { class: "row draft", role: "option", tabindex: "-1", "aria-selected": "true" },
-            h("div", { class: "row-title" }, h("span", { class: "row-title-text" }, titleFromText(textarea.value))),
+            h("div", { class: "row-title" }, h("span", { class: "row-title-text" }, state.draft.title ?? titleFromText(textarea.value))),
             h("div", { class: "row-meta" }, h("span", { class: "row-date" }, "Now"), h("span", { class: "row-preview" }, "No additional text"))));
     }
     const today = startOfDay(new Date());
@@ -1702,10 +1786,11 @@ rows.addEventListener("keydown", event => {
 });
 
 const frontmatterGroups = [
-    { title: "Dates and origin", fields: [["created", "Created"], ["updated", "Updated"], ["branch", "Original branch"]] },
+    { title: "Dates and origin", fields: [["created", "Created"], ["updated", "Updated"], ["project", "Project"],
+        ["branch", "Original branch"], ["session_name", "Original session"]] },
     { title: "Technical details", fields: [["id", "Note ID"], ["session_id", "Original session ID"], ["sessions", "Editing sessions"]] },
 ] as const;
-const builtInFields = new Set<string>(["created_by", "project", "session_name", "pinned",
+const builtInFields = new Set<string>(["title", "created_by", "project", "session_name", "pinned",
     ...frontmatterGroups.flatMap(group => group.fields.map(([key]) => key))]);
 const expandedFrontmatter = new Set<string>();
 let shownFrontmatter: { key: string; version: string } | null = null;
@@ -1713,7 +1798,7 @@ let shownFrontmatter: { key: string; version: string } | null = null;
 function setFrontmatterOpen(open: boolean) {
     frontmatterDetails.hidden = !open;
     frontmatterMore.setAttribute("aria-expanded", String(open));
-    frontmatterMore.replaceChildren(open ? "Less" : "More", icon("chevron-down"));
+    frontmatterMore.replaceChildren("Properties", icon("chevron-down"));
 }
 
 function frontmatterRow(key: string, label: string, value: JsonValue) {
@@ -1721,6 +1806,11 @@ function frontmatterRow(key: string, label: string, value: JsonValue) {
     if ((key === "created" || key === "updated") && typeof value === "string") {
         content = h("time", { datetime: value, title: value },
             new Date(value).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }));
+    } else if (typeof value === "string" && value.length > 36) {
+        content = h("div", { class: "frontmatter-long-value" },
+            h("span", { class: "frontmatter-truncated", title: value }, value),
+            h("button", { type: "button", class: "frontmatter-copy", "aria-label": `Copy full ${label.toLowerCase()}`,
+                onclick: () => void copyPropertyValue(value) }, "Copy"));
     } else if (key === "sessions" && Array.isArray(value)) {
         content = value.length
             ? h("ul", { class: "frontmatter-sessions" }, ...value.map(id => h("li", {}, h("code", {}, String(id)))))
@@ -1732,6 +1822,15 @@ function frontmatterRow(key: string, label: string, value: JsonValue) {
         content = h(key === "id" || key === "session_id" ? "code" : "span", { class: "frontmatter-value" }, text);
     }
     return h("div", { class: "frontmatter-row", "data-property": key }, h("dt", {}, label), h("dd", {}, content));
+}
+
+async function copyPropertyValue(value: string) {
+    try {
+        await navigator.clipboard.writeText(value);
+        showToast("Property value copied.");
+    } catch {
+        showToast("Could not copy property value.");
+    }
 }
 
 function frontmatterGroup(title: string, rows: HTMLElement[]) {
@@ -1749,9 +1848,6 @@ function renderFrontmatter() {
     const note = state.note;
     const focused = heldFrontmatterFocus ?? frontmatterFocus();
     heldFrontmatterFocus = null;
-    const host = rich && !plain ? richHeader : null;
-    if (host) { if (frontmatterView.parentNode !== host) host.append(frontmatterView); }
-    else if (frontmatterView.nextSibling !== textarea) textarea.before(frontmatterView);
     frontmatterView.hidden = !note || !!note.warning;
     if (!note || note.warning) {
         shownFrontmatter = null;
@@ -1773,8 +1869,8 @@ function renderFrontmatter() {
     }
     // Moving between the rich editor and Markdown view, or rebuilding either, drops focus from the row.
     if (sameNote && focused && !frontmatterView.contains(document.activeElement)) {
-        const pill = Array.from(frontmatterContext.children).find(item => item.getAttribute("data-frontmatter-field") === focused) as HTMLElement | undefined;
-        (pill ?? frontmatterMore).focus();
+        const field = Array.from(frontmatterContext.children).find(item => item.getAttribute("data-frontmatter-field") === focused) as HTMLElement | undefined;
+        (field ?? frontmatterMore).focus();
     }
 }
 
@@ -1783,29 +1879,13 @@ function fillFrontmatter(note: Note) {
     const context: HTMLElement[] = [];
     if (metadata.created_by === "agent" || metadata.created_by === "user") {
         const agent = metadata.created_by === "agent";
-        context.push(h("span", { class: "frontmatter-item", "data-property": "created_by" },
-            icon(agent ? "copilot" : "person"), h("span", { class: "sr-only" }, "Created by "), agent ? "Agent" : "Human"));
-    }
-    for (const [field, label, iconName] of [
-        ["project", "Origin project", "repo"], ["session_name", "Original session", "comment-discussion"],
-    ]) {
-        const value = metadata[field];
-        if (typeof value !== "string") continue;
-        const button = h("button", {
-            type: "button", class: "frontmatter-item", "data-property": field, "data-frontmatter-field": field,
-            "aria-label": `${label}: ${value || "(empty string)"}`, title: `${label}: ${value}`,
-            "aria-expanded": String(expandedFrontmatter.has(field)),
-            onclick: () => {
-                if (expandedFrontmatter.has(field)) expandedFrontmatter.delete(field);
-                else expandedFrontmatter.add(field);
-                button.setAttribute("aria-expanded", String(expandedFrontmatter.has(field)));
-            },
-        }, icon(iconName), h("span", { class: "frontmatter-context-value" }, value || "(empty string)"));
-        context.push(button);
+        context.push(h("span", { class: "frontmatter-origin", "data-property": "created_by" },
+            icon(agent ? "copilot" : "person"), `Created by ${agent ? "Agent" : "Human"}`));
     }
     frontmatterContext.replaceChildren(...context);
     frontmatterDetails.replaceChildren(
         frontmatterGroup("Properties", [
+            ...(typeof note.title === "string" ? [frontmatterRow("title", "Title", note.title)] : []),
             frontmatterRow("pinned", "Pinned", note.pinned ? "Yes" : "No"),
             ...Object.entries(metadata).filter(([field]) => !builtInFields.has(field))
                 .map(([field, value]) => frontmatterRow(field, field, value)),
@@ -1817,9 +1897,27 @@ function fillFrontmatter(note: Note) {
     );
 }
 
+function currentTitle() {
+    if (state.draft) return state.draft.title ?? titleFromText(textarea.value);
+    if (!state.note) return "";
+    if (state.pendingTitle !== null) return state.pendingTitle;
+    return typeof state.note.frontmatter.title === "string" ? state.note.title : titleFromText(textarea.value);
+}
+
+function renderToolbarTitle() {
+    const active = state.note !== null || state.draft !== null;
+    const title = currentTitle();
+    toolbarTitle.hidden = !active;
+    toolbarTitle.disabled = !active || !!state.note?.warning;
+    toolbarTitle.textContent = title;
+    toolbarTitle.title = state.note?.warning ? "Repair Markdown frontmatter before renaming this note." : `Rename note: ${title}`;
+    toolbarTitle.setAttribute("aria-label", state.note?.warning ? "Note title unavailable" : `Rename note: ${title}`);
+}
+
 function renderEditor() {
     const active = state.note !== null || state.draft !== null;
     renderSaveStatus();
+    renderToolbarTitle();
     textarea.hidden = !active || !plain || editorWaiting;
     richElement.hidden = !active || plain || editorWaiting;
     editorLoading.hidden = !active || !editorWaiting;
@@ -1827,18 +1925,16 @@ function renderEditor() {
     markdownButton.setAttribute("aria-pressed", String(plain));
     markdownButton.setAttribute("aria-label", plain ? "View as rich text" : "View as Markdown");
     markdownButton.title = plain ? "View as rich text" : "View as Markdown";
+    markdownButton.replaceChildren(icon("code"), h("span", {}, plain ? "Rich text" : "Markdown"));
     renderFrontmatter();
     copilotButton.disabled = !active;
+    toolbarActions.hidden = !active;
     fidelityBanner.hidden = !active || !guarded;
     if (guarded) fidelityBanner.replaceChildren(h("span", {}, GUARD_MESSAGE),
         h("button", { type: "button", class: "button", onclick: () => toggleMarkdown(true) }, "Edit rich anyway"));
     emptyEditor.hidden = active;
     formattingHelp.hidden = !active || plain || editorWaiting;
-    for (const button of [pinButton, moveButton, trashButton]) button.disabled = !state.note;
-    const pinned = state.note?.pinned === true;
-    pinButton.replaceChildren(icon(pinned ? "pin-slash" : "pin"));
-    pinButton.setAttribute("aria-label", pinned ? "Unpin note" : "Pin note");
-    pinButton.title = pinned ? "Unpin note" : "Pin note";
+    toolbarActions.disabled = !active;
     if (state.conflict) {
         banner.className = "banner conflict";
         banner.replaceChildren(icon("alert"),
@@ -1902,7 +1998,9 @@ function connectEvents() {
 
 // The user moved on before recovered text could be shown; keep it for the next load rather than replacing their editor.
 // Resolves whether the server kept it.
-const stashBody = ({ noteId, folder, body, key }: Recovery) => ({ ...(noteId ? { id: noteId } : {}), folder, body, stash: true, ...(key ? { key } : {}) });
+const stashBody = ({ noteId, folder, body, title, key }: Recovery) => ({
+    ...(noteId ? { id: noteId } : {}), folder, body, ...(title ? { title } : {}), stash: true, ...(key ? { key } : {}),
+});
 function stashRecovery(recovery: Recovery) {
     return request("api/note/rescue", stashBody(recovery)).then(() => true, () => false);
 }
@@ -1958,9 +2056,14 @@ async function showRecovery(recovery: Recovery) {
     }
     // The user moved on while this loaded; hand the text back to the server rather than replacing their editor.
     if (gen !== navGen) return keepRecovery(recovery);
-    if (note?.body === body) return void (await openNote(keyOf(note)));
+    if (note?.body === body && (recovery.title === undefined || recovery.title === note.frontmatter.title)) {
+        return void (await openNote(keyOf(note)));
+    }
     state.note = note;
-    state.draft = note ? null : newDraft(folder);
+    state.draft = note ? null : newDraft(folder, recovery.title ?? null);
+    state.pendingTitle = note && recovery.title !== undefined && recovery.title !== note.frontmatter.title
+        ? recovery.title
+        : null;
     state.sent = note?.body ?? "";
     state.conflict = note !== null;
     state.recovered = note !== null;

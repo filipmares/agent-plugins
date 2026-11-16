@@ -412,6 +412,24 @@ describe("search and filesystem boundaries", () => {
         expect((await library.search({ query: "session-a" })).total).toBe(0);
     });
 
+    test("note titles are independent of Markdown headings and update automatic filenames", async () => {
+        const note = await library.create({ body: "# Monday 11/16\nPlan" }, author);
+        const renamed = await library.setTitle(note.id, "Weekly planning", note.version, author);
+        expect(renamed.title).toBe("Weekly planning");
+        expect(renamed.body).toBe("# Monday 11/16\nPlan");
+        expect(renamed.frontmatter.title).toBe("Weekly planning");
+        expect(renamed.path).toBe("weekly-planning.md");
+        expect((await library.list()).notes.map(item => item.title)).toContain("Weekly planning");
+
+        const edited = await library.update(note.id, {
+            body: "# A different heading\nUpdated plan", expectedVersion: renamed.version,
+        }, author);
+        expect(edited.title).toBe("Weekly planning");
+        expect(edited.path).toBe(renamed.path);
+        await expect(library.setTitle(note.id, "", edited.version, author)).rejects.toMatchObject({ code: "invalid_request" });
+        await expect(library.setTitle(note.id, "stale", note.version, author)).rejects.toMatchObject({ code: "conflict" });
+    });
+
     test("uses external modified time for sorting and skips hidden, assets and non-Markdown files", async () => {
         const older = await library.create({ body: "# Older" }, author);
         const newer = await library.create({ body: "# Newer" }, author);

@@ -16,8 +16,8 @@ const lazy = instrumented.replace(/^const importEditor = .+;$/m, "");
 if (lazy === instrumented) throw new Error("Cannot replace the Notes editor loader.");
 const script = new Bun.Transpiler({ loader: "ts" }).transformSync(lazy + `
 globalThis.client = { state, textarea, toast, openNote, moveNote, save, resolveConflict, refresh, select, askInput, askStatus, askPanel, copilotButton, compose, toggleMarkdown, rows, renderList, listCount, formattingHelp,
-    flushDiagnostics, showDiagnostics, diagnosticsButton,
-    frontmatterView, frontmatterContext, frontmatterDetails, frontmatterMore, isPlain: () => plain,
+    flushDiagnostics, showDiagnostics, diagnosticsButton, editNoteTitle,
+    frontmatterView, frontmatterContext, frontmatterDetails, frontmatterMore, toolbarTitle, toolbarActions, isPlain: () => plain,
     editorLoading, richElement, markdownButton, focusEditor, isWaiting: () => editorWaiting, listStatus: () => listStatus,
     saveButton, saveDetails, saveAnnouncement, saving: () => inflight,
     app, sidebar, listPane, editorPane, sidebarToggle, showFoldersButton, backToNotesButton, backdrop, setOverlay, rememberFocus, closeOverlayOnEscape, overlayOpen: () => overlay };
@@ -90,6 +90,7 @@ class Element extends EventTarget {
     setSelectionRange() {}
     select() {}
     getClientRects() { return [{}]; }
+    getBoundingClientRect() { return { left: 20, top: 20, right: 120, bottom: 52, width: 100, height: 32 }; }
     showModal() { this.returnFocus = this.ownerDocument.activeElement; this.setAttribute("open", ""); }
     close() {
         this.attributes.delete("open");
@@ -135,7 +136,6 @@ async function openClient({ richSafe = false, importEditor, respond, startupToas
     document.body.ownerDocument = document;
     const pending = new Set();
     const calls = [];
-    const headers = [];
     const clipboard = [];
     let afterMove;
     let afterNotes;
@@ -146,14 +146,13 @@ async function openClient({ richSafe = false, importEditor, respond, startupToas
     const media = new Map();
     let eventSources = 0;
     const sandbox = {
-        window, document, URLSearchParams, Event, crypto, queueMicrotask,
+        window, document, URLSearchParams, Event, MouseEvent: class extends Event {}, innerWidth: 390, innerHeight: 800, crypto, queueMicrotask,
         navigator: { clipboard: { writeText: async text => clipboard.push(text) } },
         GUARD_MESSAGE: "This note uses Markdown the rich editor can't keep exactly.",
         safeExternal: value => /^(https?:|mailto:)/.test(value),
         // Only the rendered view is inert. Real codec/schema and browser tests cover the rich view separately.
         createRichEditor: callbacks => {
             richCallbacks = callbacks;
-            headers.push(callbacks.header);
             return { safe: richSafe, editor: { destroy() {}, commands: { focus() {} }, isFocused: false, state: { selection: { from: 1 } } } };
         },
         importEditor: () => importEditor ? importEditor({ createRichEditor: sandbox.createRichEditor }) : Promise.resolve({ createRichEditor: sandbox.createRichEditor }),
@@ -196,7 +195,6 @@ async function openClient({ richSafe = false, importEditor, respond, startupToas
         calls,
         clipboard,
         eventSources: () => eventSources,
-        richHeader: () => headers.at(-1),
         scrollCalls: () => scrollIntoViewTotal,
         document,
         window,
@@ -740,10 +738,11 @@ describe("Notes client persistence", () => {
         expect(panel.frontmatterView.hidden).toBe(false);
         expect(panel.frontmatterDetails.hidden).toBe(true);
         expect(panel.frontmatterContext.children.map(node => node.getAttribute("data-property")))
-            .toEqual(["created_by", "project", "session_name"]);
+            .toEqual(["created_by"]);
         expect(text(property(panel, "created_by"))).toBe("Created by Agent");
         expect(property(panel, "created_by").children[0].innerHTML).toBe("copilot");
-        expect(text(panel.frontmatterMore)).toBe("More");
+        expect(text(panel.frontmatterMore)).toBe("Properties");
+        expect(panel.toolbarTitle.textContent).toBe("Metadata");
         panel.frontmatterMore.dispatchEvent(new Event("click"));
         expect(panel.frontmatterDetails.hidden).toBe(false);
         expect(panel.frontmatterMore.getAttribute("aria-expanded")).toBe("true");
@@ -761,8 +760,7 @@ describe("Notes client persistence", () => {
 
         panel.textarea.value = "# Metadata\nPending body edit";
         panel.frontmatterMore.dispatchEvent(new Event("click"));
-        property(panel, "session_name").dispatchEvent(new Event("click"));
-        expect(property(panel, "session_name").getAttribute("aria-expanded")).toBe("true");
+        expect(text(property(panel, "session_name"))).toContain("Metadata session");
         expect(panel.calls.filter(call => call.method === "POST" && call.path.startsWith("api/note/"))).toHaveLength(0);
         expect(panel.textarea.value).toBe("# Metadata\nPending body edit");
         expect(await readFile(path)).toEqual(before);
@@ -774,12 +772,11 @@ describe("Notes client persistence", () => {
         const panel = await openClient();
         await panel.openNote(note.id);
         panel.frontmatterMore.dispatchEvent(new Event("click"));
-        property(panel, "project").dispatchEvent(new Event("click"));
         await library.pin(note.id, true, note.version);
         await panel.refresh();
         expect(text(property(panel, "pinned"))).toBe("PinnedYes");
         expect(panel.frontmatterDetails.hidden).toBe(false);
-        expect(property(panel, "project").getAttribute("aria-expanded")).toBe("true");
+        expect(text(property(panel, "project"))).toContain("origin");
         panel.textarea.value += "\nAn ordinary body edit";
         expect(await panel.save()).toBe(true);
         const saved = await library.read(note.id);
@@ -790,7 +787,7 @@ describe("Notes client persistence", () => {
         expect(panel.frontmatterDetails.hidden).toBe(true);
         expect(property(panel, "project")).toBeUndefined();
         await panel.openNote(note.id);
-        expect(property(panel, "project").getAttribute("aria-expanded")).toBe("false");
+        expect(text(property(panel, "project"))).toContain("origin");
     });
 
     test("human notes omit unavailable provenance, and drafts or malformed notes have no metadata view", async () => {
@@ -811,29 +808,180 @@ describe("Notes client persistence", () => {
         expect(await readFile(join(root, "broken.md"), "utf8")).toBe(raw);
     });
 
-    test("properties sit below the opening heading in rich view and above the text in Markdown view", async () => {
+    test("properties stay in the toolbar across rich and Markdown views", async () => {
         const note = await library.create({ body: "# Placement\nbody" }, { ...context, project: "origin" });
         const panel = await openClient({ richSafe: true });
         await panel.openNote(note.id);
-        const slot = panel.richHeader();
-        expect(slot.getAttribute("class")).toBe("frontmatter-slot");
-        expect(panel.frontmatterView.parentNode).toBe(slot);
-        property(panel, "project").focus();
-        panel.toggleMarkdown();
-        expect(panel.frontmatterView.nextSibling).toBe(panel.textarea);
-        expect(panel.activeElement).toBe(property(panel, "project"));
-        // Returning to rich view, or reloading after an external change, rebuilds the editor and its slot.
+        const toolbar = panel.editorPane.querySelector(".editor-toolbar");
+        expect(panel.frontmatterView.parentNode).toBe(toolbar);
         panel.frontmatterMore.focus();
         panel.toggleMarkdown();
+        expect(panel.frontmatterView.parentNode).toBe(toolbar);
         expect(panel.activeElement).toBe(panel.frontmatterMore);
-        const rebuilt = panel.richHeader();
-        expect(rebuilt).not.toBe(slot);
-        expect(panel.frontmatterView.parentNode).toBe(rebuilt);
-        expect(slot.children).toEqual([]);
+        panel.toggleMarkdown();
+        expect(panel.frontmatterView.parentNode).toBe(toolbar);
         await library.update(note.id, { body: "# Placement\nexternal", expectedVersion: note.version }, context);
         await panel.refresh();
-        expect(panel.richHeader()).not.toBe(rebuilt);
-        expect(panel.frontmatterView.parentNode).toBe(panel.richHeader());
+        expect(panel.frontmatterView.parentNode).toBe(toolbar);
+    });
+
+    test("the toolbar title can be renamed independently of the Markdown heading", async () => {
+        const note = await library.create({ body: "# Document heading\nBody" }, context);
+        const panel = await openClient();
+        await panel.openNote(note.id);
+
+        const rename = panel.editNoteTitle();
+        await Promise.resolve();
+        const dialog = panel.document.body.querySelector("dialog");
+        const input = dialog.querySelector("input");
+        input.value = "Toolbar title";
+        dialog.querySelectorAll("button").find(button => text(button) === "Save title").dispatchEvent(new Event("click"));
+        await rename;
+
+        const saved = await library.read(note.id);
+        expect(saved.title).toBe("Toolbar title");
+        expect(saved.body).toBe("# Document heading\nBody");
+        expect(panel.toolbarTitle.textContent).toBe("Toolbar title");
+    });
+
+    test("renaming a draft waits for its in-flight create before choosing the title save path", async () => {
+        const panel = await openClient();
+        await panel.compose();
+        panel.textarea.value = "# Draft heading\nBody";
+        let release;
+        let reached;
+        const saving = new Promise(resolve => { reached = resolve; });
+        panel.interceptSave(() => {
+            reached();
+            return new Promise(resolve => { release = () => resolve(null); });
+        });
+        const creating = panel.save();
+        await saving;
+
+        const renaming = panel.editNoteTitle();
+        await Promise.resolve();
+        expect(panel.document.body.querySelector("dialog")).toBeNull();
+        release();
+        await creating;
+        await Promise.resolve();
+
+        const dialog = panel.document.body.querySelector("dialog");
+        const input = dialog.querySelector("input");
+        input.value = "Draft toolbar title";
+        dialog.querySelectorAll("button").find(button => text(button) === "Save title").dispatchEvent(new Event("click"));
+        await renaming;
+
+        const saved = await library.read(panel.state.note.id);
+        expect(saved.title).toBe("Draft toolbar title");
+        expect(saved.body).toBe("# Draft heading\nBody");
+    });
+
+    test("a title conflict keeps the title pending for Keep Mine", async () => {
+        const note = await library.create({ body: "# Heading\nBody" }, context);
+        let conflict = true;
+        const panel = await openClient({
+            respond: path => path === "api/note/title" && conflict
+                ? (conflict = false, new Response(JSON.stringify({ error: { code: "conflict", message: "Changed elsewhere." } }), { status: 409 }))
+                : undefined,
+        });
+        await panel.openNote(note.id);
+
+        const rename = panel.editNoteTitle();
+        await Promise.resolve();
+        const dialog = panel.document.body.querySelector("dialog");
+        dialog.querySelector("input").value = "My title";
+        dialog.querySelectorAll("button").find(button => text(button) === "Save title").dispatchEvent(new Event("click"));
+        await rename;
+        expect(panel.state.conflict).toBe(true);
+        expect(panel.state.pendingTitle).toBe("My title");
+
+        await panel.resolveConflict(true);
+        expect((await library.read(note.id)).title).toBe("My title");
+        expect(panel.state.pendingTitle).toBeNull();
+    });
+
+    test("navigation waits for an in-flight title save before replacing the open note", async () => {
+        const note = await library.create({ body: "# First" }, context);
+        const other = await library.create({ body: "# Other" }, context);
+        let panel;
+        let releaseTitle;
+        let titleStarted;
+        const started = new Promise(resolve => { titleStarted = resolve; });
+        panel = await openClient({
+            respond: path => path === "api/note/title" ? new Promise(resolve => {
+                titleStarted();
+                releaseTitle = async () => {
+                    const { id, title, expectedVersion } = panel.calls.at(-1).body;
+                    const updated = await library.setTitle(id, title, expectedVersion, context);
+                    resolve(new Response(JSON.stringify(updated)));
+                };
+            }) : undefined,
+        });
+        await panel.openNote(note.id);
+
+        const rename = panel.editNoteTitle();
+        await Promise.resolve();
+        const dialog = panel.document.body.querySelector("dialog");
+        dialog.querySelector("input").value = "First renamed";
+        dialog.querySelectorAll("button").find(button => text(button) === "Save title").dispatchEvent(new Event("click"));
+        await started;
+        const navigation = panel.openNote(other.id);
+        await Promise.resolve();
+        expect(panel.state.note.id).toBe(note.id);
+
+        await releaseTitle();
+        await Promise.all([rename, navigation]);
+        expect(panel.state.note.id).toBe(other.id);
+        expect((await library.read(note.id)).title).toBe("First renamed");
+    });
+
+    test("the Actions menu is keyboard-dismissible and returns focus to its toolbar button", async () => {
+        const note = await library.create({ body: "# Actions" }, context);
+        const panel = await openClient();
+        await panel.openNote(note.id);
+        panel.toolbarActions.dispatchEvent(new Event("click"));
+
+        const menu = panel.document.body.querySelector(".menu");
+        expect(menu).not.toBeNull();
+        expect(text(menu)).toContain("View as rich text");
+        expect(text(menu)).toContain("Move to folder…");
+        expect(panel.toolbarActions.getAttribute("aria-expanded")).toBe("true");
+        const escape = new Event("keydown");
+        Object.defineProperty(escape, "key", { value: "Escape" });
+        menu.dispatchEvent(escape);
+
+        expect(panel.document.body.querySelector(".menu")).toBeNull();
+        expect(panel.toolbarActions.getAttribute("aria-expanded")).toBe("false");
+        expect(panel.activeElement).toBe(panel.toolbarActions);
+    });
+
+    test("clicking the Actions trigger toggles its open menu closed", async () => {
+        const note = await library.create({ body: "# Actions" }, context);
+        const panel = await openClient();
+        await panel.openNote(note.id);
+        panel.toolbarActions.dispatchEvent(new Event("click"));
+        expect(panel.document.body.querySelector(".menu")).not.toBeNull();
+
+        const pointerdown = new Event("pointerdown");
+        Object.defineProperty(pointerdown, "target", { value: panel.toolbarActions });
+        panel.document.dispatchEvent(pointerdown);
+        panel.toolbarActions.dispatchEvent(new Event("click"));
+        expect(panel.document.body.querySelector(".menu")).toBeNull();
+        expect(panel.toolbarActions.getAttribute("aria-expanded")).toBe("false");
+    });
+
+    test("long property values have an accessible copy affordance", async () => {
+        const project = "owner/a-project-name-that-is-long-enough-to-truncate";
+        const note = await library.create({ body: "# Long property" }, { ...context, project });
+        const panel = await openClient();
+        await panel.openNote(note.id);
+        panel.frontmatterMore.dispatchEvent(new Event("click"));
+
+        const copy = property(panel, "project").querySelector("button");
+        expect(copy.getAttribute("aria-label")).toBe("Copy full project");
+        copy.dispatchEvent(new Event("click"));
+        await Promise.resolve();
+        expect(panel.clipboard).toEqual([project]);
     });
 
     test("a background refresh preserves pending navigation scroll when it supersedes a folder selection", async () => {
@@ -982,7 +1130,7 @@ describe("Notes client persistence", () => {
 
     test.each([false, true])("close/reopen preserves unresolved recovery until explicit resolution (keep mine: %s)", async keepMine => {
         const note = await library.create({ body: "# Shared\nCurrent external text" }, context);
-        const recovery = { noteId: note.id, folder: "", body: "# Shared\nOlder recovered draft" };
+        const recovery = { noteId: note.id, folder: "", body: "# Shared\nOlder recovered draft", title: "Recovered title" };
         await pushRecovery(recoveryPath(statePath), recovery);
         let panel = await openClient();
         for (let reopen = 0; reopen < 2; reopen++) {
@@ -992,7 +1140,7 @@ describe("Notes client persistence", () => {
             await panel.close();
             expect(panel.calls.at(-1)).toMatchObject({
                 path: "api/note/rescue", keepalive: true,
-                body: { id: note.id, expectedVersion: note.version, body: recovery.body, stash: true },
+                body: { id: note.id, expectedVersion: note.version, body: recovery.body, title: recovery.title, stash: true },
             });
             expect(await library.read(note.id)).toMatchObject({ body: note.body, version: note.version });
             panel = await openClient();
@@ -1002,6 +1150,7 @@ describe("Notes client persistence", () => {
         expect(panel.state.conflict).toBe(false);
         expect(panel.textarea.value).toBe(expected);
         expect((await library.read(note.id)).body).toBe(expected);
+        expect((await library.read(note.id)).title).toBe(keepMine ? recovery.title : note.title);
         await panel.close();
         const reopened = await openClient();
         expect(reopened.state.recovered).toBe(false);

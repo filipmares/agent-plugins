@@ -52,9 +52,10 @@ const STATUS = {
 };
 
 const ROUTES = {
-    "/api/note/create": { body: "string", folder: "string", draft: "string?" },
+    "/api/note/create": { body: "string", folder: "string", title: "string?", draft: "string?" },
     "/api/note/update": { id: "string", body: "string", expectedVersion: "string" },
-    "/api/note/rescue": { id: "string?", draft: "string?", folder: "string", body: "string", expectedVersion: "string?", stash: "boolean?", key: "string?" },
+    "/api/note/title": { id: "string", title: "string", expectedVersion: "string" },
+    "/api/note/rescue": { id: "string?", draft: "string?", folder: "string", body: "string", title: "string?", expectedVersion: "string?", stash: "boolean?", key: "string?" },
     "/api/note/pin": { id: "string", pinned: "boolean", expectedVersion: "string" },
     "/api/note/move": { id: "string", folder: "string", expectedVersion: "string" },
     "/api/note/delete": { id: "string", expectedVersion: "string", permanent: "boolean?" },
@@ -270,9 +271,22 @@ export async function createNotesServer({ getLibrary, getContext, sessionId, sta
 
     // Saves text from a closing panel. Saves since its last-known version are only its own if this panel wrote them.
     // `stash` only keeps the text for the next load, for recovered text whose base version is unknown.
-    async function rescue(library, { id, draft, folder, body, expectedVersion, stash, key: recoveryKey }) {
+    async function rescue(library, { id, draft, folder, body, title, expectedVersion, stash, key: recoveryKey }) {
+        const recover = async (noteId, noteFolder) => {
+            await pushRecovery(recoveryPath(statePath), { noteId, folder: noteFolder, body, title });
+            return { recovered: true };
+        };
+        const setTitle = async note => {
+            if (title === undefined || title === note.title) return note;
+            try {
+                return await library.setTitle(note.id ?? note.path, title, note.version, await userContext());
+            } catch (error) {
+                if (error?.code !== "conflict") throw error;
+                return recover(note.id ?? note.path, note.folder);
+            }
+        };
         if (stash) {
-            await pushRecovery(recoveryPath(statePath), { noteId: id ?? null, folder, body, key: recoveryKey });
+            await pushRecovery(recoveryPath(statePath), { noteId: id ?? null, folder, body, title, key: recoveryKey });
             return { recovered: true };
         }
         const noteId = id ?? (draft === undefined ? undefined : drafts.get(draft));
@@ -281,21 +295,28 @@ export async function createNotesServer({ getLibrary, getContext, sessionId, sta
             throw error;
         });
         if (!note) {
-            const created = await library.create({ body, folder }, await userContext());
+            const created = await library.create({ body, folder, title }, await userContext());
             if (draft !== undefined) drafts.set(draft, created.id ?? created.path);
             return created;
         }
-        if (note.body === body) return note;
+        if (note.body === body) {
+            const noteKey = note.id ?? note.path;
+            if (title !== undefined && title !== note.title
+                && note.version !== expectedVersion && note.version !== written.get(noteKey)) {
+                return recover(noteKey, note.folder);
+            }
+            return setTitle(note);
+        }
         const key = note.id ?? note.path;
         if (note.version === expectedVersion || note.version === written.get(key)) {
             try {
-                return await library.update(key, { body, expectedVersion: note.version }, await userContext());
+                const updated = await library.update(key, { body, expectedVersion: note.version }, await userContext());
+                return setTitle(updated);
             } catch (error) {
                 if (error?.code !== "conflict") throw error;
             }
         }
-        await pushRecovery(recoveryPath(statePath), { noteId: key, folder: note.folder, body });
-        return { recovered: true };
+        return recover(key, note.folder);
     }
 
     async function post(route, body) {
@@ -306,11 +327,12 @@ export async function createNotesServer({ getLibrary, getContext, sessionId, sta
                 const existing = body.draft === undefined || !drafts.has(body.draft) ? null
                     : await library.read(drafts.get(body.draft)).catch(() => null);
                 if (existing) return existing;
-                const note = await library.create({ body: body.body, folder: body.folder }, await userContext());
+                const note = await library.create({ body: body.body, folder: body.folder, title: body.title }, await userContext());
                 if (body.draft !== undefined) drafts.set(body.draft, note.id ?? note.path);
                 return note;
             }
             case "/api/note/update": return library.update(body.id, { body: body.body, expectedVersion: body.expectedVersion }, await userContext());
+            case "/api/note/title": return library.setTitle(body.id, body.title, body.expectedVersion, await userContext());
             case "/api/note/rescue": return rescue(library, body);
             case "/api/note/pin": return library.pin(body.id, body.pinned, body.expectedVersion);
             case "/api/note/move": return library.move(body.id, { folder: body.folder, expectedVersion: body.expectedVersion });

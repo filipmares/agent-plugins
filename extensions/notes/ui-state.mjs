@@ -57,9 +57,9 @@ const entryFiles = async (dir, onFailure) => {
 
 // A key handed out with a recovery names its entry when it is kept again, so resending the same text
 // (as a closing panel does while its first stash is still in flight) replaces the entry rather than duplicating it.
-export async function pushRecovery(dir, { noteId = null, folder = "", body, key }) {
+export async function pushRecovery(dir, { noteId = null, folder = "", body, title, key }) {
     const name = typeof key === "string" && ENTRY_KEY.test(key) ? key : newEntryKey();
-    await writeAtomic(join(dir, `${name}.json`), { noteId, folder, body });
+    await writeAtomic(join(dir, `${name}.json`), { noteId, folder, body, ...(typeof title === "string" ? { title } : {}) });
     // Trimming claims like a reader does, so it never removes an entry another panel is about to deliver.
     await Promise.all((await entryFiles(dir)).slice(0, -20).map(async name => {
         const path = join(dir, name);
@@ -76,7 +76,10 @@ export async function popRecovery(dir, onFailure) {
             const entry = JSON.parse(await retryTransient(() => readFile(path, "utf8")));
             if (entry && typeof entry.body === "string" && (entry.noteId === null || isText(entry.noteId, 4096)) && isText(entry.folder, 4096)) {
                 // A fresh key, so text kept again joins the back of the queue rather than blocking newer entries.
-                draft = { noteId: entry.noteId, folder: entry.folder, body: entry.body, key: newEntryKey() };
+                draft = {
+                    noteId: entry.noteId, folder: entry.folder, body: entry.body, key: newEntryKey(),
+                    ...(isText(entry.title, 240) && entry.title.trim() ? { title: entry.title } : {}),
+                };
             }
         } catch (error) {
             if (error?.code !== "ENOENT") onFailure?.(error);
