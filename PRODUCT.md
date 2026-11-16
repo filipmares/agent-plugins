@@ -109,8 +109,7 @@ resource, so `img-src` does not govern it; it must carry no `xmlns` attribute
 ## Evidence on Hand
 
 - Real implementation and tests at `extensions/rpi-artifact-navigator/`.
-- Real skills at `skills/` (agent-merge, cli-skill-generator, consensus-planner,
-  copilot-migrate, plugin-analyzer).
+- Real skills at `skills/` (agent-merge, cli-skill-generator, copilot-migrate).
 - No usage metrics, adoption numbers, customers, benchmarks, or pricing exist.
   Future work must not fabricate them.
 
