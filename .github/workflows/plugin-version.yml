@@ -16,4 +16,5 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - run: bun run scripts/check-plugin-version-bump.ts "${{ github.event.pull_request.base.sha }}"
       - run: bun test scripts/check-plugin-version-bump.test.ts
+      - run: bun test scripts/bench-notes-startup.test.ts
       - run: bun run validate:copilot-plugin

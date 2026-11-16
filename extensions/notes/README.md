@@ -403,17 +403,64 @@ client as two ES modules: the small panel shell `vendor/notes-client.js`/`.css`
 time) and the lazily imported rich editor `vendor/notes-editor.js` (from
 `client/editor.ts`). Code they share lives in `client/common.ts`.
 
-To measure panel startup in headless Microsoft Edge against a synthetic library:
+To measure a fresh Notes application scan and usable UI in headless Edge/Chrome
+against an isolated synthetic library (never your Documents/Copilot Notes):
 
 ```powershell
-bun run bench:notes --notes 500 --samples 7
-bun run bench:notes --notes 500 --samples 7 --cpu-throttle 4
+bun run bench:notes --notes 1000 --samples 7
+bun run bench:notes --notes 10000 --samples 7 --json
+bun run bench:notes --notes 1000 --samples 7 --cpu-throttle 4
+bun test scripts\bench-notes-startup.test.ts
 ```
 
-It reports median and p90 times to list paint and editor paint, with and
-without a restored note, and the bundle sizes. It uses Microsoft Edge or
-Chrome; pass `--browser <path>` or set `NOTES_BENCH_BROWSER` to choose another
-Chromium-based browser.
+Each sample uses a new `NotesLibrary`, watcher, initial scan, server, and browser
+profile. The application timer starts **before** `startWatching`, not after the
+scan. Both restored-note and list-only scenarios report `application-to-usable`
+(host-observed time through list paint and, when restored, editable rich-note
+paint), plus `initial-scan` from the same origin. Existing startup marks,
+HTML/resource timings, and list/editor paints remain **navigation-relative**;
+do not add these overlapping durations together.
+
+After startup, the same page opens a different note, searches for a known
+body-only token, switches to Work, and returns to All Notes. These metrics end
+after the expected rows or editable rich content render and a paint opportunity
+passes, not merely when an API responds. `open-note`, `search`, `warm-folder`,
+and `warm-all` are handler-to-paint durations; search includes its 150 ms debounce.
+Actions use DOM click/input handlers, not physical input latency. The restored
+note has 24 Markdown sections; the opened note has two; other notes have one
+to four, spread across eight folders. Folder views display direct children.
+
+Fixture creation uses bounded direct file writes, avoiding a full scan per
+`library.create`. Every on-disk fixture passes the actual `parseNote` parser,
+including valid, unique ULIDs and complete metadata; the scan must not need
+adoption. Fixture generation/validation is timed separately, outside startup.
+The benchmark fails nonzero on incomplete UI, browser errors, invalid arguments,
+invalid fixtures, or timeouts rather than reporting partial results. The
+per-operation timeout is configurable with `--timeout-ms` (default 120000);
+the production server's 15-second library-read deadline remains unchanged, so
+raising the benchmark timeout cannot hide `library_busy`.
+The first failed sample aborts the run with its scenario, sample number,
+browser version, UI state, and captured browser errors on stderr; no successful
+summary is emitted for an incomplete run. `--json` retains completed samples
+with `status: "failed"` and the failed scenario/sample; no p90 is computed for
+an incomplete scenario. Fixture setup and sample
+progress also go to stderr, leaving successful `--json` stdout machine-readable.
+
+Output includes median, nearest-rank p90, min/max, sample counts, bundle sizes,
+and actual Bun/browser/OS/CPU metadata. `--json` also retains raw samples. Use
+repeated samples for comparisons; p90 is `null`/`n/a` for a single sample and is
+low-confidence (often the maximum) with small sample counts. Defaults remain
+1,000 notes, seven samples per scenario, and no CPU throttling; at least two
+notes are needed to open a different note. Pass `--browser <path>` or set
+`NOTES_BENCH_BROWSER` to choose a Chromium browser.
+
+This is a **fresh application scan, not a cold OS disk-cache measurement**:
+fixture validation itself warms file caches, and Bun modules/JIT and OS caches
+are shared across samples. Browser launch, module loading, and the Copilot
+host/SDK launch are excluded. CPU throttling affects the renderer, not the Bun
+server. Warm views reuse the scanned library and browser page. Do not compare
+these startup numbers directly to the old pre-scanned-panel benchmark.
+
 `vendor/manifest.json` pins bundle/source hashes, package versions, and licence
 sources. Verbatim dependency licences live in `third-party-licenses/`.
 Git attributes preserve bundle/licence bytes; source fingerprints normalize
