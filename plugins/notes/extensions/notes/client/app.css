@@ -483,7 +483,8 @@ mark { border-radius: 3px; background: var(--accent-subtle); color: var(--fg); }
 }
 .settings-dialog .dialog-title { padding-right: 36px; }
 .settings-close { position: absolute; top: 12px; right: 12px; }
-.settings-section { padding-top: 16px; border-top: 1px solid var(--border); }
+.settings-section { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
+.index-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .settings-section-title {
     margin: 0 0 12px;
     color: var(--muted);

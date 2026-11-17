@@ -4,10 +4,10 @@ import { setTimeout as delay } from "node:timers/promises";
 import { parentPort, workerData } from "node:worker_threads";
 import { NotesError } from "./errors.mjs";
 import { readLibrarySnapshot, snapshotSignature } from "./library-snapshot.mjs";
-import { shadowIndexFile } from "./shadow-index.mjs";
+import { activeIndexFile, rotateIndex } from "./index-location.mjs";
 
 const { root, directory } = workerData;
-let db, statements;
+let db, statements, file;
 const SCHEMA = `
     CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS notes (
@@ -24,18 +24,23 @@ function failureCode(error) {
     return error?.code ?? "index_unavailable";
 }
 
-async function open() {
+async function prepareDirectory() {
     const location = relative(root, directory);
     if (!isAbsolute(location) && location !== ".." && !location.startsWith(`..${sep}`)) {
         throw new NotesError("index_unavailable", "The index directory is inside the Notes library.");
     }
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+    if (process.platform !== "win32") await chmod(directory, 0o700);
+}
+
+async function open(nextFile) {
     let sqlite;
     try { sqlite = await import("node:sqlite"); } catch (error) {
         throw Object.assign(new NotesError("index_unavailable", "SQLite is unavailable in this Notes host."), { cause: error });
     }
-    await mkdir(directory, { recursive: true, mode: 0o700 });
-    if (process.platform !== "win32") await chmod(directory, 0o700);
-    db = new sqlite.DatabaseSync(join(directory, shadowIndexFile(root)), { timeout: 1000 });
+    await prepareDirectory();
+    db = new sqlite.DatabaseSync(join(directory, nextFile), { timeout: 1000 });
+    file = nextFile;
     db.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL");
     db.exec(`BEGIN IMMEDIATE; ${SCHEMA} COMMIT`);
     statements = {
@@ -44,6 +49,7 @@ async function open() {
         setApplied: db.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES ('applied', ?)"),
         signature: db.prepare("SELECT value FROM meta WHERE key = 'signature'"),
         setSignature: db.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES ('signature', ?)"),
+        setSynchronized: db.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES ('synchronized', ?)"),
         versions: db.prepare("SELECT path, version, mtime_ms FROM notes"),
         upsert: db.prepare("INSERT OR REPLACE INTO notes (path, version, mtime_ms, frontmatter, body, warning) VALUES (?, ?, ?, ?, ?, ?)"),
         remove: db.prepare("DELETE FROM notes WHERE path = ?"),
@@ -53,9 +59,11 @@ async function open() {
 }
 
 async function synchronize() {
-    if (!statements) {
+    const nextFile = await activeIndexFile(root, directory);
+    if (!statements || file !== nextFile) {
         db?.close();
-        await open();
+        statements = undefined;
+        await open(nextFile);
     }
     // Reserve ordering before reading files, without locking out other workers during discovery.
     const generation = statements.reserve.get().value;
@@ -87,11 +95,21 @@ async function synchronize() {
             statements.setSignature.run(signature);
         }
         statements.setApplied.run(generation);
+        statements.setSynchronized.run(new Date().toISOString());
         db.exec("COMMIT");
     } catch (error) {
         try { db.exec("ROLLBACK"); } catch { /* SQLite may already have rolled back */ }
         throw error;
     }
+}
+
+function details() {
+    return {
+        file,
+        synchronized: db.prepare("SELECT value FROM meta WHERE key = 'synchronized'").get()?.value ?? null,
+        notes: db.prepare("SELECT count(*) AS count FROM notes").get().count,
+        warnings: db.prepare("SELECT count(*) AS count FROM warnings").get().count,
+    };
 }
 
 parentPort.on("message", async ({ type }) => {
@@ -101,14 +119,31 @@ parentPort.on("message", async ({ type }) => {
         return;
     }
     try {
+        if (type === "rebuild") {
+            await prepareDirectory();
+            await rotateIndex(root, directory);
+        }
         const deadline = Date.now() + 30000;
         for (;;) {
-            try { await synchronize(); break; } catch (error) {
+            try {
+                await synchronize();
+                if (type !== "refresh") {
+                    if (db.prepare("PRAGMA quick_check").all().some(row => Object.values(row)[0] !== "ok")) {
+                        throw new NotesError("index_corrupt", "The index integrity check failed.");
+                    }
+                }
+                // A concurrent rebuild may have switched the shared cache during discovery.
+                if (file !== await activeIndexFile(root, directory)) {
+                    if (Date.now() >= deadline) throw new NotesError("index_busy", "Another session is rebuilding the index.");
+                    continue;
+                }
+                break;
+            } catch (error) {
                 if (!["index_busy", "ENOENT", "not_found", "conflict"].includes(failureCode(error)) || Date.now() >= deadline) throw error;
                 await delay(50);
             }
         }
-        parentPort.postMessage({ type: "done" });
+        parentPort.postMessage({ type: "done", details: details(), checked: type !== "refresh" });
     } catch (error) {
         try { db?.close(); } catch { /* a failed transaction is discarded on exit */ }
         const code = failureCode(error);

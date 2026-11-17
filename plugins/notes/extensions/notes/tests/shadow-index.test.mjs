@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import { execFile } from "node:child_process";
+import { EventEmitter } from "node:events";
 import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
@@ -14,6 +15,7 @@ import { NotesError } from "../errors.mjs";
 import { readLibrarySnapshot } from "../library-snapshot.mjs";
 import { ULID } from "../note-format.mjs";
 import { ShadowIndex, shadowIndexFile } from "../shadow-index.mjs";
+import { activeIndexFile } from "../index-location.mjs";
 import { NotesLibrary } from "../storage.mjs";
 
 const execute = promisify(execFile);
@@ -33,7 +35,7 @@ const indexed = (options = {}) => new NotesLibrary(root, {
         ...options,
     }),
 });
-const indexPath = async () => join(indexDirectory, shadowIndexFile(await realpath(root)));
+const indexPath = async () => join(indexDirectory, await activeIndexFile(await realpath(root), indexDirectory));
 
 async function write(path, content) {
     await mkdir(join(root, path, ".."), { recursive: true });
@@ -243,6 +245,140 @@ test("unavailable workers are reported once and Notes keeps working, even if log
     expect(failures).toEqual(["index_unavailable"]);
     await expect(lstat(indexDirectory)).rejects.toMatchObject({ code: "ENOENT" });
 });
+
+test("settings retries a failed worker and reports completion only after a real integrity check", async () => {
+    await library.close();
+    let unavailable = true;
+    library = indexed({ createWorker: options => {
+        if (unavailable) throw new Error("Worker unavailable");
+        return new Worker(new URL("../index-worker.mjs", import.meta.url), options);
+    } });
+    const note = await library.create({ body: "# Safe" }, author);
+    expect(library.indexStatus()).toMatchObject({ state: "degraded", error: "index_unavailable", checked: null });
+    unavailable = false;
+    expect(await library.manageIndex("check")).toMatchObject({ state: "checking", checked: null });
+    await expect(library.manageIndex("rebuild")).rejects.toMatchObject({ code: "index_busy" });
+    await index.flush();
+    expect(library.indexStatus()).toMatchObject({
+        state: "idle", error: null, checked: expect.any(String),
+        details: { synchronized: expect.any(String), notes: 1, warnings: 0 },
+    });
+    expect((await library.read(note.id)).version).toBe(note.version);
+    await expect(library.manageIndex("sql")).rejects.toMatchObject({ code: "invalid_request" });
+});
+
+test("retrying a slow worker termination never holds the Markdown write lock", async () => {
+    await library.close();
+    let release;
+    const terminating = new Promise(resolve => release = resolve);
+    library = indexed({ createWorker: () => Object.assign(new EventEmitter(), {
+        ref() {}, unref() {},
+        postMessage() { queueMicrotask(() => this.emit("message", { type: "failure", code: "index_unavailable" })); },
+        terminate: () => terminating,
+    }) });
+    await library.create({ body: "# Before" }, author);
+    await index.flush();
+    const retry = library.manageIndex("check");
+    try {
+        while (!index.status().managing) await delay(1);
+        const saved = await Promise.race([
+            library.create({ body: "# During retry" }, author),
+            delay(1000).then(() => { throw new Error("Index recovery blocked Markdown writes."); }),
+        ]);
+        expect(saved.path).toBe("during-retry.md");
+    } finally { release(); await retry; await index.flush(); }
+});
+
+test("a malformed generation pointer is reported and rebuild repairs it without following paths", async () => {
+    await mkdir(indexDirectory);
+    const pointer = join(indexDirectory, `${shadowIndexFile(await realpath(root))}.active`);
+    await writeFile(pointer, "../outside.sqlite");
+    await library.create({ body: "# Safe" }, author);
+    await index.flush();
+    expect(index.status()).toMatchObject({ state: "degraded", error: "index_unavailable" });
+    await library.manageIndex("rebuild");
+    await index.flush();
+    expect(index.status()).toMatchObject({ state: "idle", error: null, details: { notes: 1 } });
+    expect(await readdir(fixture)).toEqual(expect.arrayContaining(["index", "notes"]));
+    await expect(lstat(join(fixture, "outside.sqlite"))).rejects.toMatchObject({ code: "ENOENT" });
+});
+
+test("rebuild recovers corruption without replacing a live database and other workers adopt it", async () => {
+    const note = await library.create({ body: "# Kept\ntext" }, author);
+    await index.flush();
+    const oldPath = await indexPath();
+    const reader = new DatabaseSync(oldPath);
+    const other = new ShadowIndex({ directory: indexDirectory });
+    try {
+        other.refresh(await realpath(root));
+        await other.flush();
+        await library.close();
+        // A corrupt active cache may coexist with a connection still using an older cache.
+        const corrupt = `${shadowIndexFile(await realpath(root))}.active`;
+        await writeFile(join(indexDirectory, corrupt), "00000000-0000-0000-0000-000000000000");
+        const corruptPath = await indexPath();
+        const garbage = "not sqlite ".repeat(100);
+        await writeFile(corruptPath, garbage);
+        library = indexed();
+        await library.search();
+        await index.flush();
+        expect(library.indexStatus().error).toBe("index_corrupt");
+        expect(await library.manageIndex("rebuild")).toMatchObject({ state: "rebuilding", error: null, checked: null });
+        await index.flush();
+        expect(library.indexStatus()).toMatchObject({ state: "idle", error: null, details: { notes: 1 } });
+        expect(await indexPath()).not.toBe(corruptPath);
+        expect(await readFile(corruptPath, "utf8")).toBe(garbage);
+        expect(reader.prepare("SELECT body FROM notes").get().body).toBe("# Kept\ntext");
+        expect((await library.read(note.id)).version).toBe(note.version);
+        other.refresh(await realpath(root));
+        await other.flush();
+        expect(other.status().details.file).toBe(index.status().details.file);
+        expect((await contents()).notes).toEqual((await production()).notes);
+    } finally { reader.close(); await other.close(); }
+});
+
+test("concurrent rebuilds converge without unlinking caches held by live sessions", async () => {
+    await library.create({ body: "# Shared" }, author);
+    await index.flush();
+    const oldPath = await indexPath();
+    const reader = new DatabaseSync(oldPath);
+    const other = new ShadowIndex({ directory: indexDirectory });
+    try {
+        const rootPath = await realpath(root);
+        await Promise.all([library.manageIndex("rebuild"), other.manage(rootPath, "rebuild")]);
+        await Promise.all([index.flush(), other.flush()]);
+        // A later observation follows the winner even when the earlier rebuild finished first.
+        await Promise.all([library.manageIndex("check"), other.manage(rootPath, "check")]);
+        await Promise.all([index.flush(), other.flush()]);
+        expect(index.status()).toMatchObject({ state: "idle", error: null });
+        expect(other.status()).toMatchObject({ state: "idle", error: null });
+        expect(index.status().details.file).toBe(other.status().details.file);
+        expect(reader.prepare("SELECT count(*) AS count FROM notes").get().count).toBe(1);
+        expect((await contents()).notes).toEqual((await production()).notes);
+    } finally { reader.close(); await other.close(); }
+});
+
+test("separate processes can rebuild the shared cache while an existing connection stays usable", async () => {
+    await library.create({ body: "# Shared" }, author);
+    await index.flush();
+    const reader = new DatabaseSync(await indexPath());
+    const script = `import { ShadowIndex } from ${JSON.stringify(new URL("../shadow-index.mjs", import.meta.url).href)};
+        const index = new ShadowIndex({ directory: process.argv[2] });
+        await index.manage(process.argv[1], "rebuild");
+        await index.flush();
+        process.stdout.write(JSON.stringify(index.status()));
+        await index.close();`;
+    try {
+        const results = await Promise.all([1, 2].map(async () =>
+            JSON.parse((await execute(process.execPath, ["-e", script, await realpath(root), indexDirectory])).stdout)));
+        expect(results.map(status => status.state)).toEqual(["idle", "idle"]);
+        expect(reader.prepare("SELECT count(*) AS count FROM notes").get().count).toBe(1);
+        await library.manageIndex("check");
+        await index.flush();
+        expect(index.status().details.file).toBe(await activeIndexFile(await realpath(root), indexDirectory));
+        expect((await contents()).notes).toEqual((await production()).notes);
+    } finally { reader.close(); }
+}, 15000);
 
 test("an index directory inside the Notes library is refused before anything is written there", async () => {
     await library.close();

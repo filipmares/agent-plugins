@@ -48,7 +48,7 @@ const HTML = `<!doctype html>
 const STATUS = {
     not_found: 404, conflict: 409, already_exists: 409, ambiguous_path: 409, trash_unavailable: 409,
     delete_cancelled: 409, note_too_large: 413, request_too_large: 413, unsafe_path: 403,
-    library_busy: 503, server_closed: 503, unsupported_media_type: 415,
+    library_busy: 503, server_closed: 503, unsupported_media_type: 415, index_busy: 409, index_unavailable: 503,
 };
 
 const ROUTES = {
@@ -66,6 +66,7 @@ const ROUTES = {
     "/api/open-link": { url: "string" },
     "/api/ask": { id: "string", expectedVersion: "string", prompt: "string" },
     "/api/startup": {},
+    "/api/index": { action: "string" },
 };
 
 function fields(body, spec) {
@@ -378,6 +379,7 @@ export async function createNotesServer({ getLibrary, getContext, sessionId, sta
                 }
                 case "/api/diagnostics":
                     return sendJson(res, 200, { issueBundle: await diagnostics.renderIssueBundle() });
+                case "/api/index": return sendJson(res, 200, (await readLibrary()).indexStatus());
                 case "/api/folders": return sendJson(res, 200, await (await readLibrary()).folders());
                 case "/api/notes": return sendJson(res, 200, await list(url));
                 case "/api/note": {
@@ -429,6 +431,7 @@ export async function createNotesServer({ getLibrary, getContext, sessionId, sta
                 return sendJson(res, 202, { recorded: recorded === true });
             }
             if (route === "/api/ui") return sendJson(res, 200, await saveUiState(statePath, body.state));
+            if (route === "/api/index") return sendJson(res, 202, await (await readLibrary()).manageIndex(body.action));
             if (route === "/api/startup") {
                 const recovery = await popRecovery(recoveryPath(statePath), reportProviderFailure);
                 const claimed = { target: pendingTarget, recovery };
