@@ -8,12 +8,12 @@ export function shadowIndexDirectory(home = copilotHome()) {
     return join(home, "extensions", "notes", "index");
 }
 
-// v2 isolates generation-ordered workers from older writers that do not honor that protocol.
+// v3 adds precomputed list/search fields; earlier writers cannot populate them.
 export function shadowIndexFile(root) {
-    return `${createHash("sha256").update(root).digest("hex").slice(0, 32)}.v2.sqlite`;
+    return `${createHash("sha256").update(root).digest("hex").slice(0, 32)}.v3.sqlite`;
 }
 
-// Only root invalidations cross the thread boundary, never full-library clones.
+// Synchronization sends invalidations and signatures, not full-library clones.
 export class ShadowIndex {
     #directory;
     #log;
@@ -23,12 +23,14 @@ export class ShadowIndex {
     #root;
     #busy = false;
     #pending = false;
+    #signature;
     #disabled = false;
     #closing = false;
     #closed;
     #termination;
     #waiters = [];
     #action;
+    #finishList;
     #status = { state: "not_started", error: null, checked: null, details: null };
 
     constructor({ directory = shadowIndexDirectory(), log, onFailure,
@@ -39,7 +41,7 @@ export class ShadowIndex {
         this.#createWorker = createWorker;
     }
 
-    refresh(root) {
+    refresh(root, signature) {
         if (this.#disabled || this.#closing) return;
         try {
             if (!this.#worker) {
@@ -50,6 +52,10 @@ export class ShadowIndex {
                     if (message.type === "failure") {
                         const error = Object.assign(new NotesError(message.code, "The background index failed."), { stack: message.stack });
                         this.#disable(error);
+                    } else if (message.type === "listed") {
+                        this.#finishList?.(message.result);
+                        this.#finishList = undefined;
+                        if (message.reopen) this.refresh(root);
                     } else if (message.type === "done") {
                         this.#busy = false;
                         this.#status = { state: "idle", error: null,
@@ -71,6 +77,7 @@ export class ShadowIndex {
             }
             if (root !== this.#root) throw new NotesError("index_unavailable", "The index library changed.");
             this.#pending = true;
+            this.#signature = signature;
             if (!this.#busy) this.#send();
         } catch (error) { this.#disable(error); }
     }
@@ -81,14 +88,30 @@ export class ShadowIndex {
             this.#action = undefined;
             this.#pending = false;
             this.#busy = true;
-            this.#status.state = type === "refresh" ? "syncing" : type === "check" ? "checking" : "rebuilding";
+            this.#status = { ...this.#status, state: type === "refresh" ? "syncing" : type === "check" ? "checking" : "rebuilding" };
             this.#worker.ref();
-            this.#worker.postMessage({ type });
+            const signature = type === "refresh" ? this.#signature : undefined;
+            this.#worker.postMessage(signature === undefined ? { type } : { type, signature });
         } catch (error) { this.#disable(error); }
     }
 
     status() {
         return structuredClone({ ...this.#status, managing: !!this.#action || ["checking", "rebuilding"].includes(this.#status.state) });
+    }
+
+    list(root, signature, filters) {
+        const status = this.#status;
+        if (this.#closing || this.#finishList || root !== this.#root || status.state !== "idle") return;
+        return new Promise(resolve => {
+            // A timed-out query keeps its worker slot until the worker actually replies.
+            const timer = setTimeout(resolve, 500);
+            this.#finishList = result => {
+                clearTimeout(timer);
+                resolve(!this.#closing && status === this.#status && status.state === "idle" ? result : undefined);
+            };
+            try { this.#worker.postMessage({ type: "list", signature, filters }); }
+            catch (error) { this.#disable(error); }
+        });
     }
 
     async manage(root, action) {
@@ -153,6 +176,8 @@ export class ShadowIndex {
         this.#disabled = true;
         this.#busy = false;
         this.#pending = false;
+        this.#finishList?.();
+        this.#finishList = undefined;
         this.#action = undefined;
         this.#status.state = "degraded";
         this.#status.error = error?.code ?? "index_unavailable";

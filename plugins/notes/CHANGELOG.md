@@ -12,6 +12,10 @@ and plugin versioning follows [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## [Unreleased]
 
+### Changed — SQLite list and search
+- Use verified SQLite results for list and search, with Markdown fallback when the cache cannot answer. Note contents and edits remain file-backed.
+- Bumped Notes to `1.0.5` and the independent marketplace catalog to `4.0.5`.
+
 ### Added - SQLite index settings
 - Check session-local synchronization state, snapshot counts, integrity-check time and index failures from Settings.
 - Check/retry a failed worker or rebuild into a fresh shared cache without restarting Notes, deleting live databases or changing Markdown reads and writes.
