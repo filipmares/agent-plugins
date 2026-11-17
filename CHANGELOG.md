@@ -7,6 +7,10 @@ and plugin versioning follows [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## [Unreleased]
 
+### Changed — Independent marketplace versioning
+- Decoupled the marketplace catalog version from the developer plugin version. Catalog content changes require their own stable version increase; plugin manifests still match their individual catalog entries, and only affected plugins require releases.
+- Documented the repository, marketplace, and plugin hierarchy and the fields to update for each release. Existing plugin versions, identifiers, and paths are unchanged.
+
 ### Changed — Notes background index synchronization
 - Move SQLite discovery, writes and busy waits to a coalescing worker, synchronized after mutations and watcher changes without blocking file-backed requests. Ordered generations reject stale cross-session commits without locking during discovery; unstable reads retry, worker failures degrade safely, and shutdown drains watcher work with a bounded worker grace period.
 - Keep list/search/read behavior, frontmatter adoption and the 15-second deadlines unchanged; this does not fix the 10k-note cold-start issue (#84).

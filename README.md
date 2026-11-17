@@ -32,6 +32,40 @@ or `copilot plugin update notes`. Updates are pull-based:
 a self-registered marketplace does not auto-update unless you set
 `"autoUpdate": true` on its `extraKnownMarketplaces` entry in your user settings.
 
+### Marketplace and plugin hierarchy
+
+The repository, marketplace, and developer plugin share the name
+`agent-plugins`, but are separate things. The marketplace is a catalog, not a
+plugin containing the other plugins:
+
+```text
+filipmares/agent-plugins (repository)
+`-- agent-plugins (marketplace: .github/plugin/marketplace.json)
+    |-- agent-plugins (developer plugin, source: .)
+    |   |-- skills/: agent-merge, copilot-migrate, cli-skill-generator
+    |   |-- .github/agents/: Copilot Code Review
+    |   `-- extensions/: RPI Artifact Navigator
+    `-- notes (Notes plugin, source: ./plugins/notes)
+        `-- extensions/notes/: editor, notes_manage, storage and sync
+```
+
+Each plugin's `plugin.json` describes its contents and version; its marketplace
+entry advertises the same version. The developer plugin's manifest happens to
+live at the repository root in `.github/plugin/plugin.json`; it does not
+version the whole repository. Notes has its own manifest in
+`plugins/notes/.github/plugin/plugin.json`.
+
+The catalog's `metadata.version` is independent of both plugin versions.
+Catalog changes, including plugin releases, additions, and removals, increase
+that version without forcing a release of unrelated plugins. See
+[Plugin releases](./CONTRIBUTING.md#plugin-releases) for the exact fields.
+
+Refresh the available plugin catalog separately from updating installed plugins:
+
+```bash
+copilot plugin marketplace update agent-plugins
+```
+
 ### Experimental canvas extensions
 
 The marketplace offers two experimental GitHub Copilot app canvases:

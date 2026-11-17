@@ -206,13 +206,39 @@ plugin's changelog.
 Documentation-only changes under an extension do not require a version bump.
 
 Notes is versioned independently in `plugins/notes/.github/plugin/plugin.json`;
-a Notes-only change does not require an `agent-plugins` release. The marketplace's
-`metadata.version` continues to match the root `agent-plugins` manifest.
+a Notes-only change does not require an `agent-plugins` release. The root
+`.github/plugin/plugin.json` belongs to the developer plugin (skills, agents,
+and RPI Artifact Navigator), not the repository or marketplace as a whole.
 New plugins start with their own stable version.
+
+The marketplace's `metadata.version` is an independent stable SemVer catalog
+version, not a copy of either plugin's version. Increase it whenever the
+catalog's JSON content changes: plugin additions, removals, version or source
+updates, descriptions, or other catalog fields. Formatting and object key order
+alone do not require a release. A catalog version change must itself be an
+increase; do not reset or decrease it when decoupling it from plugin versions.
+
+| Change | Plugin version fields to increase together | Catalog version | Changelog |
+| --- | --- | --- | --- |
+| Notes shipped content | `plugins/notes/.github/plugin/plugin.json` `version` and marketplace `plugins[name=notes].version` | Increase `metadata.version` | `plugins/notes/CHANGELOG.md` |
+| Developer-plugin shipped content | `.github/plugin/plugin.json` `version` and marketplace `plugins[name=agent-plugins].version` | Increase `metadata.version` | `plugins/agent-plugins/CHANGELOG.md` |
+| Catalog-only edit, including adding or removing a plugin | No existing plugin bump; new plugins declare their initial version in their manifest and catalog entry | Increase `metadata.version` | Root `CHANGELOG.md` for meaningful catalog changes |
+| Extension documentation only | None | Unchanged unless the catalog is also edited | Owning plugin's changelog for meaningful changes |
+
+If both plugins change, release both, but increase the catalog version only once
+for that change set. A source change for an existing plugin also requires that
+plugin's version to increase. Catalog edits never require a release of an
+otherwise unchanged plugin.
+
+Publish catalog changes to the marketplace's configured Git ref. Users refresh
+the catalog with `copilot plugin marketplace update agent-plugins`, then
+install or update individual plugins separately. Refreshing the catalog is not
+a developer-plugin release.
 
 Run `bun run validate:copilot-plugin` after manifest changes and
 `bun run scripts/check-plugin-version-bump.ts origin/main` after committing.
-The pull-request check enforces version increases per changed plugin.
+The pull-request check enforces independent catalog and owning-plugin releases,
+and equality between each plugin manifest version and its catalog entry.
 
 ## Code of Conduct
 

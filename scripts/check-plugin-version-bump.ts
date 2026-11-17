@@ -2,6 +2,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 
 const MARKETPLACE_MANIFEST = '.github/plugin/marketplace.json';
 const STABLE_SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
@@ -58,19 +59,25 @@ function readPluginVersion(json: string, source: string): string {
   return manifest.version;
 }
 
-function readMarketplace(json: string, source: string): { metadataVersion: string; plugins: MarketplacePlugin[] } {
+function readMarketplace(json: string, source: string): {
+  metadataVersion: string;
+  content: unknown;
+  plugins: MarketplacePlugin[];
+} {
   const marketplace: {
     metadata?: { version?: unknown };
     plugins?: { name?: unknown; source?: unknown; version?: unknown }[];
   } = JSON.parse(json);
-  if (typeof marketplace.metadata?.version !== 'string') {
-    throw new Error(`${source} does not declare a metadata version`);
+  if (typeof marketplace.metadata?.version !== 'string' || !STABLE_SEMVER.test(marketplace.metadata.version)) {
+    throw new Error(`${source} does not declare a stable SemVer metadata version`);
   }
   if (!Array.isArray(marketplace.plugins)) {
     throw new Error(`${source} does not declare a plugin list`);
   }
+  const { version: metadataVersion, ...metadata } = marketplace.metadata;
   return {
-    metadataVersion: marketplace.metadata.version,
+    metadataVersion,
+    content: { ...marketplace, metadata },
     plugins: marketplace.plugins.map(entry => {
       if (typeof entry?.name !== 'string' || typeof entry.source !== 'string' || typeof entry.version !== 'string') {
         throw new Error(`${source} has a plugin without a name, source, or version`);
@@ -102,10 +109,6 @@ function main(): void {
     if (!versionsMatch(version, plugin.version)) {
       throw new Error(`Plugin "${plugin.name}" manifest and marketplace versions differ (${version} vs ${plugin.version}).`);
     }
-    if (pluginRoot === process.cwd() && !versionsMatch(version, current.metadataVersion)) {
-      throw new Error(`Plugin and marketplace metadata versions differ (${version} vs ${current.metadataVersion}).`);
-    }
-
     const before = previous.plugins.find(entry => entry.name === plugin.name);
     if (!before) {
       console.log(`New plugin "${plugin.name}": ${version}.`);
@@ -120,10 +123,11 @@ function main(): void {
     }
   }
 
-  const removed = previous.plugins.filter(before => !current.plugins.some(plugin => plugin.name === before.name));
-  if (removed.length && !isVersionIncrease(previous.metadataVersion, current.metadataVersion)) {
-    const names = removed.map(plugin => `"${plugin.name}"`).join(', ');
-    throw new Error(`Removed plugin ${names}, but marketplace version did not increase (${previous.metadataVersion} -> ${current.metadataVersion}).`);
+  if (!isDeepStrictEqual(previous.content, current.content) || previous.metadataVersion !== current.metadataVersion) {
+    if (!isVersionIncrease(previous.metadataVersion, current.metadataVersion)) {
+      throw new Error(`Marketplace catalog changed, but metadata.version did not increase (${previous.metadataVersion} -> ${current.metadataVersion}).`);
+    }
+    console.log(`Marketplace version increased: ${previous.metadataVersion} -> ${current.metadataVersion}.`);
   }
 }
 
