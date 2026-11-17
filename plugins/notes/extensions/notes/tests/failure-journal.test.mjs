@@ -52,6 +52,7 @@ describe("Notes failure journal", () => {
     });
 
     test("uses unknown values for unavailable environment metadata and rejects unsafe values", async () => {
+        const manifest = JSON.parse(await readFile(new URL("../../../.github/plugin/plugin.json", import.meta.url), "utf8"));
         const journal = await createJournal({
             environment: { copilotAppVersion: "C:\\Users\\private\\app", nodeVersion: "24.22.1" },
         });
@@ -63,7 +64,7 @@ describe("Notes failure journal", () => {
         const [record] = (await readFile(journal.path, "utf8")).trim().split("\n").map(JSON.parse);
         expect(record.environment).toMatchObject({
             copilotAppVersion: "unknown", copilotSdkVersion: "unknown", nodeVersion: "24.22.1",
-            notesVersion: "3.0.1", platform: "unknown", osVersion: "unknown", architecture: "unknown",
+            notesVersion: manifest.version, platform: "unknown", osVersion: "unknown", architecture: "unknown",
         });
         expect(record.attributes).not.toHaveProperty("openingMode");
         expect(JSON.stringify(record)).not.toContain("C:\\Users");

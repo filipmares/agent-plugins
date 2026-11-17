@@ -1,8 +1,8 @@
 # Notes
 
 Markdown notes for the GitHub Copilot app, with rich and plain editing,
-session provenance, live sync, and Ask Copilot. Shipped with the
-`agent-plugins` plugin as of 3.0.1.
+session provenance, live sync, and Ask Copilot. Distributed as the standalone
+`notes` plugin in the `agent-plugins` marketplace.
 
 ## Installation
 
@@ -10,14 +10,31 @@ Register the marketplace once, then install the plugin:
 
 ```shell
 copilot plugin marketplace add filipmares/agent-plugins
-copilot plugin install agent-plugins@agent-plugins
+copilot plugin install notes@agent-plugins
 ```
 
-Update with `copilot plugin update agent-plugins`. Ask Copilot to open the
+Update with `copilot plugin update notes`. The developer plugin is not required.
+Ask Copilot to open the
 **Notes** canvas; installing the plugin also makes `notes_manage` available.
 For a standalone copy, use **Customize → Extensions → Import canvas from repo**
-and choose `filipmares/agent-plugins`, then `extensions/notes/`. Manual imports
+and choose `filipmares/agent-plugins`, then `plugins/notes/extensions/notes/`. Manual imports
 do not receive plugin updates; re-import to update that copy.
+
+### Upgrading from bundled Notes
+
+If Notes came with `agent-plugins` 3.x or earlier, save and close its panels,
+then update the old plugin before installing the new one:
+
+```shell
+copilot plugin update agent-plugins
+copilot plugin install notes@agent-plugins
+```
+
+Start a new session and reopen Notes. Do not keep the old bundled provider or
+a manually imported Notes copy enabled alongside the new plugin.
+The canvas and tool names are unchanged. Your Documents/Copilot Notes library,
+UI state, diagnostics, and recovered drafts stay in their existing locations;
+no data migration is needed. Uninstalling either plugin does not delete them.
 
 Native-app interactions remain unverified. See [Verification limits](#verification-limits)
 before using the experimental extension for important notes.
@@ -387,7 +404,7 @@ only remaining copy.
 From the repository root on Windows:
 
 ```powershell
-bun install --cwd extensions\notes\client --frozen-lockfile --ignore-scripts
+bun install --cwd plugins\notes\extensions\notes\client --frozen-lockfile --ignore-scripts
 bun run build:notes
 bun run test:notes
 bun run validate:copilot-plugin

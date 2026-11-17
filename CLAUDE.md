@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-A collection of agent skills distributed via [skills.sh](https://skills.sh) and as a [GitHub Copilot CLI plugin](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/plugins-marketplace).
+A collection of agent skills distributed via [skills.sh](https://skills.sh) and [GitHub Copilot CLI plugins](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/plugins-marketplace).
 
 ## Tech Stack
 
@@ -19,7 +19,9 @@ bun run scripts/list-skills.ts                      # List all skills with statu
 skills/                # Each subdirectory is one skills.sh skill (skills/<name>/SKILL.md)
 scripts/               # Validation and listing scripts (Bun + TS)
 .templates/            # Starter template for new skills
-.github/plugin/        # Copilot CLI marketplace.json + plugin.json (repo root is the plugin source)
+.github/plugin/        # Marketplace catalog + agent-plugins manifest (repo-root source)
+extensions/            # RPI Artifact Navigator, shipped by agent-plugins
+plugins/notes/         # Standalone Notes plugin with its own manifest and extensions/
 ```
 
 ## Skill Structure

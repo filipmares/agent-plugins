@@ -1,0 +1,20 @@
+{
+  "name": "notes",
+  "description": "Global Markdown notes for the GitHub Copilot app, with rich/plain editing, live sync, and Ask Copilot.",
+  "version": "1.0.0",
+  "author": {
+    "name": "filipmares"
+  },
+  "homepage": "https://github.com/filipmares/agent-plugins/tree/main/plugins/notes/extensions/notes",
+  "repository": "https://github.com/filipmares/agent-plugins",
+  "license": "MIT",
+  "category": "productivity",
+  "keywords": [
+    "notes",
+    "markdown",
+    "canvas"
+  ],
+  "extensions": [
+    "extensions"
+  ]
+}

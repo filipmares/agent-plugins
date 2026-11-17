@@ -7,6 +7,11 @@ and plugin versioning follows [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## [Unreleased]
 
+### Changed — Standalone Notes plugin
+- Moved Notes, its tools, offline bundles, and licences into `plugins/notes/`, available separately as `notes@agent-plugins` at version `1.0.0`.
+- Removed bundled Notes from `agent-plugins` and bumped that plugin and marketplace metadata to `4.0.0`. Existing users must update `agent-plugins` before installing `notes`, then reopen Notes in a new session; notes, UI state, and recovered drafts stay in place.
+- Updated developer commands, installation guides, packaging regressions, and per-plugin release checks so Notes can update independently.
+
 ### Added — Notes benchmark baseline
 - Include the initial application scan in Notes startup measurements, generate parser-validated bulk fixtures, and measure rendered note opening, search, and warm views with repeated-sample p90 and explicit runtime limitations.
 

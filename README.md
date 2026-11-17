@@ -8,37 +8,50 @@ Skills are packaged instructions (and optional supporting files) that extend an 
 
 ### GitHub Copilot CLI
 
-This repo is also a [Copilot CLI plugin marketplace](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/plugins-marketplace). Register it once, then install the bundled plugin (three skills, the **Copilot Code Review** agent, and the **RPI Artifact Navigator** and **Notes** canvases):
+This repo is also a [Copilot CLI plugin marketplace](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/plugins-marketplace). Register it once, then install the developer plugin (three skills, the **Copilot Code Review** agent, and the **RPI Artifact Navigator** canvas):
 
 ```bash
 copilot plugin marketplace add filipmares/agent-plugins
 copilot plugin install agent-plugins@agent-plugins
 ```
 
-Update later with `copilot plugin update agent-plugins`. Updates are pull-based:
+**Notes** is a separate plugin; it does not require the developer plugin:
+
+```bash
+copilot plugin install notes@agent-plugins
+```
+
+If you already use Notes bundled with `agent-plugins` 3.x or earlier, save and
+close its panels, run `copilot plugin update agent-plugins` **before** installing
+`notes`, then start a new session and reopen Notes. Existing notes, UI state,
+and recovered drafts stay in their current locations; no data migration is needed.
+Disable any manually imported Notes copy to avoid duplicate providers.
+
+Update each plugin independently with `copilot plugin update agent-plugins`
+or `copilot plugin update notes`. Updates are pull-based:
 a self-registered marketplace does not auto-update unless you set
 `"autoUpdate": true` on its `extraKnownMarketplaces` entry in your user settings.
 
 ### Experimental canvas extensions
 
-The plugin ships two optional GitHub Copilot app canvases:
+The marketplace offers two experimental GitHub Copilot app canvases:
 
-| Canvas | Purpose |
-| --- | --- |
-| [Notes](./extensions/notes/) | Global Markdown notes with rich/plain editing, session provenance, live sync, and Ask Copilot. |
-| [RPI Artifact Navigator](./extensions/rpi-artifact-navigator/) | Read-only, task-scoped navigation of approved RPI artifacts. |
+| Canvas | Plugin | Purpose |
+| --- | --- | --- |
+| [Notes](./plugins/notes/extensions/notes/) | `notes` | Global Markdown notes with rich/plain editing, session provenance, live sync, and Ask Copilot. |
+| [RPI Artifact Navigator](./extensions/rpi-artifact-navigator/) | `agent-plugins` | Read-only, task-scoped navigation of approved RPI artifacts. |
 
-Installing the plugin installs both canvases, so
-`copilot plugin update agent-plugins` also delivers canvas updates. They load
-only while the `agent-plugins` plugin is enabled and can be disabled individually.
+Each canvas loads only while its owning plugin is enabled and can also be disabled
+individually. Installing `agent-plugins` does not install Notes.
 They are not project-scoped or activated just by opening this repository.
 Start a new session after installing or updating to discover the canvases;
 no separate canvas import is needed.
 
 To take one canvas without the plugin, open **Customize → Extensions → Import
 canvas from repo** in the GitHub Copilot app, choose `filipmares/agent-plugins`,
-and select its `extensions/<name>/` directory when prompted. A manual import is
-a one-time copy that receives no further updates — re-import to pick up changes.
+and select `plugins/notes/extensions/notes/` or `extensions/rpi-artifact-navigator/`
+when prompted. A manual import is a one-time copy that receives no further
+updates — re-import to pick up changes.
 
 #### Notes
 
@@ -51,8 +64,8 @@ the note before queuing your prompt with the note attached.
 
 Discovery adds frontmatter to plain Markdown files already in the library.
 Deletion uses OS trash; permanent deletion requires separate confirmation.
-Uninstalling the plugin leaves your notes intact. See the
-[Notes guide](./extensions/notes/README.md) for screenshots, privacy, shortcuts,
+Uninstalling the `notes` plugin leaves your notes intact. See the
+[Notes guide](./plugins/notes/extensions/notes/README.md) for screenshots, privacy, shortcuts,
 developer commands and verification limits. Browser checks used headless Edge
 on Windows with disposable notes; native-app interactions remain unverified.
 
@@ -102,7 +115,7 @@ npx skills find
 
 ### Copilot Code Review agent
 
-The plugin includes the user-invocable **Copilot Code Review** agent. Use it to review a supplied PR, diff, commit, range, or path scope for evidence-based regressions; it reports findings but does not implement fixes or alter repository state.
+The `agent-plugins` plugin includes the user-invocable **Copilot Code Review** agent. Use it to review a supplied PR, diff, commit, range, or path scope for evidence-based regressions; it reports findings but does not implement fixes or alter repository state.
 
 ### Skills
 
@@ -134,10 +147,14 @@ agent-plugins/
 ├── .github/
 │   ├── agents/                # Copilot CLI agent definitions
 │   │   └── copilot-code-review.agent.md
-│   └── plugin/                # Copilot CLI marketplace.json + plugin.json
-├── extensions/                # Copilot canvas extensions shipped by the plugin
-│   ├── notes/                 # Markdown library, tool, rich/plain panel
+│   └── plugin/                # Marketplace catalog + agent-plugins manifest
+├── extensions/                # Canvases shipped by agent-plugins
 │   └── rpi-artifact-navigator/ # Read-only RPI artifact navigation
+├── plugins/
+│   └── notes/                 # Independently installable Notes plugin
+│       ├── .github/plugin/    # Notes plugin manifest
+│       ├── extensions/notes/  # Markdown library, tools, rich/plain panel
+│       └── LICENSE
 ├── scripts/                   # Validation + listing utilities (Bun + TS)
 ├── CONTRIBUTING.md
 ├── CHANGELOG.md

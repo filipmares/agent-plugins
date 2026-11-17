@@ -1,7 +1,7 @@
 {
   "name": "agent-plugins",
-  "description": "Developer skills, Copilot canvas extensions, and agents.",
-  "version": "3.0.1",
+  "description": "Developer skills, the Copilot Code Review agent, and the RPI Artifact Navigator canvas.",
+  "version": "4.0.0",
   "author": {
     "name": "filipmares"
   },
@@ -14,8 +14,7 @@
     "cli",
     "analysis",
     "migration",
-    "code-review",
-    "notes"
+    "code-review"
   ],
   "skills": [
     "skills/"

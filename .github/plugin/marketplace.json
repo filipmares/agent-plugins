@@ -4,15 +4,15 @@
     "name": "filipmares"
   },
   "metadata": {
-    "description": "Developer skills, Copilot canvas extensions, and agents.",
-    "version": "3.0.1"
+    "description": "Developer skills, agents, and Copilot canvas plugins.",
+    "version": "4.0.0"
   },
   "plugins": [
     {
       "name": "agent-plugins",
       "source": ".",
-      "description": "Developer skills, Copilot canvas extensions, and agents.",
-      "version": "3.0.1",
+      "description": "Developer skills, the Copilot Code Review agent, and the RPI Artifact Navigator canvas.",
+      "version": "4.0.0",
       "category": "development-tools",
       "author": {
         "name": "filipmares"
@@ -25,8 +25,25 @@
         "cli",
         "analysis",
         "migration",
-        "code-review",
-        "notes"
+        "code-review"
+      ]
+    },
+    {
+      "name": "notes",
+      "source": "./plugins/notes",
+      "description": "Global Markdown notes for the GitHub Copilot app, with rich/plain editing, live sync, and Ask Copilot.",
+      "version": "1.0.0",
+      "category": "productivity",
+      "author": {
+        "name": "filipmares"
+      },
+      "homepage": "https://github.com/filipmares/agent-plugins/tree/main/plugins/notes/extensions/notes",
+      "repository": "https://github.com/filipmares/agent-plugins",
+      "license": "MIT",
+      "keywords": [
+        "notes",
+        "markdown",
+        "canvas"
       ]
     }
   ]
