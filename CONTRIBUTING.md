@@ -72,7 +72,13 @@ A starter is provided in [`.templates/skill-template/`](./.templates/skill-templ
 
 5. **Document & changelog**
 
-   Update [`CHANGELOG.md`](./CHANGELOG.md) under `## [Unreleased]` with a one-line entry for your skill.
+   For meaningful changes, update the owning plugin's changelog under
+   `## [Unreleased]`: skills and agents use
+   [`plugins/agent-plugins/CHANGELOG.md`](./plugins/agent-plugins/CHANGELOG.md),
+   and Notes uses [`plugins/notes/CHANGELOG.md`](./plugins/notes/CHANGELOG.md).
+   Keep repository-wide entries in the root
+   [`CHANGELOG.md`](./CHANGELOG.md); copy cross-cutting entries into each
+   affected plugin changelog. Routine maintenance does not need an entry.
 
 6. **Open a PR**
 
@@ -195,7 +201,8 @@ screenshots and verified setups.
 
 Changes to shipped skills, agents, plugin manifests, or extension runtime files
 require a stable SemVer increase in the **owning plugin's** manifest and its
-entry in `.github/plugin/marketplace.json`, plus a `CHANGELOG.md` entry.
+entry in `.github/plugin/marketplace.json`, plus a meaningful entry in that
+plugin's changelog.
 Documentation-only changes under an extension do not require a version bump.
 
 Notes is versioned independently in `plugins/notes/.github/plugin/plugin.json`;
