@@ -93,7 +93,8 @@ function versionFixture(includeNotes = true) {
   const check = () => spawnSync(process.execPath, [
     fileURLToPath(new URL('./check-plugin-version-bump.ts', import.meta.url)), base,
   ], { cwd: root, encoding: 'utf8' });
-  return { write, writeNotes, writeMarketplace, commit, check };
+  const remove = (path: string) => rmSync(join(root, path), { recursive: true, force: true });
+  return { write, remove, writeNotes, writeMarketplace, commit, check };
 }
 
 test('requires a Notes release without forcing a developer-plugin release', () => {
@@ -145,6 +146,21 @@ test('still requires a developer-plugin release for RPI changes', () => {
 
   repo.write('.github/plugin/plugin.json', JSON.stringify({ name: 'agent-plugins', version: '1.0.1' }));
   repo.writeMarketplace('1.0.0', '1.0.1');
+  expect(repo.check().status).toBe(0);
+});
+
+test('requires a marketplace release when a plugin is removed', () => {
+  const repo = versionFixture();
+  repo.remove('plugins/notes');
+  repo.writeMarketplace();
+  repo.commit();
+
+  const unchanged = repo.check();
+  expect(unchanged.status).not.toBe(0);
+  expect(unchanged.stderr).toContain('Removed plugin "notes"');
+
+  repo.write('.github/plugin/plugin.json', JSON.stringify({ name: 'agent-plugins', version: '1.0.1' }));
+  repo.writeMarketplace(undefined, '1.0.1');
   expect(repo.check().status).toBe(0);
 });
 

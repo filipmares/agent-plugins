@@ -119,6 +119,12 @@ function main(): void {
       console.log(`No shipped content changed for "${plugin.name}"; no version bump required.`);
     }
   }
+
+  const removed = previous.plugins.filter(before => !current.plugins.some(plugin => plugin.name === before.name));
+  if (removed.length && !isVersionIncrease(previous.metadataVersion, current.metadataVersion)) {
+    const names = removed.map(plugin => `"${plugin.name}"`).join(', ');
+    throw new Error(`Removed plugin ${names}, but marketplace version did not increase (${previous.metadataVersion} -> ${current.metadataVersion}).`);
+  }
 }
 
 if (import.meta.main) main();
