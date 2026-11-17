@@ -11,13 +11,13 @@ import {
 } from "./filesystem.mjs";
 import { trashItem } from "./platform.mjs";
 import { watchLibrary } from "./watcher.mjs";
+import { compareNames, readLibrarySnapshot, snapshotSignature } from "./library-snapshot.mjs";
 
 const nameKey = name => name.normalize("NFC").toLowerCase();
 const inFolder = (path, folder) => folder === "" || path === folder || path.startsWith(`${folder}/`);
 const folderOf = path => posix.dirname(path) === "." ? "" : posix.dirname(path);
 const joinPath = (parent, name) => parent ? `${parent}/${name}` : name;
 const assetPath = path => path.slice(0, -3) + ".assets";
-const compareNames = (a, b) => a.localeCompare(b, "en", { sensitivity: "base", numeric: true }) || a.localeCompare(b, "en");
 const requireNoteTitle = value => {
     requireString(value, "title");
     const title = value.trim();
@@ -89,6 +89,7 @@ export class NotesLibrary {
     #snapshot;
     #watching = false;
     #stopWatch;
+    #watchRefresh;
     #onChange;
     #signature;
     #index;
@@ -120,7 +121,15 @@ export class NotesLibrary {
             finally {
                 if (!readOnly) {
                     this.#snapshot = undefined;
-                    if (this.#watching) await this.#scan(this.#root);
+                    let scanned = false;
+                    try {
+                        if (this.#watching) {
+                            await this.#scan(this.#root);
+                            scanned = true;
+                        }
+                    } finally {
+                        if (!scanned) this.#index?.refresh(this.#root);
+                    }
                 }
             }
         });
@@ -133,34 +142,8 @@ export class NotesLibrary {
 
     async #scan(root, fresh = false) {
         if (this.#watching && this.#snapshot && !fresh) return this.#snapshot;
-        const notes = [];
-        const folders = [""];
-        const warnings = [];
-        async function walk(folder) {
-            const directory = await resolveInside(root, folder);
-            for (const entry of (await readdir(directory.path, { withFileTypes: true })).sort((a, b) => compareNames(a.name, b.name))) {
-                const path = joinPath(folder, entry.name);
-                if (!visiblePath(path)) continue;
-                if (entry.isSymbolicLink()) {
-                    warnings.push({ path, code: "unsafe_path", message: "Symlinks are not indexed." });
-                } else if (entry.isDirectory()) {
-                    folders.push(path);
-                    await walk(path);
-                } else if (/\.md$/i.test(entry.name)) {
-                    try {
-                        const file = await readNoteFile(root, path);
-                        notes.push({ ...file, ...parseNote(file.raw), path });
-                    } catch (error) {
-                        if (!(error instanceof NotesError)) throw error;
-                        warnings.push({ path, code: error.code, message: error.message });
-                    }
-                }
-            }
-        }
-        await walk("");
-
+        const { notes, folders, warnings } = await readLibrarySnapshot(root);
         // Oldest physical file keeps a copied ID; the path breaks equal-birthtime ties.
-        notes.sort((a, b) => a.stats.birthtimeMs - b.stats.birthtimeMs || compareNames(a.path, b.path));
         const ids = new Set();
         for (let index = 0; index < notes.length; index++) {
             let note = notes[index];
@@ -194,16 +177,13 @@ export class NotesLibrary {
             }
         }
         const snapshot = { notes: notes.filter(Boolean), folders, warnings };
-        const signature = contentHash(JSON.stringify({
-            notes: snapshot.notes.map(note => [note.path, note.version, note.stats.mtimeMs]),
-            folders, warnings,
-        }));
+        const signature = snapshotSignature(snapshot);
         const changed = this.#signature !== undefined && this.#signature !== signature;
         this.#snapshot = snapshot;
+        const needsIndex = this.#signature !== signature;
         this.#signature = signature;
         if (changed) this.#onChange?.();
-        // Mirrors the completed scan while the library lock is held; it never fails the scan.
-        await this.#index?.update(root, snapshot, signature);
+        if (needsIndex) this.#index?.refresh(root);
         return snapshot;
     }
 
@@ -213,7 +193,7 @@ export class NotesLibrary {
         this.#onChange = onChange;
         this.#watching = true;
         this.#stopWatch = watchLibrary(this.#root,
-            () => this.#locked(root => this.#scan(root, true), { readOnly: true }), options);
+            () => this.#watchRefresh = this.#locked(root => this.#scan(root, true), { readOnly: true }), options);
     }
 
     close() {
@@ -222,7 +202,8 @@ export class NotesLibrary {
         this.#watching = false;
         this.#onChange = undefined;
         this.#snapshot = undefined;
-        this.#index?.close();
+        // The watcher reports scan failures; shutdown still drains any final invalidation.
+        return Promise.allSettled([this.#watchRefresh]).then(() => this.#index?.close());
     }
 
     #find(snapshot, target) {

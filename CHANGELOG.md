@@ -7,6 +7,12 @@ and plugin versioning follows [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## [Unreleased]
 
+### Changed — Notes background index synchronization
+- Move SQLite discovery, writes and busy waits to a coalescing worker, synchronized after mutations and watcher changes without blocking file-backed requests. Ordered generations reject stale cross-session commits without locking during discovery; unstable reads retry, worker failures degrade safely, and shutdown drains watcher work with a bounded worker grace period.
+- Keep list/search/read behavior, frontmatter adoption and the 15-second deadlines unchanged; this does not fix the 10k-note cold-start issue (#84).
+- Bumped the standalone Notes plugin and its marketplace entry to `1.0.1`.
+- Bumped the developer plugin and marketplace metadata to `4.0.1` for the requested marketplace release.
+
 ### Changed — Standalone Notes plugin
 - Moved Notes, its tools, offline bundles, and licences into `plugins/notes/`, available separately as `notes@agent-plugins` at version `1.0.0`.
 - Removed bundled Notes from `agent-plugins` and bumped that plugin and marketplace metadata to `4.0.0`. Existing users must update `agent-plugins` before installing `notes`, then reopen Notes in a new session; notes, UI state, and recovered drafts stay in place.

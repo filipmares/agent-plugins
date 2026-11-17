@@ -301,7 +301,7 @@ The watched in-memory index serves panel and tool search. Mutations invalidate
 it, and reads/version checks rescan before exposing current note content.
 Scanning reads all note files and can hydrate online-only OneDrive/iCloud files.
 
-Notes also mirrors each completed scan into a local SQLite **shadow index**
+Notes also maintains a local SQLite **shadow index** in a background worker
 under `$COPILOT_HOME/extensions/notes/index/`, one file per library, shared by
 every session. It holds note paths, frontmatter, warnings and full note text.
 It lives with other Copilot data, not in Documents, so Documents sync does not
@@ -310,28 +310,46 @@ Nothing reads it yet: the note list, search, reads and writes still use the
 files and the in-memory index, so it does not make Notes faster. It prepares a
 later phase.
 
-- It matches the latest scan completed by any Notes session. External edits,
-  moves and deletes reach it only on a later rescan; there is no separate
-  synchronization. Text of deleted or edited notes can stay in the file until
-  SQLite reuses that space, and in stale rows while the index is not updated.
+- Creates, saves, moves, folder changes and deletes enqueue synchronization
+  immediately, even without an open panel or watcher. External edits enqueue
+  synchronization through the existing debounced watcher (30-second fallback
+  if watching is unavailable). Nothing waits for the index to catch up.
+  Text of deleted or edited notes can stay in stale rows until synchronization,
+  and in the database file until SQLite reuses that space.
 - Files stay the source of truth and the index never changes them. It is
   disposable: close Notes and delete the folder to remove it; the next scan
   rebuilds it. Older schema versions use separate files, which remain until
-  deleted.
-- It uses the host's built-in `node:sqlite` and is written under the library
-  write lock. Its folder is kept owner-only on macOS and Linux, and the index is
+  deleted. The background writer uses `.v2.sqlite` to stay isolated from
+  older synchronous writers that do not honor generation ordering.
+- It uses the host's built-in `node:sqlite` in a worker thread. Its folder is
+  kept owner-only on macOS and Linux, and the index is
   not created when that folder would be inside the notes library (for example
   when `$COPILOT_HOME` points into it). If SQLite is unavailable, the index
-  folder is inside the library, another program holds the file for more than a
-  second, or the file is corrupt, Notes logs a warning, records a
+  folder is inside the library, the worker crashes, the index stays busy for
+  30 seconds, or the file is corrupt, Notes logs a warning, records a
   `notes.index.degraded` journal incident, and stops updating the index until
   it restarts. It keeps working from the files and leaves a corrupt file in
   place.
-- SQLite writes run synchronously in the extension process. The first build
-  adds to the initial scan and briefly delays other Notes requests in a large
-  library. Later scans rewrite only changed rows, and an unchanged library
-  costs one signature lookup. Moving this work off the extension's event loop
-  is left to the later synchronization phase.
+- Invalidations carry no note content; bursts coalesce to one active refresh
+  and one pending refresh per provider. Each refresh reserves a shared,
+  monotonically increasing generation in SQLite, then rereads the library in
+  the worker without holding a database or library lock. A short commit
+  transaction discards generations older than the last applied one, so slow
+  sessions cannot replay old snapshots over newer commits. Generation metadata
+  changes on every refresh; only changed note rows are rewritten.
+  The worker does not perform adoption. Unstable reads retry rather than
+  committing transient omissions.
+  Edits during discovery converge on a subsequent invalidation; this is an
+  eventually consistent cache, not an atomic filesystem snapshot.
+- Graceful shutdown drains an in-flight watcher scan and queued index work,
+  closes the connection and exits the worker. A 30-second worker shutdown
+  grace period terminates work that has not finished and records
+  degraded operation; SQLite rolls back an unfinished transaction. Abrupt
+  process termination can leave stale rows until the next Notes launch.
+- Background discovery still reads every note and consumes CPU/disk resources;
+  it can hydrate online-only files. Production scans and frontmatter adoption
+  remain unchanged on the request thread. This is not a fix for the 10k-note
+  cold-start deadline in [#84](https://github.com/filipmares/agent-plugins/issues/84).
 
 Local images are read-only and capability-scoped. The route checks the real
 path, rejects symlinks/junctions/hard links, and accepts only PNG, JPEG, GIF,
@@ -465,9 +483,9 @@ bun test scripts\bench-notes-startup.test.ts
 ```
 
 Each sample uses a new `NotesLibrary`, watcher, initial scan, server, and browser
-profile. As in production, the scan also updates the SQLite shadow index, which
-persists across samples: the first sample builds it and later samples find it
-unchanged. The application timer starts **before** `startWatching`, not after the
+profile. As in production, the scan enqueues background SQLite synchronization;
+the index persists across samples, but startup does not wait for readiness.
+The application timer starts **before** `startWatching`, not after the
 scan. Both restored-note and list-only scenarios report `application-to-usable`
 (host-observed time through list paint and, when restored, editable rich-note
 paint), plus `initial-scan` from the same origin. Existing startup marks,
