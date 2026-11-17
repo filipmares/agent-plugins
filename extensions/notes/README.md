@@ -2,7 +2,7 @@
 
 Markdown notes for the GitHub Copilot app, with rich and plain editing,
 session provenance, live sync, and Ask Copilot. Shipped with the
-`agent-plugins` plugin as of 3.0.1.
+`agent-plugins` plugin as of 3.0.2.
 
 ## Installation
 
@@ -262,7 +262,8 @@ and neither path posts it to an issue automatically. These reports cannot
 capture failures before the Notes extension starts, including
 Copilot's control-runtime startup failures; those require diagnostics from the
 Copilot app itself. See the [failure-capture design](./docs/failure-capture.md).
-Uninstalling the extension does not delete the library or diagnostic journal.
+Uninstalling the extension does not delete the library, diagnostic journal or
+shadow index.
 
 Discovery **writes frontmatter to plain Markdown files**, preserving the body
 and original modified time. Adopted files have no invented origin; they enter
@@ -281,6 +282,34 @@ Only UTF-8 notes up to 8 MiB (including frontmatter) are supported.
 The watched in-memory index serves panel and tool search. Mutations invalidate
 it, and reads/version checks rescan before exposing current note content.
 Scanning reads all note files and can hydrate online-only OneDrive/iCloud files.
+
+Notes also mirrors each completed scan into a local SQLite **shadow index**
+under `$COPILOT_HOME/extensions/notes/index/`, one file per library, shared by
+every session. It holds note paths, frontmatter, warnings and full note text.
+It lives with other Copilot data, not in Documents, so Documents sync does not
+include it; if `$COPILOT_HOME` itself is synced or backed up, the index is too.
+Nothing reads it yet: the note list, search, reads and writes still use the
+files and the in-memory index, so it does not make Notes faster. It prepares a
+later phase.
+
+- It matches the latest scan completed by any Notes session. External edits,
+  moves and deletes reach it only on a later rescan; there is no separate
+  synchronization. Text of deleted or edited notes can stay in the file until
+  SQLite reuses that space, and in stale rows while the index is not updated.
+- Files stay the source of truth and the index never changes them. It is
+  disposable: close Notes and delete the folder to remove it; the next scan
+  rebuilds it. Older schema versions use separate files, which remain until
+  deleted.
+- It uses the host's built-in `node:sqlite` and is written under the library
+  write lock. If SQLite is unavailable, another program holds the file for
+  more than a second, or the file is corrupt, Notes logs a warning, records a
+  `notes.index.degraded` journal incident, and stops updating the index until
+  it restarts. It keeps working from the files and leaves a corrupt file in
+  place.
+- SQLite writes run synchronously in the extension process. The first build
+  adds to the initial scan and briefly delays other Notes requests in a large
+  library. Later scans rewrite only changed rows, and an unchanged library
+  costs one signature lookup.
 
 Local images are read-only and capability-scoped. The route checks the real
 path, rejects symlinks/junctions/hard links, and accepts only PNG, JPEG, GIF,
@@ -414,7 +443,9 @@ bun test scripts\bench-notes-startup.test.ts
 ```
 
 Each sample uses a new `NotesLibrary`, watcher, initial scan, server, and browser
-profile. The application timer starts **before** `startWatching`, not after the
+profile. As in production, the scan also updates the SQLite shadow index, which
+persists across samples: the first sample builds it and later samples find it
+unchanged. The application timer starts **before** `startWatching`, not after the
 scan. Both restored-note and list-only scenarios report `application-to-usable`
 (host-observed time through list paint and, when restored, editable rich-note
 paint), plus `initial-scan` from the same origin. Existing startup marks,

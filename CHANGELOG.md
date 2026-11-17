@@ -7,6 +7,10 @@ and plugin versioning follows [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## [Unreleased]
 
+### Added — Notes SQLite shadow index
+- Mirror each completed Notes library scan into a rebuildable local SQLite index shared by all sessions. Nothing reads it yet; list, search and reads still use the files. SQLite failures are logged and journaled as `notes.index.degraded` while Notes keeps working.
+- Bumped the plugin and marketplace manifests to `3.0.2`.
+
 ### Added — Daily Notes benchmark history
 - Run the 1,000- and 10,000-note benchmarks daily on Windows, retain results and failures, and publish comparable trends to a Pages dashboard.
 
