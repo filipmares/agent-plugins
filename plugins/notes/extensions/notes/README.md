@@ -297,23 +297,26 @@ notes are not indexed. Unsupported files are reported in search warnings.
 The library root itself cannot be a symlink or junction.
 Only UTF-8 notes up to 8 MiB (including frontmatter) are supported.
 
-The watched in-memory index serves panel and tool search. Mutations invalidate
-it, and reads/version checks rescan before exposing current note content.
-Scanning reads all note files and can hydrate online-only OneDrive/iCloud files.
+The watched Markdown snapshot handles adoption and detects external edits.
+Mutations invalidate it, and reads/version checks rescan before exposing
+current note content. Startup still builds this snapshot; scanning reads all
+note files and can hydrate online-only OneDrive/iCloud files.
 
 Notes also maintains a local SQLite **shadow index** in a background worker
 under `$COPILOT_HOME/extensions/notes/index/`, one active database per library, shared by
 every session. It holds note paths, frontmatter, warnings and full note text.
 It lives with other Copilot data, not in Documents, so Documents sync does not
 include it; if `$COPILOT_HOME` itself is synced or backed up, the index is too.
-Nothing reads it yet: the note list, search, reads and writes still use the
-files and the in-memory index, so it does not make Notes faster. It prepares a
-later phase.
+List and search use precomputed titles and searchable text in SQLite when
+the worker can answer from the same snapshot. If the cache is busy, missing,
+stale, rebuilding or unavailable, Notes uses the Markdown snapshot without
+waiting for index synchronization. Note content, edits and folder versions
+remain file-backed.
 
 - Creates, saves, moves, folder changes and deletes enqueue synchronization
   immediately, even without an open panel or watcher. External edits enqueue
   synchronization through the existing debounced watcher (30-second fallback
-  if watching is unavailable). Nothing waits for the index to catch up.
+  if watching is unavailable). Reads never wait for synchronization to finish.
   Text of deleted or edited notes can stay in stale rows until synchronization,
   and in the database file until SQLite reuses that space.
 - Files stay the source of truth and the index never changes them. It is
@@ -325,8 +328,8 @@ later phase.
   replaced. Retired caches (including note text) remain on disk for safety;
   stop **all** Notes processes before manually deleting the index folder.
   Older schema versions also remain until deleted.
-  The background writer uses `.v2.sqlite` to stay isolated from
-  older synchronous writers that do not honor generation ordering.
+  The background writer uses `.v3.sqlite` to isolate the new search columns
+  from older writers.
 - It uses the host's built-in `node:sqlite` in a worker thread. Its folder is
   kept owner-only on macOS and Linux, and the index is
   not created when that folder would be inside the notes library (for example

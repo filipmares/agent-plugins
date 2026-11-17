@@ -57,7 +57,7 @@ function auditWrites(db) {
 
 const contents = () => withIndex(db => ({
     signature: db.prepare("SELECT value FROM meta WHERE key = 'signature'").get()?.value,
-    notes: db.prepare("SELECT * FROM notes ORDER BY path").all().map(row => ({
+    notes: db.prepare("SELECT path, version, mtime_ms, frontmatter, body, warning FROM notes ORDER BY path").all().map(row => ({
         ...row, frontmatter: JSON.parse(row.frontmatter), warning: JSON.parse(row.warning),
     })),
     folders: db.prepare("SELECT path FROM folders ORDER BY path").all().map(row => row.path),
@@ -115,6 +115,101 @@ test("mirrors the production scan, including adopted metadata, raw warned notes,
     expect(actual.notes.find(row => row.path === "Work/plan.md").frontmatter.id).toBe(created.id);
     expect(actual.notes.find(row => row.path === "broken.md").body).toBe("---\ntitle: [broken\n---\n# Broken");
     expect(failures).toEqual([]);
+});
+
+test("watched list and search use SQLite with identical summaries, snippets, ranking and filters", async () => {
+    const body = "# Body heading\n" + "😀 ".repeat(100) + "\n[Résumé](https://example.test/hiddentarget) has needle.";
+    await library.create({ body, folder: "Work" }, { ...author, project: "sample" });
+    const title = await library.create({ body: "# Needle\nOther text" }, author);
+    await library.pin(title.id, true, title.version);
+    await write("broken.md", "---\ntitle: [broken\n---\n# Needle");
+    await write("binary.md", Buffer.from([0xff, 0xfe, 0x00]));
+    await library.startWatching(() => {}, { intervalMs: 3600000 });
+    await index.flush();
+    const read = spyOn(index, "list");
+    const plain = new NotesLibrary(root);
+    try {
+        for (const filters of [{}, { query: "needle" }, { query: "resume body", session: author.sessionId },
+            { query: "hiddentarget" }, { query: "[broken" }, { folder: "Work" }, { project: "sample" }]) {
+            const result = await library.list(filters);
+            expect(result).toEqual(await plain.list(filters));
+            expect(await read.mock.results.at(-1).value).toEqual(result);
+        }
+        const results = await library.search({ query: "needle", limit: 1 });
+        expect(results).toEqual(await plain.search({ query: "needle", limit: 1 }));
+        expect(results.nextOffset).toBe(1);
+    } finally { read.mockRestore(); }
+});
+
+test("a different committed snapshot or missing active database falls back to watched Markdown", async () => {
+    const note = await library.create({ body: "# Kept\nneedle" }, author);
+    await library.startWatching(() => {}, { intervalMs: 3600000 });
+    const expected = await library.list({ query: "needle" });
+    const read = spyOn(index, "list");
+    try {
+        await withIndex(db => db.exec("DELETE FROM notes; UPDATE meta SET value = 'different snapshot' WHERE key = 'signature'"));
+        expect(await library.list({ query: "needle" })).toEqual(expected);
+        expect(await read.mock.results.at(-1).value).toBeUndefined();
+        await writeFile(join(indexDirectory, `${shadowIndexFile(await realpath(root))}.active`), "a".repeat(36));
+        expect((await library.list()).notes.map(item => item.id)).toEqual([note.id]);
+        expect(await read.mock.results.at(-1).value).toBeUndefined();
+        await index.flush();
+        const reopened = await library.list({ query: "needle" });
+        expect(await read.mock.results.at(-1).value).toEqual(expected);
+        expect(reopened).toEqual(expected);
+    } finally { read.mockRestore(); }
+});
+
+test("a timed-out list uses Markdown without queueing SQLite queries behind the stalled one", async () => {
+    await library.close();
+    const worker = Object.assign(new EventEmitter(), {
+        postMessage: message => {
+            if (message.type === "refresh") queueMicrotask(() => worker.emit("message", { type: "done" }));
+            if (message.type === "list") queries++;
+            if (message.type === "close") queueMicrotask(() => worker.emit("exit"));
+        },
+        ref() {}, unref() {},
+    });
+    let queries = 0;
+    library = indexed({ createWorker: () => worker });
+    await write("kept.md", "# Kept\nneedle");
+    await library.startWatching(() => {}, { intervalMs: 3600000 });
+    await index.flush();
+    const expected = await new NotesLibrary(root).list({ query: "needle" });
+    expect(await library.list({ query: "needle" })).toEqual(expected);
+    expect(await library.list({ query: "needle" })).toEqual(expected);
+    expect(queries).toBe(1);
+    worker.emit("message", { type: "listed" });
+    expect(await library.list({ query: "needle" })).toEqual(expected);
+    expect(queries).toBe(2);
+});
+
+test("reads the new Markdown snapshot while a watched deletion is pending in the worker", async () => {
+    let release;
+    const gate = new Promise(resolve => release = resolve);
+    await library.close();
+    let holdRefresh = false;
+    library = indexed({ createWorker: options => {
+        const worker = new Worker(new URL("../index-worker.mjs", import.meta.url), options);
+        const post = worker.postMessage.bind(worker);
+        worker.postMessage = (message, transfer) => {
+            if (holdRefresh && message.type === "refresh") void gate.then(() => post(message, transfer));
+            else post(message, transfer);
+        };
+        return worker;
+    } });
+    try {
+        const note = await library.create({ body: "# Deleted\nneedle" }, author);
+        await library.startWatching(() => {}, { intervalMs: 3600000 });
+        await index.flush();
+        holdRefresh = true;
+        await library.delete(note.id, { expectedVersion: note.version });
+        expect(library.indexStatus().state).toBe("syncing");
+        expect((await library.search({ query: "needle" })).total).toBe(0);
+        expect((await library.list()).notes).toEqual([]);
+    } finally { release(); }
+    await index.flush();
+    expect((await contents()).notes).toEqual([]);
 });
 
 test("follows edits, moves, external changes and deletions, and skips unchanged scans", async () => {
@@ -226,9 +321,15 @@ test("an unchanged newer discovery still fences off older generations without re
         const writes = auditWrites(observer);
         const applied = () => observer.prepare("SELECT value FROM meta WHERE key = 'applied'").get().value;
         const before = BigInt(applied());
-        index.refresh(await realpath(root));
+        const rootPath = await realpath(root);
+        const { signature } = await contents();
+        index.refresh(rootPath, signature);
         await index.flush();
-        expect(BigInt(applied())).toBeGreaterThan(before);
+        expect(BigInt(applied())).toBe(before);
+        observer.prepare("UPDATE meta SET value = ? WHERE key = 'issued'").run(String(before + 1n));
+        index.refresh(rootPath, signature);
+        await index.flush();
+        expect(BigInt(applied())).toBeGreaterThan(before + 1n);
         expect(applied()).toBe(observer.prepare("SELECT value FROM meta WHERE key = 'issued'").get().value);
         expect(writes()).toBe(0);
     } finally { observer.close(); }
@@ -631,6 +732,7 @@ test.each(["throw new Error('worker crash')", "process.exit(0)"])("worker failur
     const note = await library.create({ body: "# Safe" }, author);
     await index.flush();
     expect(failures).toHaveLength(1);
+    expect((await library.list({ query: "safe" })).notes.map(item => item.id)).toEqual([note.id]);
     expect((await library.read(note.id)).body).toBe("# Safe");
     const edited = await library.update(note.id, { body: "# Safe\nsaved", expectedVersion: note.version }, author);
     expect((await library.read(edited.id)).body).toBe("# Safe\nsaved");

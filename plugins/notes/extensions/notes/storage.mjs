@@ -2,7 +2,7 @@ import { lstat, mkdir, readdir, realpath, rename, rm } from "node:fs/promises";
 import { isAbsolute, join, posix } from "node:path";
 import { NotesError, requireString } from "./errors.mjs";
 import {
-    adoptionId, contentHash, foldText, folderName, localTimestamp, markdownText,
+    adoptionId, contentHash, foldText, folderName, localTimestamp,
     newId, newNoteBody, parseNote, renameAssetLinks, serializeNote, slug, titleOf, ULID,
 } from "./note-format.mjs";
 import {
@@ -12,10 +12,9 @@ import {
 import { trashItem } from "./platform.mjs";
 import { watchLibrary } from "./watcher.mjs";
 import { compareNames, readLibrarySnapshot, snapshotSignature } from "./library-snapshot.mjs";
+import { folderOf, inFolder, listNotes, summary } from "./list-notes.mjs";
 
 const nameKey = name => name.normalize("NFC").toLowerCase();
-const inFolder = (path, folder) => folder === "" || path === folder || path.startsWith(`${folder}/`);
-const folderOf = path => posix.dirname(path) === "." ? "" : posix.dirname(path);
 const joinPath = (parent, name) => parent ? `${parent}/${name}` : name;
 const assetPath = path => path.slice(0, -3) + ".assets";
 const requireNoteTitle = value => {
@@ -45,22 +44,6 @@ function assertContext(context) {
 }
 
 const sessionsWith = (sessions, { sessionId }) => sessionId ? [...new Set([...(sessions ?? []), sessionId])] : (sessions ?? []);
-
-function summary(note) {
-    return {
-        id: note.metadata.id ?? null,
-        path: note.path,
-        title: note.metadata.title ?? titleOf(note.body),
-        folder: folderOf(note.path),
-        updated: note.metadata.updated ?? null,
-        lastEdited: new Date(Math.max(Date.parse(note.metadata.updated) || 0, note.stats.mtimeMs)).toISOString(),
-        project: note.metadata.project ?? null,
-        created_by: note.metadata.created_by ?? null,
-        pinned: note.metadata.pinned === true,
-        version: note.version,
-        ...(note.warning ? { warning: note.warning } : {}),
-    };
-}
 
 function payload(note) {
     return { ...summary(note), body: note.body, frontmatter: note.metadata };
@@ -187,13 +170,13 @@ export class NotesLibrary {
             }
         }
         const snapshot = { notes: notes.filter(Boolean), folders, warnings };
-        const signature = snapshotSignature(snapshot);
+        const signature = snapshot.signature = snapshotSignature(snapshot);
         const changed = this.#signature !== undefined && this.#signature !== signature;
         this.#snapshot = snapshot;
         const needsIndex = this.#signature !== signature;
         this.#signature = signature;
         if (changed) this.#onChange?.();
-        if (needsIndex) this.#index?.refresh(root);
+        if (needsIndex) this.#index?.refresh(root, signature);
         return snapshot;
     }
 
@@ -400,32 +383,13 @@ export class NotesLibrary {
         for (const [name, value] of Object.entries({ project, session, folder })) {
             if (value !== undefined) requireString(value, name, { empty: name === "folder" });
         }
-        return this.#locked(async root => {
+        const { root, snapshot, parent } = await this.#locked(async root => {
             const snapshot = await this.#scan(root);
             const parent = folder === undefined ? undefined : await this.#folder(root, folder);
-            const words = foldText(query).split(/\s+/).filter(Boolean);
-            const matches = [];
-            for (const note of snapshot.notes) {
-                if (project !== undefined && note.metadata.project !== project) continue;
-                if (session !== undefined && !note.metadata.sessions?.includes(session)) continue;
-                if (parent !== undefined && !inFolder(folderOf(note.path), parent)) continue;
-                const text = note.warning ? note.body : markdownText(note.body);
-                const folded = foldText(text);
-                const title = note.metadata.title ?? titleOf(note.body);
-                if (!words.every(word => folded.includes(word) || foldText(title).includes(word))) continue;
-                const match = words.length ? Math.max(0, folded.indexOf(words[0])) : 0;
-                const start = Math.max(0, match - 40);
-                const snippet = ((start ? "..." : "") + text.slice(start, start + 180) + (text.length > start + 180 ? "..." : ""))
-                    .replace(/\s+([.,;:!?)\]])/g, "$1");
-                matches.push({ ...summary(note), snippet, titleMatch: words.every(word => foldText(title).includes(word)) });
-            }
-            matches.sort((a, b) => Number(b.titleMatch) - Number(a.titleMatch)
-                || Date.parse(b.lastEdited) - Date.parse(a.lastEdited) || compareNames(a.path, b.path));
-            return {
-                notes: matches.map(({ titleMatch, ...item }) => item),
-                warnings: snapshot.warnings,
-            };
+            return { root, snapshot, parent };
         }, { readOnly: true });
+        const filters = { words: foldText(query).split(/\s+/).filter(Boolean), project, session, folder: parent };
+        return await this.#index?.list(root, snapshot.signature, filters) ?? listNotes(snapshot, filters);
     }
 
     async #edit(noteId, expectedVersion, context, transform) {
