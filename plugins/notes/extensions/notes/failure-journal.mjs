@@ -24,6 +24,7 @@ const NOTES_CODES = new Set([
     ...EXPECTED_CODES, "asset_link_unsupported", "delete_incomplete", "documents_unavailable",
     "io_error", "library_busy", "lock_changed", "move_incomplete", "offline", "open_failed",
     "platform_unsupported", "session_metadata_unavailable", "server_closed", "startup_abandoned", "trash_unavailable",
+    "index_busy", "index_corrupt", "index_unavailable",
     // Trust-check rejections of requests that carried the panel's capability token.
     "host_mismatch", "origin_missing", "origin_mismatch", "origin_null",
     // The last startup stage a stalled panel reached, from the provider's and the browser's side.
@@ -33,9 +34,9 @@ const NOTES_CODES = new Set([
 const SYSTEM_CODES = new Set([
     "EACCES", "EBUSY", "ECONNREFUSED", "ECONNRESET", "EEXIST", "EIO", "EISDIR", "EMFILE",
     "ENFILE", "ENOENT", "ENOMEM", "ENOSPC", "ENOTDIR", "ENOTEMPTY", "EPERM", "EPIPE",
-    "ETIMEDOUT", "ERR_INVALID_ARG_TYPE", "ERR_INVALID_STATE", "ERR_MODULE_NOT_FOUND",
+    "ETIMEDOUT", "ERR_INVALID_ARG_TYPE", "ERR_INVALID_STATE", "ERR_MODULE_NOT_FOUND", "ERR_SQLITE_ERROR",
 ]);
-const COMPONENTS = new Set(["browser", "canvas", "provider", "tool", "watcher"]);
+const COMPONENTS = new Set(["browser", "canvas", "index", "provider", "tool", "watcher"]);
 const TOOL_OPERATIONS = new Set(["append", "create", "delete", "folders", "move", "read", "search", "update"]);
 const ROUTES = new Set([
     "/", "/app.css", "/app.js", "/editor.js",
@@ -47,7 +48,7 @@ const ROUTES = new Set([
 const EVENTS = new Set([
     "notes.browser.editor_failure", "notes.browser.request_failure", "notes.browser.startup_stalled",
     "notes.browser.unhandled_error", "notes.browser.unhandled_rejection", "notes.canvas.open_failure",
-    "notes.panel.startup_abandoned", "notes.panel.startup_stalled", "notes.provider.failure",
+    "notes.index.degraded", "notes.panel.startup_abandoned", "notes.panel.startup_stalled", "notes.provider.failure",
     "notes.request.failure", "notes.request.rejected",
     "notes.session.shutdown_failure", "notes.tool.failure", "notes.watcher.degraded",
 ]);
@@ -333,7 +334,7 @@ export class FailureJournal {
     #warnStorageFailure() {
         if (this.#warned) return;
         this.#warned = true;
-        try { this.log?.("Notes diagnostic journal could not save a failure.", { level: "warning" }); }
+        try { Promise.resolve(this.log?.("Notes diagnostic journal could not save a failure.", { level: "warning" })).catch(() => {}); }
         catch { /* logging must not affect the Notes operation */ }
     }
 

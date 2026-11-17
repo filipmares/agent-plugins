@@ -217,6 +217,22 @@ describe("Notes failure journal", () => {
         }]);
     });
 
+    test("a rejecting logger cannot turn a failed journal write into an unhandled rejection", async () => {
+        const journal = await createJournal();
+        const blockedPath = join(fixture, "blocked");
+        await writeFile(blockedPath, "not a directory");
+        journal.path = join(blockedPath, "failure-journal.jsonl");
+        journal.log = async () => { throw new Error("session closed"); };
+        const unhandled = [];
+        const onUnhandled = reason => unhandled.push(reason);
+        process.on("unhandledRejection", onUnhandled);
+        try {
+            expect(await journal.recordFailure({ eventName: "notes.index.degraded", errorCode: "index_unavailable", attributes: { component: "index" } })).toBe(false);
+            await new Promise(resolve => setTimeout(resolve, 20));
+        } finally { process.off("unhandledRejection", onUnhandled); }
+        expect(unhandled).toEqual([]);
+    });
+
     test("keeps the journal and rendered issue block within their byte limits", async () => {
         const journal = await createJournal();
         const timestamp = new Date().toISOString();

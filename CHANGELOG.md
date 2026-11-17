@@ -10,7 +10,12 @@ and plugin versioning follows [Semantic Versioning](https://semver.org/spec/v2.0
 ### Changed — Standalone Notes plugin
 - Moved Notes, its tools, offline bundles, and licences into `plugins/notes/`, available separately as `notes@agent-plugins` at version `1.0.0`.
 - Removed bundled Notes from `agent-plugins` and bumped that plugin and marketplace metadata to `4.0.0`. Existing users must update `agent-plugins` before installing `notes`, then reopen Notes in a new session; notes, UI state, and recovered drafts stay in place.
-- Updated developer commands, installation guides, packaging regressions, and per-plugin release checks so Notes can update independently.
+- Updated developer commands, installation guides, packaging regressions, and per-plugin release checks so Notes can update independently. Removing a plugin from the marketplace now requires a marketplace release.
+
+### Added — Notes SQLite shadow index
+- Mirror each completed Notes library scan into a rebuildable local SQLite index shared by all sessions. Nothing reads it yet; list, search and reads still use the files. SQLite failures are logged and journaled as `notes.index.degraded` while Notes keeps working.
+- A rejecting logger can no longer cause an unhandled rejection when the failure journal cannot save.
+- Bumped the plugin and marketplace manifests to `3.0.2`.
 
 ### Added — Daily Notes benchmark history
 - Run the 1,000- and 10,000-note benchmarks daily on Windows, retain results and failures, and publish comparable trends to a Pages dashboard.

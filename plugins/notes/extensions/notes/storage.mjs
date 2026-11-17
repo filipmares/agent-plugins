@@ -91,14 +91,16 @@ export class NotesLibrary {
     #stopWatch;
     #onChange;
     #signature;
+    #index;
 
-    constructor(directory, { trash = trashItem, now = () => new Date() } = {}) {
+    constructor(directory, { trash = trashItem, now = () => new Date(), index } = {}) {
         if (typeof directory !== "string" || !isAbsolute(directory)) {
             throw new NotesError("invalid_path", "The Notes directory must be absolute.");
         }
         this.#directory = directory;
         this.#trash = trash;
         this.#now = now;
+        this.#index = index;
     }
 
     async #locked(operation, { readOnly = false } = {}) {
@@ -200,6 +202,8 @@ export class NotesLibrary {
         this.#snapshot = snapshot;
         this.#signature = signature;
         if (changed) this.#onChange?.();
+        // Mirrors the completed scan while the library lock is held; it never fails the scan.
+        await this.#index?.update(root, snapshot, signature);
         return snapshot;
     }
 
@@ -218,6 +222,7 @@ export class NotesLibrary {
         this.#watching = false;
         this.#onChange = undefined;
         this.#snapshot = undefined;
+        this.#index?.close();
     }
 
     #find(snapshot, target) {
