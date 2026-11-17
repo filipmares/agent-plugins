@@ -301,15 +301,19 @@ later phase.
   rebuilds it. Older schema versions use separate files, which remain until
   deleted.
 - It uses the host's built-in `node:sqlite` and is written under the library
-  write lock. If SQLite is unavailable, another program holds the file for
-  more than a second, or the file is corrupt, Notes logs a warning, records a
+  write lock. Its folder is kept owner-only on macOS and Linux, and the index is
+  not created when that folder would be inside the notes library (for example
+  when `$COPILOT_HOME` points into it). If SQLite is unavailable, the index
+  folder is inside the library, another program holds the file for more than a
+  second, or the file is corrupt, Notes logs a warning, records a
   `notes.index.degraded` journal incident, and stops updating the index until
   it restarts. It keeps working from the files and leaves a corrupt file in
   place.
 - SQLite writes run synchronously in the extension process. The first build
   adds to the initial scan and briefly delays other Notes requests in a large
   library. Later scans rewrite only changed rows, and an unchanged library
-  costs one signature lookup.
+  costs one signature lookup. Moving this work off the extension's event loop
+  is left to the later synchronization phase.
 
 Local images are read-only and capability-scoped. The route checks the real
 path, rejects symlinks/junctions/hard links, and accepts only PNG, JPEG, GIF,

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { mkdir } from "node:fs/promises";
-import { join } from "node:path";
+import { chmod, mkdir } from "node:fs/promises";
+import { isAbsolute, join, relative, sep } from "node:path";
 import { NotesError } from "./errors.mjs";
 import { copilotHome } from "./platform.mjs";
 
@@ -74,11 +74,17 @@ export class ShadowIndex {
     }
 
     async #open(root) {
+        const location = relative(root, this.#directory);
+        if (!isAbsolute(location) && location !== ".." && !location.startsWith(`..${sep}`)) {
+            throw new NotesError("index_unavailable", "The index directory is inside the Notes library.");
+        }
         let sqlite;
         try { sqlite = await this.#loadSqlite(); } catch (error) {
             throw Object.assign(new NotesError("index_unavailable", "SQLite is unavailable in this Notes host."), { cause: error });
         }
         await mkdir(this.#directory, { recursive: true, mode: 0o700 });
+        // mkdir's mode only applies to directories it creates.
+        if (process.platform !== "win32") await chmod(this.#directory, 0o700);
         const db = new sqlite.DatabaseSync(join(this.#directory, shadowIndexFile(root)), { timeout: BUSY_TIMEOUT_MS });
         try {
             db.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL");

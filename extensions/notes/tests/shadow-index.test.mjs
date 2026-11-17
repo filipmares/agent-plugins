@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { execFile } from "node:child_process";
-import { lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -163,7 +163,7 @@ test("processes sharing one index leave it at the latest completed scan", async 
         library.close();
         process.stdout.write(JSON.stringify(failures));`;
     const outputs = await Promise.all(["alpha", "beta", "gamma"].map(async name =>
-        (await execute("node", ["--input-type=module", "-e", script, root, indexDirectory, name])).stdout));
+        (await execute(process.execPath, ["-e", script, root, indexDirectory, name])).stdout));
     expect(outputs).toEqual(["[]", "[]", "[]"]);
     const actual = await contents();
     expect(actual.notes).toEqual((await production()).notes);
@@ -180,6 +180,26 @@ test("unavailable SQLite is reported once and Notes keeps working, even if loggi
     expect((await library.search()).notes.map(note => note.path)).toEqual(["works.md"]);
     expect(failures).toEqual(["index_unavailable"]);
     await expect(lstat(indexDirectory)).rejects.toMatchObject({ code: "ENOENT" });
+});
+
+test("an index directory inside the Notes library is refused before anything is written there", async () => {
+    library.close();
+    const inside = join(await realpath(root), "copilot-home", "index");
+    library = indexed({ directory: inside });
+    await library.create({ body: "# Works" }, author);
+    expect((await library.search()).notes.map(note => note.path)).toEqual(["works.md"]);
+    expect(failures).toEqual(["index_unavailable"]);
+    await expect(lstat(join(root, "copilot-home"))).rejects.toMatchObject({ code: "ENOENT" });
+});
+
+test.skipIf(process.platform === "win32")("an existing index directory is made owner-only", async () => {
+    library.close();
+    await mkdir(indexDirectory, { recursive: true });
+    await chmod(indexDirectory, 0o755);
+    library = indexed();
+    await library.search();
+    expect((await lstat(indexDirectory)).mode & 0o777).toBe(0o700);
+    expect(failures).toEqual([]);
 });
 
 test("closing while the index opens leaves no connection or write behind", async () => {

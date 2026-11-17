@@ -334,7 +334,7 @@ export class FailureJournal {
     #warnStorageFailure() {
         if (this.#warned) return;
         this.#warned = true;
-        try { this.log?.("Notes diagnostic journal could not save a failure.", { level: "warning" }); }
+        try { Promise.resolve(this.log?.("Notes diagnostic journal could not save a failure.", { level: "warning" })).catch(() => {}); }
         catch { /* logging must not affect the Notes operation */ }
     }
 
