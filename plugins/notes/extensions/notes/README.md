@@ -478,6 +478,21 @@ host/SDK launch are excluded. CPU throttling affects the renderer, not the Bun
 server. Warm views reuse the scanned library and browser page. Do not compare
 these startup numbers directly to the old pre-scanned-panel benchmark.
 
+The [daily benchmark workflow](https://github.com/filipmares/agent-plugins/actions/workflows/notes-benchmark.yml)
+runs on Windows at 09:17 UTC and can also be started manually. Its run summary
+compares startup to compatible runs from the preceding seven days; raw JSON and
+logs are downloadable as artifacts for 90 days. The
+[history dashboard](https://filipmares.com/agent-plugins/) charts p50
+and p90 for startup, opening, search, and warm views. Complete compact results,
+environment metadata, failures, and run links are retained on the
+`notes-benchmark-history` branch; failures are not plotted as zero. Comparisons
+require matching benchmark code, runner image, CPU, OS, Bun, browser, fixture
+size, sample count, and renderer throttle. Hosted runners can still differ
+despite matching metadata.
+The benchmark job fails if either size fails, but retains and publishes both
+results; a failing 10,000-note startup is expected until the underlying issue is
+fixed. Scheduled Actions can be delayed or disabled after repository inactivity.
+
 `vendor/manifest.json` pins bundle/source hashes, package versions, and licence
 sources. Verbatim dependency licences live in `third-party-licenses/`.
 Git attributes preserve bundle/licence bytes; source fingerprints normalize

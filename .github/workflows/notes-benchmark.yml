@@ -1,0 +1,85 @@
+name: Notes daily benchmark
+
+on:
+  schedule:
+    - cron: "17 9 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: notes-benchmark
+  cancel-in-progress: false
+
+jobs:
+  benchmark:
+    runs-on: windows-2022
+    timeout-minutes: 90
+    permissions:
+      contents: write
+      pages: write
+    outputs:
+      pages_ready: ${{ steps.pages.outputs.ready }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: source
+      - uses: actions/checkout@v4
+        with:
+          ref: notes-benchmark-history
+          path: history
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+      - name: Run both benchmarks
+        working-directory: source
+        run: bun run scripts/run-notes-benchmark-daily.ts
+      - name: Record history and prepare dashboard
+        working-directory: source
+        run: bun run scripts/record-notes-benchmark.ts ../history benchmark-results ../site
+      - name: Save raw output and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: notes-benchmark-${{ github.run_id }}-${{ github.run_attempt }}
+          path: source/benchmark-results/
+          if-no-files-found: warn
+          retention-days: 90
+      - name: Commit history
+        working-directory: history
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- history.json index.html dashboard.js
+          git diff --cached --quiet
+          if ($LASTEXITCODE -eq 1) {
+            git commit -m "Record Notes benchmark $env:GITHUB_RUN_ID attempt $env:GITHUB_RUN_ATTEMPT"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            git push origin HEAD:notes-benchmark-history
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          } elseif ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: pages
+        shell: pwsh
+        run: '"ready=true" >> $env:GITHUB_OUTPUT'
+      - name: Fail if a benchmark failed
+        working-directory: source
+        run: bun run scripts/run-notes-benchmark-daily.ts --check benchmark-results
+
+  publish:
+    needs: benchmark
+    if: always() && needs.benchmark.outputs.pages_ready == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
