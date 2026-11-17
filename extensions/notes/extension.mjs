@@ -5,6 +5,7 @@ import { createPanelRegistry } from "./panels.mjs";
 import { readSessionContext, resolveNotesDirectory } from "./platform.mjs";
 import { createNotesServer, resolveTarget, waitForLibrary } from "./server.mjs";
 import { NotesLibrary } from "./storage.mjs";
+import { ShadowIndex } from "./shadow-index.mjs";
 import { FailureJournal, failureJournalPath } from "./failure-journal.mjs";
 import { uiStatePath } from "./ui-state.mjs";
 
@@ -14,7 +15,17 @@ let activeLibrary;
 async function getLibrary() {
     if (!library) {
         library = resolveNotesDirectory().then(async directory => {
-            const notes = new NotesLibrary(directory);
+            const index = new ShadowIndex({
+                log,
+                onFailure: (error, errorCode) => diagnostics.recordFailure({
+                    eventName: "notes.index.degraded",
+                    errorCode,
+                    severityText: "WARN",
+                    attributes: { component: "index" },
+                    stack: error?.stack,
+                }),
+            });
+            const notes = new NotesLibrary(directory, { index });
             await notes.startWatching(notifyPanels, {
                 log,
                 onFailure: error => diagnostics.recordFailure({

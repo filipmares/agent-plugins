@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { createNotesServer } from "../extensions/notes/server.mjs";
 import { NotesLibrary } from "../extensions/notes/storage.mjs";
+import { ShadowIndex } from "../extensions/notes/shadow-index.mjs";
 import { saveUiState } from "../extensions/notes/ui-state.mjs";
 import { newId, parseNote } from "../extensions/notes/note-format.mjs";
 
@@ -351,9 +352,11 @@ async function interactions(page: Cdp, fixture: Awaited<ReturnType<typeof create
 async function sample(executable: string, notesDirectory: string, statePath: string, fixture: Awaited<ReturnType<typeof createFixture>>, noteId: string | null) {
     await saveUiState(statePath, { sidebar: true, selection: { view: "all" }, noteId, collapsed: [] });
     let server: Awaited<ReturnType<typeof createNotesServer>> | undefined;
-    const library = new NotesLibrary(notesDirectory);
-    let ready: Promise<NotesLibrary> | undefined;
     const errors: string[] = [];
+    // Like production, the shadow index persists across launches: the first sample builds it.
+    const index = new ShadowIndex({ directory: join(notesDirectory, "..", "index"), onFailure: (error: Error) => errors.push(`Shadow index: ${error.message}`) });
+    const library = new NotesLibrary(notesDirectory, { index });
+    let ready: Promise<NotesLibrary> | undefined;
     let browser: Awaited<ReturnType<typeof launchBrowser>> | undefined;
     try {
         browser = await launchBrowser(executable);
@@ -440,7 +443,7 @@ async function main() {
             browser: executable, browserVersion: "", runtime: `Bun ${Bun.version}`, os: `${platform()} ${release()} ${process.arch}`,
             cpu: cpus()[0]?.model, notes: NOTE_COUNT, samples: SAMPLES, cpuThrottle: THROTTLE, timeoutMs: TIMEOUT,
             fixtureMs, bundleBytes: sizes,
-            limitations: "Fresh NotesLibrary/watch/scan, server and browser profile per sample; same Bun process and OS disk cache. Excludes browser launch, module loading and Copilot host/SDK startup. CPU throttle affects the renderer only. UI actions use DOM click/input handlers. application-to-usable is host-observed; initial-scan shares its origin. Other startup marks/resources are navigation-relative; actions are handler-to-paint including search debounce. Warm views reuse the scanned library and page. p90 uses nearest rank; small sample counts have low confidence.",
+            limitations: "Fresh NotesLibrary/watch/scan, server and browser profile per sample; same Bun process and OS disk cache. The SQLite shadow index persists across samples, so only the first sample builds it. Excludes browser launch, module loading and Copilot host/SDK startup. CPU throttle affects the renderer only. UI actions use DOM click/input handlers. application-to-usable is host-observed; initial-scan shares its origin. Other startup marks/resources are navigation-relative; actions are handler-to-paint including search debounce. Warm views reuse the scanned library and page. p90 uses nearest rank; small sample counts have low confidence.",
             scenarios: {} as Record<string, ReturnType<typeof summarize>>,
             rawSamples: {} as Record<string, Sample[]>,
             failure: undefined as { scenario: string; sample: number; message: string } | undefined,

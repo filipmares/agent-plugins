@@ -63,7 +63,7 @@ describe("Notes failure journal", () => {
         const [record] = (await readFile(journal.path, "utf8")).trim().split("\n").map(JSON.parse);
         expect(record.environment).toMatchObject({
             copilotAppVersion: "unknown", copilotSdkVersion: "unknown", nodeVersion: "24.22.1",
-            notesVersion: "3.0.1", platform: "unknown", osVersion: "unknown", architecture: "unknown",
+            notesVersion: "3.0.2", platform: "unknown", osVersion: "unknown", architecture: "unknown",
         });
         expect(record.attributes).not.toHaveProperty("openingMode");
         expect(JSON.stringify(record)).not.toContain("C:\\Users");
@@ -214,6 +214,22 @@ describe("Notes failure journal", () => {
             message: "Notes diagnostic journal could not save a failure.",
             options: { level: "warning" },
         }]);
+    });
+
+    test("a rejecting logger cannot turn a failed journal write into an unhandled rejection", async () => {
+        const journal = await createJournal();
+        const blockedPath = join(fixture, "blocked");
+        await writeFile(blockedPath, "not a directory");
+        journal.path = join(blockedPath, "failure-journal.jsonl");
+        journal.log = async () => { throw new Error("session closed"); };
+        const unhandled = [];
+        const onUnhandled = reason => unhandled.push(reason);
+        process.on("unhandledRejection", onUnhandled);
+        try {
+            expect(await journal.recordFailure({ eventName: "notes.index.degraded", errorCode: "index_unavailable", attributes: { component: "index" } })).toBe(false);
+            await new Promise(resolve => setTimeout(resolve, 20));
+        } finally { process.off("unhandledRejection", onUnhandled); }
+        expect(unhandled).toEqual([]);
     });
 
     test("keeps the journal and rendered issue block within their byte limits", async () => {

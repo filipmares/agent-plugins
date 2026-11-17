@@ -5,14 +5,14 @@
   },
   "metadata": {
     "description": "Developer skills, Copilot canvas extensions, and agents.",
-    "version": "3.0.1"
+    "version": "3.0.2"
   },
   "plugins": [
     {
       "name": "agent-plugins",
       "source": ".",
       "description": "Developer skills, Copilot canvas extensions, and agents.",
-      "version": "3.0.1",
+      "version": "3.0.2",
       "category": "development-tools",
       "author": {
         "name": "filipmares"
