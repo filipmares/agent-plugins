@@ -147,7 +147,8 @@ on the declaration directly.
 - Keyboard: ↑/↓ to change notes, Enter to edit, Delete to delete,
   Shift+F10 or the context menu key for note actions. Sidebar ↑/↓ moves focus;
   Enter opens the focused folder. These navigation keys do not intercept
-  editing. Rich editing uses Markdown input shortcuts and standard Mod+B,
+  editing. In rich view, Tab inserts a tab in the opening title heading;
+  Shift+Tab moves focus normally. Rich editing uses Markdown input shortcuts and standard Mod+B,
   Mod+I, Mod+Shift+S (strike), Mod+E (code), Mod+Z / Mod+Shift+Z.
   Mod+K opens the link popover (edit, remove, or open). Typing
   `[label](https://…)` turns the label into a link when the closing `)` is

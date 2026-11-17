@@ -32,7 +32,7 @@
       "name": "notes",
       "source": "./plugins/notes",
       "description": "Global Markdown notes for the GitHub Copilot app, with rich/plain editing, live sync, and Ask Copilot.",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "category": "productivity",
       "author": {
         "name": "filipmares"

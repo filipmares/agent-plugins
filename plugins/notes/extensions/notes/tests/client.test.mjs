@@ -855,6 +855,17 @@ describe("Notes client persistence", () => {
         expect(panel.toolbarTitle.textContent).toBe("Toolbar title");
     });
 
+    test("a new rich title with a trailing tab saves without exposing its Markdown escape", async () => {
+        const panel = await openClient({ richSafe: true });
+        await panel.compose();
+        panel.richChange("# Title&#x9;");
+        expect(panel.toolbarTitle.textContent).toBe("Title");
+        expect(await panel.save()).toBe(true);
+        const saved = await library.read(panel.state.note.id);
+        expect(saved.title).toBe("Title");
+        expect(saved.body).toBe("# Title&#x9;");
+    });
+
     test("renaming a draft waits for its in-flight create before choosing the title save path", async () => {
         const panel = await openClient();
         await panel.compose();

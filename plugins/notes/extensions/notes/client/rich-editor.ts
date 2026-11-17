@@ -48,6 +48,12 @@ export function typedTable(state: EditorState): Transaction | null {
     return closeHistory(tr.setSelection(Selection.near(tr.doc.resolve(at + 1 + header.nodeSize))));
 }
 
+export function titleTab(state: EditorState): Transaction | null {
+    const { $from, $to } = state.selection;
+    if ($from.depth !== 1 || !$from.sameParent($to) || $from.before() !== 0 || $from.parent.type.name !== "heading") return null;
+    return state.tr.insertText("\t");
+}
+
 const ChecklistItem = ListItem.extend({
     addAttributes() {
         return {
@@ -218,6 +224,11 @@ export function createRichEditor(options: {
         addKeyboardShortcuts() {
             return {
                 "Mod-k": () => { options.link(); return true; },
+                Tab: () => {
+                    const tr = titleTab(this.editor.state);
+                    if (tr) this.editor.view.dispatch(tr);
+                    return !!tr;
+                },
                 Enter: () => {
                     if (this.editor.isActive("table")) return this.editor.commands.goToNextCell();
                     const tr = typedTable(this.editor.state);
