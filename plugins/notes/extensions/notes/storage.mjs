@@ -121,10 +121,14 @@ export class NotesLibrary {
             finally {
                 if (!readOnly) {
                     this.#snapshot = undefined;
+                    let scanned = false;
                     try {
-                        if (this.#watching) await this.#scan(this.#root);
+                        if (this.#watching) {
+                            await this.#scan(this.#root);
+                            scanned = true;
+                        }
                     } finally {
-                        this.#index?.refresh(this.#root);
+                        if (!scanned) this.#index?.refresh(this.#root);
                     }
                 }
             }

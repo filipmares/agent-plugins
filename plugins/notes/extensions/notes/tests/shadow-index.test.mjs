@@ -436,6 +436,33 @@ test("mutations synchronize without any subsequent production rescan", async () 
     expect((await contents()).notes).toEqual([]);
 });
 
+test("a successful watched mutation enqueues only one refresh", async () => {
+    await library.startWatching(() => {}, { intervalMs: 3600000 });
+    await index.flush();
+    const refresh = spyOn(index, "refresh");
+    try {
+        await library.create({ body: "# First" }, author);
+        expect(refresh).toHaveBeenCalledTimes(1);
+        expect((await contents()).notes.map(row => row.path)).toEqual(["first.md"]);
+    } finally { refresh.mockRestore(); }
+});
+
+test("a failed post-mutation watcher scan still invalidates the index", async () => {
+    await library.startWatching(() => {}, { intervalMs: 3600000 });
+    await index.flush();
+    const original = filesystem.readNoteFile;
+    const failure = new Error("scan failed");
+    const read = spyOn(filesystem, "readNoteFile")
+        .mockImplementationOnce((...args) => original(...args))
+        .mockRejectedValueOnce(failure);
+    const refresh = spyOn(index, "refresh");
+    try {
+        await expect(library.create({ body: "# First" }, author)).rejects.toBe(failure);
+        expect(refresh).toHaveBeenCalledTimes(1);
+        expect((await contents()).notes.map(row => row.path)).toEqual(["first.md"]);
+    } finally { read.mockRestore(); refresh.mockRestore(); }
+});
+
 test("external edits, renames and deletions synchronize through watcher events, not the periodic fallback", async () => {
     const first = await library.create({ body: "# First" }, author);
     let change;
