@@ -1,6 +1,6 @@
 {
-  "sourceHash": "c00e5e37e813e28884bd1ae1a3a53f0629d00dce36d7c3dcefe21e8053472eef",
-  "bunVersion": "1.4.0",
+  "sourceHash": "8d506859ac5f212efbc2397a17e63881e1eb7e42a88a36eaf11d0bc9f1e5c0c6",
+  "bunVersion": "1.4.4",
   "adaptedSources": [
     {
       "repository": "https://github.com/bholmesdev/hubble.md",
@@ -26,7 +26,7 @@
     },
     {
       "file": "notes-client.js",
-      "sha256": "46b14c33ef5f04e5fc319a5cedf17ea9fd51dbd255c1ce4dd36cdb9165fdfbf4"
+      "sha256": "7b59ca64daddff0802a60b8894712c22a379d74536af1f79ef9a3b6a75f540e1"
     },
     {
       "file": "notes-editor.js",

@@ -145,6 +145,7 @@ async function openClient({ richSafe = false, importEditor, respond, startupToas
     const timers = new Map();
     const media = new Map();
     let eventSources = 0;
+    let eventSource;
     const sandbox = {
         window, document, URLSearchParams, Event, MouseEvent: class extends Event {}, innerWidth: 390, innerHeight: 800, crypto, queueMicrotask,
         navigator: { clipboard: { writeText: async text => clipboard.push(text) } },
@@ -161,7 +162,7 @@ async function openClient({ richSafe = false, importEditor, respond, startupToas
             media.set(query, result);
             return result;
         },
-        EventSource: class extends EventTarget { constructor() { super(); eventSources += 1; } close() {} },
+        EventSource: class extends EventTarget { constructor() { super(); eventSources += 1; eventSource = this; } close() {} },
         __ICONS__: new Proxy({}, { get: (_target, name) => ({ width: 16, path: String(name) }) }),
         addEventListener: window.addEventListener.bind(window),
         setTimeout: (callback, delay) => { timers.set(++timerId, { callback, delay }); return timerId; },
@@ -195,6 +196,7 @@ async function openClient({ richSafe = false, importEditor, respond, startupToas
         calls,
         clipboard,
         eventSources: () => eventSources,
+        connectEvents: () => eventSource.dispatchEvent(new Event("open")),
         scrollCalls: () => scrollIntoViewTotal,
         document,
         window,
@@ -1409,6 +1411,46 @@ describe("lazy rich editor", () => {
 });
 
 describe("startup while the library is unavailable", () => {
+    test("the first live connection replaces empty startup lists even when the restored note already loaded", async () => {
+        const text = node => typeof node === "string" ? node : node.children.map(text).join("");
+        const note = await library.create({ body: "# Restored\ntext" }, context);
+        await saveUiState(statePath, { sidebar: true, selection: { folder: "" }, noteId: note.id, collapsed: [] });
+        let emptyFolders = true, emptyNotes = true;
+        const panel = await openClient({
+            respond: path => {
+                if (path === "api/folders" && emptyFolders) {
+                    emptyFolders = false;
+                    return Response.json({ folders: { path: "", name: "Notes", count: 0, children: [] } });
+                }
+                if (path.startsWith("api/notes?") && emptyNotes) {
+                    emptyNotes = false;
+                    return Response.json({ notes: [] });
+                }
+            },
+        });
+        expect(panel.state.note.id).toBe(note.id);
+        expect(panel.state.notes).toHaveLength(0);
+        expect(text(panel.rows)).toContain("No notes in this folder");
+
+        panel.textarea.value = "# Restored\nunsaved";
+        panel.connectEvents();
+        for (let attempt = 0; attempt < 100 && panel.state.notes.length !== 1; attempt++) await Bun.sleep(10);
+        await panel.settle();
+        expect(panel.state.notes.map(item => item.id)).toEqual([note.id]);
+        expect(panel.state.folders.count).toBe(1);
+        expect(panel.listCount.textContent).toBe("1 note");
+        expect(text(panel.rows)).toContain("Restored");
+        expect(panel.textarea.value).toBe("# Restored\nunsaved");
+
+        const added = await library.create({ body: "# While disconnected" }, context);
+        panel.connectEvents();
+        for (let attempt = 0; attempt < 100 && panel.state.notes.length !== 2; attempt++) await Bun.sleep(10);
+        await panel.settle();
+        expect(panel.state.notes.map(item => item.id)).toContain(added.id);
+        expect(panel.state.folders.count).toBe(2);
+        expect(panel.textarea.value).toBe("# Restored\nunsaved");
+    });
+
     test("a stalled library shows a retryable error and keeps the restored note until it loads", async () => {
         const note = await library.create({ body: "# Restored\ntext" }, context);
         await saveUiState(statePath, { sidebar: true, selection: { view: "all" }, noteId: note.id, collapsed: [] });

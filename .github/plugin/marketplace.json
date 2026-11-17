@@ -5,7 +5,7 @@
   },
   "metadata": {
     "description": "Developer skills, agents, and Copilot canvas plugins.",
-    "version": "4.0.2"
+    "version": "4.0.3"
   },
   "plugins": [
     {
@@ -32,7 +32,7 @@
       "name": "notes",
       "source": "./plugins/notes",
       "description": "Global Markdown notes for the GitHub Copilot app, with rich/plain editing, live sync, and Ask Copilot.",
-      "version": "1.0.2",
+      "version": "1.0.3",
       "category": "productivity",
       "author": {
         "name": "filipmares"
