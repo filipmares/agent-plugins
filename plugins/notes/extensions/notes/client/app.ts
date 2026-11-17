@@ -1444,10 +1444,79 @@ async function showDiagnostics() {
 }
 
 let settingsOpen = false;
+type IndexStatus = {
+    state: string;
+    managing: boolean;
+    error: string | null;
+    checked: string | null;
+    details: { synchronized: string | null; notes: number; warnings: number } | null;
+};
+
+function indexSettings() {
+    let disposed = false;
+    let timer: ReturnType<typeof setTimeout>;
+    let submitting = false;
+    let actionError = "";
+    const status = h("p", { class: "dialog-text", role: "status", "aria-live": "polite" }, "Loading index status...");
+    const details = h("p", { class: "dialog-text" });
+    const errorText = h("p", { class: "dialog-text", role: "alert" });
+    const check = h("button", { type: "button", class: "button", disabled: true, onclick: () => void run("check") }, "Check / retry");
+    const rebuild = h("button", { type: "button", class: "button", disabled: true, onclick: () => void run("rebuild") }, "Rebuild");
+    function render(value: IndexStatus) {
+        const working = value.managing || ["syncing", "checking", "rebuilding"].includes(value.state);
+        const labels: Record<string, string> = {
+            not_started: "Not started", unavailable: "Unavailable", degraded: "Degraded",
+            syncing: "Synchronizing...", checking: "Checking and synchronizing...", rebuilding: "Rebuilding...",
+            idle: "Idle - last synchronization completed",
+        };
+        status.textContent = labels[value.state] ?? "Unknown index state";
+        details.textContent = value.details
+            ? `Last completed snapshot: ${value.details.notes} notes, ${value.details.warnings} warnings. Synchronized: ${value.details.synchronized ? new Date(value.details.synchronized).toLocaleString() : "unknown"}.`
+            : "No completed snapshot reported by this session.";
+        if (value.checked) details.textContent += ` Integrity checked: ${new Date(value.checked).toLocaleString()}.`;
+        errorText.textContent = actionError || (value.error ? `Index error: ${value.error}. Check / retry reopens the worker; rebuild creates a fresh cache. Notes still uses Markdown files.` : "");
+        check.disabled = rebuild.disabled = submitting || working || value.state === "unavailable";
+    }
+    async function poll() {
+        try {
+            const value = await request<IndexStatus>("api/index");
+            if (!disposed) render(value);
+        } catch (error) {
+            if (!disposed) errorText.textContent = `Could not load index status. ${message(error)}`;
+        } finally {
+            if (!disposed) timer = setTimeout(() => void poll(), 1000);
+        }
+    }
+    async function run(action: "check" | "rebuild") {
+        if (submitting) return;
+        submitting = true;
+        actionError = "";
+        check.disabled = rebuild.disabled = true;
+        errorText.textContent = "";
+        try {
+            const value = await request<IndexStatus>("api/index", { action });
+            if (!disposed) render(value);
+        } catch (error) {
+            if (!disposed) errorText.textContent = actionError = `Could not ${action} the index. ${message(error)}`;
+        } finally { submitting = false; }
+    }
+    void poll();
+    return {
+        element: h("section", { class: "settings-section", "aria-labelledby": "settings-index" },
+            h("h3", { id: "settings-index", class: "settings-section-title" }, "SQLite index"),
+            h("p", { class: "dialog-text" }, "Local, shared cache only. Notes reads and searches Markdown files. Status is from this session, not a guarantee that the cache is current."),
+            status, details, errorText,
+            h("p", { class: "dialog-text" }, "Check / retry verifies integrity and synchronizes. Rebuild switches to a new cache without changing notes. Other sessions switch on their next synchronization; old caches are retained for safety."),
+            h("div", { class: "index-actions" }, check, rebuild)),
+        dispose() { disposed = true; clearTimeout(timer); },
+    };
+}
+
 async function showSettings() {
     if (settingsOpen) return;
     settingsOpen = true;
     let viewButton: HTMLButtonElement | null = null;
+    const index = indexSettings();
     try {
         const openDiagnostics = await modal<boolean>("Settings", close => [
             iconButton("x", "Close Settings", () => close(null), { class: "icon-button settings-close" }),
@@ -1458,9 +1527,11 @@ async function showSettings() {
                         h("strong", {}, "Notes diagnostics"),
                         h("p", {}, "Review and copy a sanitized report when you file a bug.")),
                     viewButton = h("button", { type: "button", class: "button", onclick: () => close(true) }, "View"))),
+            index.element,
         ], () => viewButton, "settings-dialog");
+        index.dispose();
         if (openDiagnostics) await showDiagnostics();
-    } finally { settingsOpen = false; }
+    } finally { index.dispose(); settingsOpen = false; }
 }
 
 async function confirmDialog({ title, text, confirm }: { title: string; text: string; confirm: string }) {

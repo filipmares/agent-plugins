@@ -104,6 +104,16 @@ export class NotesLibrary {
         this.#index = index;
     }
 
+    indexStatus() {
+        return this.#index?.status() ?? { state: "unavailable", managing: false, error: "index_unavailable", checked: null, details: null };
+    }
+
+    async manageIndex(action) {
+        if (!this.#index) throw new NotesError("index_unavailable", "This Notes host has no background index.");
+        const root = await this.#locked(root => root, { readOnly: true });
+        return this.#index.manage(root, action);
+    }
+
     async #locked(operation, { readOnly = false } = {}) {
         if (!this.#root) {
             await mkdir(this.#directory, { recursive: true });

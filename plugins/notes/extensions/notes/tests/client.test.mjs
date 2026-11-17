@@ -170,7 +170,7 @@ async function openClient({ richSafe = false, importEditor, respond, startupToas
         fetch(path, options = {}) {
             calls.push({ path, ...options, body: options.body && JSON.parse(options.body) });
             const result = (async () => {
-                const canned = respond?.(path, sandbox.client, window);
+                const canned = respond?.(path, sandbox.client, window, options);
                 if (canned) return canned;
                 if (path === "api/note/update" || path === "api/note/create") {
                     const replacement = await beforeSave?.();
@@ -345,6 +345,71 @@ test("opens diagnostics from Settings and previews the sanitized report before c
     await new Promise(resolve => setTimeout(resolve, 0));
     expect(panel.clipboard).toEqual([text(preview)]);
     expect(panel.toast.textContent).toBe("Diagnostics copied. Review them before sharing.");
+});
+
+test("index settings show real completion, disable working actions and stop polling when closed", async () => {
+    let value = { state: "degraded", managing: false, error: "index_corrupt", checked: null, details: null };
+    const panel = await openClient({ respond: (path, _client, _window, options) => {
+        if (path !== "api/index") return;
+        if (options.method === "POST") value = { ...value, state: "rebuilding", managing: true, error: null };
+        return new Response(JSON.stringify(value), { headers: { "Content-Type": "application/json" } });
+    } });
+    const settle = async () => { await panel.settle(); await new Promise(resolve => setTimeout(resolve, 0)); };
+    panel.settingsButton.dispatchEvent(new Event("click"));
+    await settle();
+    const dialog = panel.document.body.querySelector("dialog");
+    const section = dialog.querySelectorAll(".settings-section")[1];
+    const paragraphs = section.querySelectorAll(".dialog-text");
+    const [check, rebuild] = section.querySelectorAll("button");
+    expect(paragraphs[1].textContent).toBe("Degraded");
+    expect(paragraphs[3].textContent).toContain("index_corrupt");
+    expect(rebuild.disabled).toBe(false);
+    rebuild.dispatchEvent(new Event("click"));
+    await settle();
+    expect(paragraphs[1].textContent).toBe("Rebuilding...");
+    expect(paragraphs[2].textContent).not.toContain("Integrity checked:");
+    expect(check.disabled).toBe(true);
+    expect(rebuild.disabled).toBe(true);
+    value = { state: "idle", managing: false, error: null, checked: "2026-11-17T12:00:00Z",
+        details: { synchronized: "2026-11-17T12:00:00Z", notes: 7, warnings: 1 } };
+    panel.runTimers(1000);
+    await settle();
+    expect(paragraphs[1].textContent).toBe("Idle - last synchronization completed");
+    expect(paragraphs[2].textContent).toContain("7 notes, 1 warnings");
+    expect(paragraphs[2].textContent).toContain("Integrity checked:");
+    expect(check.disabled).toBe(false);
+    dialog.close();
+    await Promise.resolve();
+    const calls = panel.calls.length;
+    panel.runTimers(1000);
+    await panel.settle();
+    expect(panel.calls).toHaveLength(calls);
+});
+
+test("index settings retain action failures through status polling and allow retry", async () => {
+    let fail = true;
+    const panel = await openClient({ respond: (path, _client, _window, options) => {
+        if (path !== "api/index") return;
+        if (options.method === "POST" && fail) return new Response(JSON.stringify({ error: { code: "index_busy", message: "Another session is working." } }), { status: 409 });
+        return new Response(JSON.stringify({ state: "idle", managing: false, error: null, checked: null, details: null }));
+    } });
+    const settle = async () => { await panel.settle(); await new Promise(resolve => setTimeout(resolve, 0)); };
+    panel.settingsButton.dispatchEvent(new Event("click"));
+    await settle();
+    const section = panel.document.body.querySelectorAll(".settings-section")[1];
+    const error = section.querySelectorAll(".dialog-text")[3];
+    const [check] = section.querySelectorAll("button");
+    check.dispatchEvent(new Event("click"));
+    await settle();
+    expect(error.textContent).toContain("Could not check the index.");
+    panel.runTimers(1000);
+    await settle();
+    expect(error.textContent).toContain("Could not check the index.");
+    expect(check.disabled).toBe(false);
+    fail = false;
+    check.dispatchEvent(new Event("click"));
+    await settle();
+    expect(error.textContent).toBe("");
 });
 
 describe("save-state toolbar icon", () => {

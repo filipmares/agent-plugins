@@ -9,6 +9,7 @@ import { FailureJournal } from "../failure-journal.mjs";
 import { MAX_REQUEST_BYTES, createNotesServer, resolveTarget, waitForLibrary } from "../server.mjs";
 import { createPanelRegistry } from "../panels.mjs";
 import { NotesLibrary } from "../storage.mjs";
+import { ShadowIndex } from "../shadow-index.mjs";
 import { popRecovery, pushRecovery, recoveryPath } from "../ui-state.mjs";
 
 let fixture, library, server, statePath, changes;
@@ -43,6 +44,23 @@ afterEach(async () => {
 });
 
 const claimStartup = async () => (await call("api/startup", { method: "POST", body: {} })).json;
+
+test("index settings use protected JSON actions and report worker failures without blocking file reads", async () => {
+    const index = new ShadowIndex({ createWorker: () => { throw new Error("Unavailable"); } });
+    library = new NotesLibrary(join(fixture, "notes"), { index });
+    try {
+        await library.create({ body: "# Safe" }, { sessionId: "session-a", actor: "user" });
+        await start();
+        expect((await call("api/index")).json).toMatchObject({ state: "degraded", error: "index_unavailable" });
+        expect((await call("api/index", { method: "POST", body: { action: "rebuild" }, headers: { Origin: null } })).status).toBe(404);
+        expect((await call("api/index", { method: "POST", body: { action: "sql" } })).status).toBe(400);
+        expect((await call("api/index", { method: "POST", body: { action: "check", path: "other.sqlite" } })).status).toBe(400);
+        const accepted = await call("api/index", { method: "POST", body: { action: "check" } });
+        expect(accepted.status).toBe(202);
+        expect(accepted.json).toMatchObject({ state: "degraded", checked: null });
+        expect((await call("api/notes?view=all")).json.notes).toHaveLength(1);
+    } finally { await library.close(); }
+});
 
 function call(path, { method = "GET", headers = {}, body, base = server.url } = {}) {
     const url = new URL(path, base);

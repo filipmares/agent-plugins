@@ -12,6 +12,12 @@ and plugin versioning follows [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## [Unreleased]
 
+### Added - SQLite index settings
+- Check session-local synchronization state, snapshot counts, integrity-check time and index failures from Settings.
+- Check/retry a failed worker or rebuild into a fresh shared cache without restarting Notes, deleting live databases or changing Markdown reads and writes.
+- Keep health checks and rebuilding in the background worker; retain retired cache files for concurrent-session safety.
+- Bumped Notes to `1.0.4` and the independent marketplace catalog to `4.0.4`.
+
 ### Fixed - Notes list startup synchronization
 - Refresh notes and folder counts when the first live connection opens, catching changes missed while the last note was restoring without replacing unsaved edits.
 - Bumped the Notes plugin and marketplace entry to `1.0.3`.

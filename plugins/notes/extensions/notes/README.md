@@ -302,7 +302,7 @@ it, and reads/version checks rescan before exposing current note content.
 Scanning reads all note files and can hydrate online-only OneDrive/iCloud files.
 
 Notes also maintains a local SQLite **shadow index** in a background worker
-under `$COPILOT_HOME/extensions/notes/index/`, one file per library, shared by
+under `$COPILOT_HOME/extensions/notes/index/`, one active database per library, shared by
 every session. It holds note paths, frontmatter, warnings and full note text.
 It lives with other Copilot data, not in Documents, so Documents sync does not
 include it; if `$COPILOT_HOME` itself is synced or backed up, the index is too.
@@ -317,9 +317,15 @@ later phase.
   Text of deleted or edited notes can stay in stale rows until synchronization,
   and in the database file until SQLite reuses that space.
 - Files stay the source of truth and the index never changes them. It is
-  disposable: close Notes and delete the folder to remove it; the next scan
-  rebuilds it. Older schema versions use separate files, which remain until
-  deleted. The background writer uses `.v2.sqlite` to stay isolated from
+  disposable: use **Settings > SQLite index > Rebuild** to switch to a fresh
+  cache, including after corruption, without restarting Notes. An atomically
+  published per-library `.active` pointer selects a unique database; workers
+  adopt it at their next synchronization/check. Concurrent rebuilds converge
+  on the last published pointer. No live database, WAL or SHM is deleted or
+  replaced. Retired caches (including note text) remain on disk for safety;
+  stop **all** Notes processes before manually deleting the index folder.
+  Older schema versions also remain until deleted.
+  The background writer uses `.v2.sqlite` to stay isolated from
   older synchronous writers that do not honor generation ordering.
 - It uses the host's built-in `node:sqlite` in a worker thread. Its folder is
   kept owner-only on macOS and Linux, and the index is
@@ -327,9 +333,19 @@ later phase.
   when `$COPILOT_HOME` points into it). If SQLite is unavailable, the index
   folder is inside the library, the worker crashes, the index stays busy for
   30 seconds, or the file is corrupt, Notes logs a warning, records a
-  `notes.index.degraded` journal incident, and stops updating the index until
-  it restarts. It keeps working from the files and leaves a corrupt file in
-  place.
+  `notes.index.degraded` journal incident, and stops updating that session's
+  index. **Check / retry** starts a new worker after failure, runs synchronization
+  and SQLite `quick_check`; **Rebuild** also switches the shared cache first.
+  Both run in the worker, not the HTTP/request thread. Permission errors or a
+  host without `node:sqlite` still need their underlying cause fixed.
+  Notes keeps working from the files and leaves a corrupt file in place.
+- The settings section shows this session's active operation, failure code,
+  last completed snapshot counts (including warnings), synchronization time
+  and integrity-check time. Opening Settings only polls in-memory state;
+  **Check / retry** explicitly checks the shared database. Accepted actions are
+  shown as working, never as ready/current. Idle and timestamps describe a
+  completed observation, not an atomic/current filesystem snapshot or the
+  health of every session. Rebuilds can hydrate online-only Markdown files.
 - Invalidations carry no note content; bursts coalesce to one active refresh
   and one pending refresh per provider. Each refresh reserves a shared,
   monotonically increasing generation in SQLite, then rereads the library in

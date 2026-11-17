@@ -28,6 +28,8 @@ export class ShadowIndex {
     #closed;
     #termination;
     #waiters = [];
+    #action;
+    #status = { state: "not_started", error: null, checked: null, details: null };
 
     constructor({ directory = shadowIndexDirectory(), log, onFailure,
         createWorker = options => new Worker(new URL("./index-worker.mjs", import.meta.url), options) } = {}) {
@@ -44,20 +46,26 @@ export class ShadowIndex {
                 this.#root = root;
                 const worker = this.#worker = this.#createWorker({ workerData: { root, directory: this.#directory } });
                 worker.on("message", message => {
+                    if (worker !== this.#worker || this.#disabled) return;
                     if (message.type === "failure") {
                         const error = Object.assign(new NotesError(message.code, "The background index failed."), { stack: message.stack });
                         this.#disable(error);
                     } else if (message.type === "done") {
                         this.#busy = false;
-                        if (this.#pending) this.#send();
+                        this.#status = { state: "idle", error: null,
+                            checked: message.checked ? new Date().toISOString()
+                                : message.details?.file === this.#status.details?.file ? this.#status.checked : null,
+                            details: message.details ?? null };
+                        if (this.#pending || this.#action) this.#send();
                         else {
                             worker.unref();
                             this.#settle();
                         }
                     }
                 });
-                worker.on("error", error => this.#disable(error));
+                worker.on("error", error => { if (worker === this.#worker) this.#disable(error); });
                 worker.on("exit", () => {
+                    if (worker !== this.#worker) return;
                     if ((!this.#closing || this.#busy) && !this.#disabled) this.#disable(new NotesError("index_unavailable", "The background index exited."));
                 });
             }
@@ -69,16 +77,42 @@ export class ShadowIndex {
 
     #send() {
         try {
+            const type = this.#action ?? "refresh";
+            this.#action = undefined;
             this.#pending = false;
             this.#busy = true;
+            this.#status.state = type === "refresh" ? "syncing" : type === "check" ? "checking" : "rebuilding";
             this.#worker.ref();
-            this.#worker.postMessage({ type: "refresh" });
+            this.#worker.postMessage({ type });
         } catch (error) { this.#disable(error); }
+    }
+
+    status() {
+        return structuredClone({ ...this.#status, managing: !!this.#action || ["checking", "rebuilding"].includes(this.#status.state) });
+    }
+
+    async manage(root, action) {
+        if (!["check", "rebuild"].includes(action)) throw new NotesError("invalid_request", "Choose check or rebuild.");
+        if (this.#closing) throw new NotesError("index_unavailable", "The index is closing.");
+        if (this.#action || this.#busy) throw new NotesError("index_busy", "The index is already working. Wait and retry.");
+        this.#action = action;
+        if (this.#disabled) {
+            await this.#termination;
+            this.#worker = undefined;
+            this.#disabled = false;
+        }
+        if (this.#closing) {
+            this.#action = undefined;
+            throw new NotesError("index_unavailable", "The index is closing.");
+        }
+        this.#status.error = null;
+        this.refresh(root);
+        return this.status();
     }
 
     // A barrier for tests and graceful shutdown, never awaited by a Notes request.
     flush() {
-        if (this.#disabled || (!this.#busy && !this.#pending)) return Promise.resolve();
+        if (this.#disabled || (!this.#busy && !this.#pending && !this.#action)) return Promise.resolve();
         return new Promise(resolve => this.#waiters.push(resolve));
     }
 
@@ -117,9 +151,14 @@ export class ShadowIndex {
     #disable(error) {
         if (this.#disabled) return;
         this.#disabled = true;
+        this.#busy = false;
+        this.#pending = false;
+        this.#action = undefined;
+        this.#status.state = "degraded";
+        this.#status.error = error?.code ?? "index_unavailable";
         this.#termination = this.#worker?.terminate();
         this.#settle();
-        report(() => this.#log?.(`The local shadow index is disabled until Notes restarts (${error?.code ?? "index_unavailable"}). Notes continues to use its files.`, { level: "warning" }));
+        report(() => this.#log?.(`The local shadow index is disabled (${error?.code ?? "index_unavailable"}). Retry or rebuild it in Notes settings. Notes continues to use its files.`, { level: "warning" }));
         report(() => this.#onFailure?.(error, error?.code ?? "index_unavailable"));
     }
 }
