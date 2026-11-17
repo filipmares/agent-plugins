@@ -7,6 +7,9 @@ and plugin versioning follows [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## [Unreleased]
 
+### Added — Daily Notes benchmark history
+- Run the 1,000- and 10,000-note benchmarks daily on Windows, retain results and failures, and publish comparable trends to a Pages dashboard.
+
 ### Added — Notes benchmark baseline
 - Include the initial application scan in Notes startup measurements, generate parser-validated bulk fixtures, and measure rendered note opening, search, and warm views with repeated-sample p90 and explicit runtime limitations.
 
