@@ -1,6 +1,6 @@
 {
-  "sourceHash": "616bc2dbec75a0602d63eecc81ca6efd6fa27114d24298a5e0ca9b56579660c0",
-  "bunVersion": "1.4.4",
+  "sourceHash": "c00e5e37e813e28884bd1ae1a3a53f0629d00dce36d7c3dcefe21e8053472eef",
+  "bunVersion": "1.4.0",
   "adaptedSources": [
     {
       "repository": "https://github.com/bholmesdev/hubble.md",
@@ -18,19 +18,19 @@
   "assets": [
     {
       "file": "yaml.mjs",
-      "sha256": "8eceb635e5067df11d124979298ef241437c96405fce51850b17f3111c517e24"
+      "sha256": "aae9a467e96ec10cef5f480a0c5c415ab80990a94d955a72ebab59620620026e"
     },
     {
       "file": "markdown.mjs",
-      "sha256": "ea747febbf4b349a9c6a0d764ecdd2246d20903ebe9973d579894488e82b4e79"
+      "sha256": "4c4b97e2584d237a8cf82dd5472916cd77e7bab05e6ef740e961ae5b64ac706b"
     },
     {
       "file": "notes-client.js",
-      "sha256": "2bc19b384da8ecca1873df6b386f07cf5c4c8c75aa5e591924b49bad4bf499e0"
+      "sha256": "46b14c33ef5f04e5fc319a5cedf17ea9fd51dbd255c1ce4dd36cdb9165fdfbf4"
     },
     {
       "file": "notes-editor.js",
-      "sha256": "0145b584b3b430b79c36617e022abd4fcde68205d0fd329dbbfb86827d347bd6"
+      "sha256": "585fa50b1ed8d4ac28f172c0f3d8eb3cfc1b8acbf2f59c93609f18c2bb6e7149"
     },
     {
       "file": "notes-client.css",

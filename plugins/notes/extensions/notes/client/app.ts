@@ -226,7 +226,8 @@ const openKey = () => (state.note ? keyOf(state.note) : null);
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
 const inside = (path: string, folder: string) => folder === "" || path === folder || path.startsWith(`${folder}/`);
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
-const titleFromText = (text: string) => text.split("\n").find(line => line.trim())?.replace(/^\s*#+\s*/, "").trim() || "New Note";
+const titleFromText = (text: string) => text.split("\n").find(line => line.trim())
+    ?.replace(/^\s*#+\s*/, "").replace(/&#(?:x0*9|0*9);/gi, "\t").trim() || "New Note";
 
 // ---------- Layout ----------
 

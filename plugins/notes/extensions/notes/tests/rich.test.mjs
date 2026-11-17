@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { createRequire } from "node:module";
 import { markdownToDoc, docToMarkdown, roundTripSafe, sameMeaning, serializeEdit } from "../client/rich-codec.ts";
-import { editorExtensions, headerPosition, safeExternal, typedLink, typedTable } from "../client/rich-editor.ts";
+import { editorExtensions, headerPosition, safeExternal, titleTab, typedLink, typedTable } from "../client/rich-editor.ts";
 import { parseMarkdown } from "../client/markdown.ts";
 
 const require = createRequire(new URL("../client/package.json", import.meta.url));
 const { getSchema } = require("@tiptap/core");
-const { EditorState, Selection } = require("@tiptap/pm/state");
+const { EditorState, Selection, TextSelection } = require("@tiptap/pm/state");
 const { history, undo } = require("@tiptap/pm/history");
 const schema = getSchema(editorExtensions());
 const roundtrip = source => schema.nodeFromJSON(markdownToDoc(source)).toJSON();
@@ -165,6 +165,32 @@ describe("rich Markdown boundary", () => {
 
     test("Enter mid-row leaves the line alone", () => {
         expect(typedTable(typedState(para({ type: "text", text: "| A |" }), false))).toBeNull();
+    });
+
+    test("Tab inserts and persists a tab in the opening title, replacing a selection", () => {
+        const source = "# First second\n\nBody";
+        const baseline = roundtrip(source);
+        const doc = schema.nodeFromJSON(baseline);
+        const state = EditorState.create({ doc, selection: TextSelection.create(doc, 7, 13) });
+        const tr = titleTab(state);
+        expect(tr.doc.firstChild.textContent).toBe("First \t");
+        const saved = serializeEdit(tr.doc.toJSON(), source, baseline);
+        expect(schema.nodeFromJSON(markdownToDoc(saved)).firstChild.textContent).toBe("First \t");
+        expect(titleTab(typedState(baseline))).toBeNull();
+        const spanning = EditorState.create({ doc, selection: TextSelection.create(doc, 2, doc.content.size - 1) });
+        expect(titleTab(spanning)).toBeNull();
+        expect(titleTab(typedState(roundtrip("Paragraph\n\n# Later")))).toBeNull();
+    });
+
+    test("repeated Tab presses in a new title survive Markdown serialization", () => {
+        const source = "# ";
+        const baseline = roundtrip(source);
+        let state = typedState(baseline);
+        state = state.apply(titleTab(state));
+        state = state.apply(titleTab(state));
+        state = state.apply(state.tr.insertText("Title"));
+        const saved = serializeEdit(state.doc.toJSON(), source, baseline);
+        expect(schema.nodeFromJSON(markdownToDoc(saved)).firstChild.textContent).toBe("\t\tTitle");
     });
 
     test("undo after a typed conversion restores the literal syntax, not the whole typing burst", () => {
