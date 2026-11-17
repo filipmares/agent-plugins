@@ -151,13 +151,16 @@ agent-plugins/
 ├── extensions/                # Canvases shipped by agent-plugins
 │   └── rpi-artifact-navigator/ # Read-only RPI artifact navigation
 ├── plugins/
+│   ├── agent-plugins/         # Changelog for the root plugin
+│   │   └── CHANGELOG.md
 │   └── notes/                 # Independently installable Notes plugin
 │       ├── .github/plugin/    # Notes plugin manifest
 │       ├── extensions/notes/  # Markdown library, tools, rich/plain panel
+│       ├── CHANGELOG.md
 │       └── LICENSE
 ├── scripts/                   # Validation + listing utilities (Bun + TS)
 ├── CONTRIBUTING.md
-├── CHANGELOG.md
+├── CHANGELOG.md               # Repository-wide changes
 ├── LICENSE
 └── README.md
 ```
