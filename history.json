@@ -1,1 +1,91 @@
-[]
+[
+  {
+    "id": "43988828868:1",
+    "date": "2026-11-17T00:40:42.085Z",
+    "commit": "4e62b3ef2ccf3f42d1d37a96a51bf582ce5d3181",
+    "url": "https://github.com/filipmares/agent-plugins/actions/runs/43988828868",
+    "runnerImage": "win22 20261112.366.7",
+    "benchmarkVersion": "81b15938e8c0a3f3b13012c5e402d50908a4069c",
+    "results": [
+      {
+        "notes": 1000,
+        "status": "complete",
+        "exit": 0,
+        "metrics": {
+          "restored-note": {
+            "application-to-usable": {
+              "median": 7745.298999999999,
+              "p90": 8028.399600000001
+            },
+            "initial-scan": {
+              "median": 2157.6410000000033,
+              "p90": 2375.5381999999954
+            },
+            "open-note": {
+              "median": 1881.7000000000116,
+              "p90": 1919.0999999999767
+            },
+            "search": {
+              "median": 3417.600000000035,
+              "p90": 3919.7000000000116
+            },
+            "warm-folder": {
+              "median": 2190.2999999999884,
+              "p90": 2239.7999999999884
+            },
+            "warm-all": {
+              "median": 3321.600000000035,
+              "p90": 3354.5
+            }
+          },
+          "list-only": {
+            "application-to-usable": {
+              "median": 5655.567700000014,
+              "p90": 7111.210299999977
+            },
+            "initial-scan": {
+              "median": 2117.1013000000094,
+              "p90": 2551.663499999995
+            },
+            "open-note": {
+              "median": 1936.2999999999302,
+              "p90": 1950.5
+            },
+            "search": {
+              "median": 3470.5999999999767,
+              "p90": 3571.100000000035
+            },
+            "warm-folder": {
+              "median": 2199,
+              "p90": 2323.5999999999767
+            },
+            "warm-all": {
+              "median": 3364.5,
+              "p90": 3540.0999999999767
+            }
+          }
+        },
+        "samples": 7,
+        "browserVersion": "Edg/157.0.4341.46",
+        "runtime": "Bun 1.4.4",
+        "os": "win32 10.0.20348 x64",
+        "cpu": "AMD EPYC 7763 64-Core Processor                ",
+        "cpuThrottle": 1
+      },
+      {
+        "notes": 10000,
+        "status": "failed",
+        "exit": 1,
+        "metrics": {},
+        "samples": 7,
+        "browserVersion": "",
+        "runtime": "Bun 1.4.4",
+        "os": "win32 10.0.20348 x64",
+        "cpu": "AMD EPYC 7763 64-Core Processor                ",
+        "cpuThrottle": 1,
+        "scenario": "restored-note",
+        "sample": 1
+      }
+    ]
+  }
+]
