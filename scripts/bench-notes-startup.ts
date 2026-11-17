@@ -8,11 +8,11 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { cpus, platform, release, tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
-import { createNotesServer } from "../extensions/notes/server.mjs";
-import { NotesLibrary } from "../extensions/notes/storage.mjs";
-import { ShadowIndex } from "../extensions/notes/shadow-index.mjs";
-import { saveUiState } from "../extensions/notes/ui-state.mjs";
-import { newId, parseNote } from "../extensions/notes/note-format.mjs";
+import { createNotesServer } from "../plugins/notes/extensions/notes/server.mjs";
+import { NotesLibrary } from "../plugins/notes/extensions/notes/storage.mjs";
+import { ShadowIndex } from "../plugins/notes/extensions/notes/shadow-index.mjs";
+import { saveUiState } from "../plugins/notes/extensions/notes/ui-state.mjs";
+import { newId, parseNote } from "../plugins/notes/extensions/notes/note-format.mjs";
 
 export function parseOptions(argv: string[]) {
     const { values } = parseArgs({
@@ -42,7 +42,7 @@ const NOTE_COUNT = Number(args.notes);
 const SAMPLES = Number(args.samples);
 const THROTTLE = Number(args["cpu-throttle"]);
 const TIMEOUT = Number(args["timeout-ms"]);
-const vendor = new URL("../extensions/notes/vendor/", import.meta.url);
+const vendor = new URL("../plugins/notes/extensions/notes/vendor/", import.meta.url);
 
 function findBrowser() {
     const candidates = [

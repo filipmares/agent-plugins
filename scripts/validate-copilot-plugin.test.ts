@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { validateCopilotPlugin } from './validate-copilot-plugin';
 
 let root: string;
@@ -80,4 +81,26 @@ test('rejects a discovered extension without its entry point', () => {
   expect(validateCopilotPlugin(root).errors).toContain(
     `Plugin "agent-plugins" extension "${join('extensions', 'broken')}" is missing extension.mjs`,
   );
+});
+
+test('repository packages Notes separately from the developer plugin', () => {
+  const repoRoot = fileURLToPath(new URL('../', import.meta.url));
+  const marketplace: { plugins: { name: string; source: string }[] } =
+    JSON.parse(readFileSync(join(repoRoot, '.github', 'plugin', 'marketplace.json'), 'utf8'));
+  const discovered = Object.fromEntries(marketplace.plugins.map(entry => {
+    const pluginRoot = join(repoRoot, entry.source);
+    const manifest: { extensions: string[] } =
+      JSON.parse(readFileSync(join(pluginRoot, '.github', 'plugin', 'plugin.json'), 'utf8'));
+    return [entry.name, manifest.extensions.flatMap(path =>
+      readdirSync(join(pluginRoot, path), { withFileTypes: true })
+        .filter(child => child.isDirectory())
+        .map(child => child.name),
+    )];
+  }));
+
+  expect(discovered).toEqual({
+    'agent-plugins': ['rpi-artifact-navigator'],
+    notes: ['notes'],
+  });
+  expect(validateCopilotPlugin(repoRoot).errors).toEqual([]);
 });

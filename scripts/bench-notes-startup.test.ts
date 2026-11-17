@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runInNewContext } from "node:vm";
 import { createFixture, interactionProbe, parseOptions, startupProbe, summarize } from "./bench-notes-startup";
-import { parseNote, ULID } from "../extensions/notes/note-format.mjs";
-import { NotesLibrary } from "../extensions/notes/storage.mjs";
+import { parseNote, ULID } from "../plugins/notes/extensions/notes/note-format.mjs";
+import { NotesLibrary } from "../plugins/notes/extensions/notes/storage.mjs";
 
 test("bulk fixtures survive the real parser and watched scan without adoption or warnings", async () => {
     const root = await mkdtemp(join(tmpdir(), "notes-bench-test-"));

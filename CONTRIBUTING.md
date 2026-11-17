@@ -106,11 +106,14 @@ CI runs the same checks against every skill in `skills/`.
 
 ## Copilot Canvas Extensions
 
-Canvases live in `extensions/<name>/`. The `extensions` array of
-`.github/plugin/plugin.json` declares their parent discovery directory:
+Canvases live under their owning plugin root: RPI Artifact Navigator in
+`extensions/rpi-artifact-navigator/`, and Notes in
+`plugins/notes/extensions/notes/`. Each plugin's `.github/plugin/plugin.json`
+declares the parent discovery directory relative to that plugin root:
 `"extensions": ["extensions"]`. Copilot scans its immediate subdirectories
-for extension entry points; do not list individual extension folders. They ship
-with the `agent-plugins` plugin, not the skills.sh installation. Runtime modules use the
+for extension entry points; do not list individual extension folders. Keep
+Notes outside the developer plugin's discovery directory so installing both
+plugins registers it only once. Canvases do not ship through skills.sh. Runtime modules use the
 Node standard library, the host-resolved `@github/copilot-sdk`, and committed
 offline bundles where needed. Keep dependency versions, hashes and verbatim
 licenses together; users should not need a package install.
@@ -151,15 +154,15 @@ narrow and wide layouts; Bun assertions do not execute or attest the final DOM.
 
 ## Notes Extension
 
-`extensions/notes/` ships the global Markdown library, `notes_manage`, and a
+`plugins/notes/extensions/notes/` ships the global Markdown library, `notes_manage`, and a
 rich/plain editor with live sync and Ask Copilot. See its
-[guide](./extensions/notes/README.md) for the storage contract, upstream credits,
+[guide](./plugins/notes/extensions/notes/README.md) for the storage contract, upstream credits,
 screenshots and verified setups.
 
 - Runtime modules use Node's standard library, the host's `@github/copilot-sdk`,
   and committed bundles under `vendor/`. Build-only dependencies live in
   `client/package.json` with exact pins and `client/bun.lock`.
-- Run `bun install --cwd extensions/notes/client --frozen-lockfile --ignore-scripts`
+- Run `bun install --cwd plugins/notes/extensions/notes/client --frozen-lockfile --ignore-scripts`
   before `bun run build:notes`. Commit the generated bundles, manifest, and
   verbatim licences together. `test:notes` rejects stale sources or altered
   bundles/licences without requiring a dependency install.
@@ -187,13 +190,22 @@ screenshots and verified setups.
   must use synthetic content and identify simulated themes or mocked callbacks.
   Native-app shortcut handling, queued attachment consumption and real OS
   integration need separate checks; browser fixtures do not establish support.
-- Changes to shipped plugin content (`skills/`, `.github/agents/`, `.github/plugin/`,
-  or runtime files under `extensions/`) require a stable SemVer increase in both plugin
-  manifests and a `CHANGELOG.md` entry. Documentation-only changes under
-  `extensions/` do not require a version bump; the pull-request check enforces
-  this rule.
-- Maintain plugin/marketplace version parity and the Notes entry in
-  `CHANGELOG.md`. Run `bun run validate:copilot-plugin` after manifest changes.
+
+## Plugin releases
+
+Changes to shipped skills, agents, plugin manifests, or extension runtime files
+require a stable SemVer increase in the **owning plugin's** manifest and its
+entry in `.github/plugin/marketplace.json`, plus a `CHANGELOG.md` entry.
+Documentation-only changes under an extension do not require a version bump.
+
+Notes is versioned independently in `plugins/notes/.github/plugin/plugin.json`;
+a Notes-only change does not require an `agent-plugins` release. The marketplace's
+`metadata.version` continues to match the root `agent-plugins` manifest.
+New plugins start with their own stable version.
+
+Run `bun run validate:copilot-plugin` after manifest changes and
+`bun run scripts/check-plugin-version-bump.ts origin/main` after committing.
+The pull-request check enforces version increases per changed plugin.
 
 ## Code of Conduct
 
