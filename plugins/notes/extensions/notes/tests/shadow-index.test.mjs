@@ -1,19 +1,24 @@
-import { afterEach, beforeEach, expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import { execFile } from "node:child_process";
-import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { promisify } from "node:util";
+import { Worker } from "node:worker_threads";
+import { setTimeout as delay } from "node:timers/promises";
 import { FailureJournal } from "../failure-journal.mjs";
 import { retryTransient } from "../filesystem.mjs";
+import * as filesystem from "../filesystem.mjs";
+import { NotesError } from "../errors.mjs";
+import { readLibrarySnapshot } from "../library-snapshot.mjs";
 import { ULID } from "../note-format.mjs";
 import { ShadowIndex, shadowIndexFile } from "../shadow-index.mjs";
 import { NotesLibrary } from "../storage.mjs";
 
 const execute = promisify(execFile);
 const author = { sessionId: "session-a", actor: "agent" };
-let fixture, root, indexDirectory, library, failures, logs;
+let fixture, root, indexDirectory, library, index, failures, logs;
 
 const trash = async path => {
     await mkdir(join(fixture, "trash"), { recursive: true });
@@ -21,7 +26,7 @@ const trash = async path => {
 };
 const indexed = (options = {}) => new NotesLibrary(root, {
     trash,
-    index: new ShadowIndex({
+    index: index = new ShadowIndex({
         directory: indexDirectory,
         log: (message, details) => logs.push({ message, ...details }),
         onFailure: (error, code) => failures.push(code),
@@ -36,8 +41,16 @@ async function write(path, content) {
 }
 
 async function withIndex(read) {
+    await index.flush();
     const db = new DatabaseSync(await indexPath());
     try { return read(db); } finally { db.close(); }
+}
+
+function auditWrites(db) {
+    db.exec(`CREATE TABLE test_writes (path TEXT);
+        CREATE TRIGGER test_insert AFTER INSERT ON notes BEGIN INSERT INTO test_writes VALUES (NEW.path); END;
+        CREATE TRIGGER test_delete AFTER DELETE ON notes BEGIN INSERT INTO test_writes VALUES (OLD.path); END;`);
+    return () => db.prepare("SELECT count(*) AS count FROM test_writes").get().count;
 }
 
 const contents = () => withIndex(db => ({
@@ -78,7 +91,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-    library.close();
+    await library.close();
     await rm(fixture, { recursive: true, force: true });
 });
 
@@ -107,13 +120,14 @@ test("follows edits, moves, external changes and deletions, and skips unchanged 
     const second = await library.create({ body: "# Second" }, author);
     const third = await library.create({ body: "# Third" }, author);
     await library.search();
+    await index.flush();
     const reader = new DatabaseSync(await indexPath());
     try {
-        const dataVersion = () => reader.prepare("PRAGMA data_version").get().data_version;
-        const before = dataVersion();
+        const writes = auditWrites(reader);
         await library.search();
         await library.read(first.id);
-        expect(dataVersion()).toBe(before);
+        await index.flush();
+        expect(writes()).toBe(0);
 
         await library.update(first.id, { body: "# First\nedited", expectedVersion: first.version }, author);
         await mkdir(join(root, "Archive"));
@@ -121,7 +135,8 @@ test("follows edits, moves, external changes and deletions, and skips unchanged 
         await library.delete(third.id, { expectedVersion: third.version });
         await write("external.md", "---\nid: 01J0000000000000000000000A\n---\n# External");
         await library.search();
-        expect(dataVersion()).not.toBe(before);
+        await index.flush();
+        expect(writes()).toBeGreaterThan(0);
     } finally { reader.close(); }
 
     const actual = await contents();
@@ -135,16 +150,17 @@ test("reopens without rewriting and rebuilds identical contents after the index 
     await write("broken.md", "---\n: [\n---\n");
     await library.search();
     const built = await contents();
-    library.close();
+    await library.close();
 
     const reader = new DatabaseSync(await indexPath());
     try {
-        const before = reader.prepare("PRAGMA data_version").get().data_version;
+        const writes = auditWrites(reader);
         library = indexed();
         await library.search();
-        expect(reader.prepare("PRAGMA data_version").get().data_version).toBe(before);
+        await index.flush();
+        expect(writes()).toBe(0);
     } finally { reader.close(); }
-    library.close();
+    await library.close();
 
     await rm(indexDirectory, { recursive: true });
     library = indexed();
@@ -160,7 +176,7 @@ test("processes sharing one index leave it at the latest completed scan", async 
         const library = new NotesLibrary(process.argv[1], { index: new ShadowIndex({ directory: process.argv[2], onFailure: (error, code) => failures.push(code) }) });
         await library.create({ body: "# " + process.argv[3] }, { sessionId: process.argv[3], actor: "agent" });
         await library.search();
-        library.close();
+        await library.close();
         process.stdout.write(JSON.stringify(failures));`;
     const outputs = await Promise.all(["alpha", "beta", "gamma"].map(async name =>
         (await execute(process.execPath, ["-e", script, root, indexDirectory, name])).stdout));
@@ -170,11 +186,57 @@ test("processes sharing one index leave it at the latest completed scan", async 
     expect(actual.notes.map(row => row.path)).toEqual(["alpha.md", "beta.md", "gamma.md"]);
 }, 15000);
 
-test("unavailable SQLite is reported once and Notes keeps working, even if logging throws", async () => {
-    library.close();
+test("a delayed discovery cannot overwrite a newer committed generation", async () => {
+    await library.create({ body: "# First" }, author);
+    await index.flush();
+    for (let offset = 0; offset < 500; offset += 50) {
+        await Promise.all(Array.from({ length: 50 }, (_, i) => writeFile(join(root, `note-${offset + i}.md`), "# Synthetic")));
+    }
+    const other = new DatabaseSync(await indexPath());
+    try {
+        const generation = () => BigInt(other.prepare("SELECT value FROM meta WHERE key = 'issued'").get().value);
+        const before = generation();
+        index.refresh(await realpath(root));
+        const deadline = Date.now() + 4000;
+        while (generation() === before) {
+            if (Date.now() > deadline) throw new Error("The worker did not reserve a generation.");
+            await delay(1);
+        }
+        other.exec("BEGIN IMMEDIATE");
+        const issued = generation();
+        expect(BigInt(other.prepare("SELECT value FROM meta WHERE key = 'applied'").get().value)).toBe(before);
+        // A second session finishes a newer generation while the first is still discovering files.
+        other.prepare("UPDATE meta SET value = ? WHERE key IN ('issued', 'applied')").run(String(issued + 1n));
+        other.exec("UPDATE notes SET body = 'newer commit'; UPDATE meta SET value = 'newer' WHERE key = 'signature'; COMMIT");
+        await index.flush();
+        expect((await contents()).notes.map(row => row.body)).toEqual(["newer commit"]);
+        expect((await contents()).signature).toBe("newer");
+        index.refresh(await realpath(root));
+        expect((await contents()).notes).toHaveLength(501);
+    } finally { other.close(); }
+});
+
+test("an unchanged newer discovery still fences off older generations without rewriting note rows", async () => {
+    await library.create({ body: "# First" }, author);
+    await index.flush();
+    const observer = new DatabaseSync(await indexPath());
+    try {
+        const writes = auditWrites(observer);
+        const applied = () => observer.prepare("SELECT value FROM meta WHERE key = 'applied'").get().value;
+        const before = BigInt(applied());
+        index.refresh(await realpath(root));
+        await index.flush();
+        expect(BigInt(applied())).toBeGreaterThan(before);
+        expect(applied()).toBe(observer.prepare("SELECT value FROM meta WHERE key = 'issued'").get().value);
+        expect(writes()).toBe(0);
+    } finally { observer.close(); }
+});
+
+test("unavailable workers are reported once and Notes keeps working, even if logging throws", async () => {
+    await library.close();
     library = indexed({
         log: () => { throw new Error("session closed"); },
-        loadSqlite: async () => { throw Object.assign(new Error("No such built-in module"), { code: "ERR_UNKNOWN_BUILTIN_MODULE" }); },
+        createWorker: () => { throw new Error("Workers unavailable"); },
     });
     await library.create({ body: "# Works" }, author);
     expect((await library.search()).notes.map(note => note.path)).toEqual(["works.md"]);
@@ -183,43 +245,131 @@ test("unavailable SQLite is reported once and Notes keeps working, even if loggi
 });
 
 test("an index directory inside the Notes library is refused before anything is written there", async () => {
-    library.close();
+    await library.close();
     const inside = join(await realpath(root), "copilot-home", "index");
     library = indexed({ directory: inside });
     await library.create({ body: "# Works" }, author);
     expect((await library.search()).notes.map(note => note.path)).toEqual(["works.md"]);
+    await index.flush();
     expect(failures).toEqual(["index_unavailable"]);
     await expect(lstat(join(root, "copilot-home"))).rejects.toMatchObject({ code: "ENOENT" });
 });
 
+test("an unsafe worker library is degraded as an index failure, not filtered as expected note validation", async () => {
+    const original = join(fixture, "original");
+    await rename(root, original);
+    await symlink(original, root, "junction");
+    index.refresh(root);
+    await index.flush();
+    expect(failures).toEqual(["index_unavailable"]);
+});
+
 test.skipIf(process.platform === "win32")("an existing index directory is made owner-only", async () => {
-    library.close();
+    await library.close();
     await mkdir(indexDirectory, { recursive: true });
     await chmod(indexDirectory, 0o755);
     library = indexed();
     await library.search();
+    await index.flush();
     expect((await lstat(indexDirectory)).mode & 0o777).toBe(0o700);
     expect(failures).toEqual([]);
 });
 
-test("closing while the index opens leaves no connection or write behind", async () => {
-    let release;
-    const gate = new Promise(resolve => release = resolve);
-    const index = new ShadowIndex({ directory: indexDirectory, loadSqlite: async () => { await gate; return import("node:sqlite"); } });
-    const updating = index.update(await realpath(root), { notes: [], folders: [""], warnings: [] }, "signature");
-    index.close();
-    release();
-    await updating;
-    expect((await withIndex(db => db.prepare("SELECT value FROM meta").all())).length).toBe(0);
+test("closing immediately drains queued work and never reopens the worker", async () => {
+    await library.create({ body: "# Kept" }, author);
+    await library.close();
+    expect((await contents()).notes.map(row => row.path)).toEqual(["kept.md"]);
     await rm(indexDirectory, { recursive: true });
-    await index.update(await realpath(root), { notes: [], folders: [""], warnings: [] }, "signature");
+    index.refresh(await realpath(root));
+    await index.flush();
     await expect(lstat(indexDirectory)).rejects.toMatchObject({ code: "ENOENT" });
+});
+
+test("bursts coalesce to one active and one pending root invalidation without snapshot cloning", async () => {
+    await library.close();
+    const messages = [];
+    library = indexed({ createWorker: options => {
+        expect(Object.keys(options.workerData).sort()).toEqual(["directory", "root"]);
+        const worker = new Worker(new URL("../index-worker.mjs", import.meta.url), options);
+        const post = worker.postMessage.bind(worker);
+        worker.postMessage = message => { messages.push(message); post(message); };
+        return worker;
+    } });
+    const canonical = await realpath(root);
+    for (let count = 0; count < 1000; count++) index.refresh(canonical);
+    expect(messages).toEqual([{ type: "refresh" }]);
+    await index.flush();
+    expect(messages).toEqual([{ type: "refresh" }, { type: "refresh" }]);
+});
+
+test("a stuck worker is terminated on bounded shutdown and degraded once", async () => {
+    await library.close();
+    library = indexed({
+        createWorker: () => new Worker(new URL(`data:text/javascript,${encodeURIComponent(
+            "import { parentPort } from 'node:worker_threads'; parentPort.on('message', () => {});",
+        )}`)),
+    });
+    await library.create({ body: "# Safe" }, author);
+    const started = performance.now();
+    await library.close();
+    expect(performance.now() - started).toBeLessThan(32000);
+    expect(failures).toEqual(["index_unavailable"]);
+    expect((await library.read("safe.md")).body).toBe("# Safe");
+}, 35000);
+
+test("a healthy 10k-note build drains during shutdown", async () => {
+    const body = "# Synthetic\n" + "text ".repeat(200);
+    for (let offset = 0; offset < 10000; offset += 100) {
+        await Promise.all(Array.from({ length: 100 }, (_, i) => writeFile(join(root, `note-${offset + i}.md`), body)));
+    }
+    index.refresh(await realpath(root));
+    await library.close();
+    expect(await withIndex(db => db.prepare("SELECT count(*) AS count FROM notes").get().count)).toBe(10000);
+    expect(failures).toEqual([]);
+}, 35000);
+
+test("background discovery rejects unstable reads instead of committing omissions, while production keeps warnings", async () => {
+    await write("first.md", "# First");
+    const conflict = new NotesError("conflict", "The note changed while reading it.");
+    const read = spyOn(filesystem, "readNoteFile").mockRejectedValue(conflict);
+    try {
+        const snapshot = await readLibrarySnapshot(await realpath(root));
+        expect(snapshot.warnings.map(item => item.code)).toEqual(["conflict"]);
+        await expect(readLibrarySnapshot(await realpath(root), { retryConflicts: true })).rejects.toBe(conflict);
+    } finally { read.mockRestore(); }
+});
+
+test("shutdown drains a watcher scan before closing its index", async () => {
+    const note = await library.create({ body: "# First" }, author);
+    await library.startWatching(() => {}, { intervalMs: 3600000, debounceMs: 10 });
+    await index.flush();
+    let release, reached;
+    const gate = new Promise(resolve => release = resolve);
+    const reading = new Promise(resolve => reached = resolve);
+    const original = filesystem.readNoteFile;
+    const read = spyOn(filesystem, "readNoteFile").mockImplementationOnce(async (...args) => {
+        reached();
+        await gate;
+        return original(...args);
+    });
+    try {
+        await write(note.path, "# External");
+        await reading;
+        let closed = false;
+        const closing = library.close().then(() => closed = true);
+        await delay(20);
+        expect(closed).toBe(false);
+        release();
+        await closing;
+        expect((await contents()).notes[0].body).toBe("# External");
+        expect(failures).toEqual([]);
+    } finally { release(); read.mockRestore(); }
 });
 
 test("a corrupt index is journaled and left untouched while Notes keeps working", async () => {
     const journal = new FailureJournal({ path: join(fixture, "journal.jsonl") });
     let recorded;
-    library.close();
+    await library.close();
     library = indexed({
         onFailure: (error, errorCode) => recorded = journal.recordFailure({
             eventName: "notes.index.degraded", errorCode, severityText: "WARN", attributes: { component: "index" }, stack: error?.stack,
@@ -230,6 +380,7 @@ test("a corrupt index is journaled and left untouched while Notes keeps working"
     await writeFile(await indexPath(), garbage);
     const note = await library.create({ body: "# Safe\ntext" }, author);
     expect((await library.read(note.id)).body).toBe("# Safe\ntext");
+    await index.flush();
     expect(await recorded).toBe(true);
 
     const records = (await readFile(join(fixture, "journal.jsonl"), "utf8")).trim().split("\n").map(line => JSON.parse(line));
@@ -243,23 +394,82 @@ test("a corrupt index is journaled and left untouched while Notes keeps working"
     expect(await readdir(root)).toEqual(["safe.md"]);
 });
 
-test("a busy index is skipped without failing or delaying past its timeout, even if logging rejects", async () => {
-    library.close();
+test("busy waits stay off the request event loop and retry without holding the library lock", async () => {
+    await library.close();
     library = indexed({ log: (message, details) => { logs.push({ message, ...details }); return Promise.reject(new Error("session closed")); } });
     await library.create({ body: "# Before" }, author);
     await library.search();
+    await index.flush();
     const blocker = new DatabaseSync(await indexPath());
     try {
         blocker.exec("BEGIN IMMEDIATE");
         await write("after.md", "---\nid: 01J0000000000000000000000B\n---\n# After");
         const started = performance.now();
         expect((await library.search()).total).toBe(2);
-        expect(performance.now() - started).toBeLessThan(5000);
-        expect(failures).toEqual(["index_busy"]);
-        expect(logs).toEqual([expect.objectContaining({ level: "warning" })]);
+        const note = await library.read("before.md");
+        await library.update(note.id, { body: "# Before\nsaved", expectedVersion: note.version }, author);
+        expect((await library.list()).notes.length).toBe(2);
+        // A synchronous busy_timeout on this thread would prevent the timer firing.
+        await delay(1200);
+        expect(performance.now() - started).toBeLessThan(1900);
+        expect(failures).toEqual([]);
         blocker.exec("ROLLBACK");
     } finally { blocker.close(); }
     await library.search();
-    expect(failures).toEqual(["index_busy"]);
-    expect((await contents()).notes.map(row => row.path)).toEqual(["before.md"]);
+    await index.flush();
+    expect(failures).toEqual([]);
+    expect((await contents()).notes.map(row => row.path)).toEqual(["after.md", "before.md"]);
+});
+
+test("mutations synchronize without any subsequent production rescan", async () => {
+    const first = await library.create({ body: "# First" }, author);
+    expect((await contents()).notes.map(row => row.path)).toEqual(["first.md"]);
+    const edited = await library.update(first.id, { body: "# First\nsaved", expectedVersion: first.version }, author);
+    expect((await contents()).notes[0].body).toBe("# First\nsaved");
+    await library.createFolder("Archive");
+    const moved = await library.move(edited.id, { folder: "Archive", expectedVersion: edited.version });
+    expect((await contents()).notes.map(row => row.path)).toEqual(["Archive/first.md"]);
+    const tree = await library.folders();
+    await library.renameFolder("Archive", "Done", tree.folders.children.find(folder => folder.path === "Archive").version);
+    expect((await contents()).notes.map(row => row.path)).toEqual(["Done/first.md"]);
+    await library.delete(moved.id, { expectedVersion: moved.version });
+    expect((await contents()).notes).toEqual([]);
+});
+
+test("external edits, renames and deletions synchronize through watcher events, not the periodic fallback", async () => {
+    const first = await library.create({ body: "# First" }, author);
+    let change;
+    const changed = () => new Promise(resolve => change = resolve);
+    await library.startWatching(() => change?.(), { intervalMs: 3600000, debounceMs: 10 });
+    let notification = changed();
+    await write("external.md", "# External");
+    await notification;
+    expect((await contents()).notes.map(row => row.path)).toEqual(["external.md", "first.md"]);
+    notification = changed();
+    await write(first.path, "---\ntitle: [broken\n---\n# Changed");
+    await notification;
+    expect((await contents()).notes.find(row => row.path === first.path).warning.code).toBe("invalid_frontmatter");
+    notification = changed();
+    await rename(join(root, "external.md"), join(root, "renamed.md"));
+    await notification;
+    expect((await contents()).notes.map(row => row.path)).toEqual(["first.md", "renamed.md"]);
+    notification = changed();
+    await rm(join(root, "renamed.md"));
+    await notification;
+    expect((await contents()).notes.map(row => row.path)).toEqual(["first.md"]);
+});
+
+test.each(["throw new Error('worker crash')", "process.exit(0)"])("worker failure degrades once and requests keep using files: %s", async script => {
+    await library.close();
+    library = indexed({
+        createWorker: () => new Worker(new URL(`data:text/javascript,${encodeURIComponent(script)}`)),
+        log: () => Promise.reject(new Error("logger closed")),
+    });
+    const note = await library.create({ body: "# Safe" }, author);
+    await index.flush();
+    expect(failures).toHaveLength(1);
+    expect((await library.read(note.id)).body).toBe("# Safe");
+    const edited = await library.update(note.id, { body: "# Safe\nsaved", expectedVersion: note.version }, author);
+    expect((await library.read(edited.id)).body).toBe("# Safe\nsaved");
+    expect(failures).toHaveLength(1);
 });

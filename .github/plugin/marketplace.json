@@ -5,14 +5,14 @@
   },
   "metadata": {
     "description": "Developer skills, agents, and Copilot canvas plugins.",
-    "version": "4.0.0"
+    "version": "4.0.1"
   },
   "plugins": [
     {
       "name": "agent-plugins",
       "source": ".",
       "description": "Developer skills, the Copilot Code Review agent, and the RPI Artifact Navigator canvas.",
-      "version": "4.0.0",
+      "version": "4.0.1",
       "category": "development-tools",
       "author": {
         "name": "filipmares"
@@ -32,7 +32,7 @@
       "name": "notes",
       "source": "./plugins/notes",
       "description": "Global Markdown notes for the GitHub Copilot app, with rich/plain editing, live sync, and Ask Copilot.",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "category": "productivity",
       "author": {
         "name": "filipmares"

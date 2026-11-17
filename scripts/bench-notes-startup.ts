@@ -404,7 +404,7 @@ async function sample(executable: string, notesDirectory: string, statePath: str
             // A timed-out scan cannot be cancelled; the CLI failure exits the process.
             try {
                 if (ready) await withTimeout(ready, "scan cleanup");
-            } finally { library.close(); }
+            } finally { await library.close(); }
         }
     }
 }
@@ -443,7 +443,7 @@ async function main() {
             browser: executable, browserVersion: "", runtime: `Bun ${Bun.version}`, os: `${platform()} ${release()} ${process.arch}`,
             cpu: cpus()[0]?.model, notes: NOTE_COUNT, samples: SAMPLES, cpuThrottle: THROTTLE, timeoutMs: TIMEOUT,
             fixtureMs, bundleBytes: sizes,
-            limitations: "Fresh NotesLibrary/watch/scan, server and browser profile per sample; same Bun process and OS disk cache. The SQLite shadow index persists across samples, so only the first sample builds it. Excludes browser launch, module loading and Copilot host/SDK startup. CPU throttle affects the renderer only. UI actions use DOM click/input handlers. application-to-usable is host-observed; initial-scan shares its origin. Other startup marks/resources are navigation-relative; actions are handler-to-paint including search debounce. Warm views reuse the scanned library and page. p90 uses nearest rank; small sample counts have low confidence.",
+            limitations: "Fresh NotesLibrary/watch/scan, server and browser profile per sample; same Bun process and OS disk cache. The SQLite shadow index persists across samples and synchronizes in a background worker; startup does not wait for index readiness. Excludes browser launch, module loading and Copilot host/SDK startup. CPU throttle affects the renderer only. UI actions use DOM click/input handlers. application-to-usable is host-observed; initial-scan shares its origin. Other startup marks/resources are navigation-relative; actions are handler-to-paint including search debounce. Warm views reuse the scanned library and page. p90 uses nearest rank; small sample counts have low confidence.",
             scenarios: {} as Record<string, ReturnType<typeof summarize>>,
             rawSamples: {} as Record<string, Sample[]>,
             failure: undefined as { scenario: string; sample: number; message: string } | undefined,

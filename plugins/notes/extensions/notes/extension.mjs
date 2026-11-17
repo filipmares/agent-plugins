@@ -26,16 +26,21 @@ async function getLibrary() {
                 }),
             });
             const notes = new NotesLibrary(directory, { index });
-            await notes.startWatching(notifyPanels, {
-                log,
-                onFailure: error => diagnostics.recordFailure({
-                    eventName: "notes.watcher.degraded",
-                    errorCode: error?.code,
-                    severityText: "WARN",
-                    attributes: { component: "watcher" },
-                    stack: error?.stack,
-                }),
-            });
+            try {
+                await notes.startWatching(notifyPanels, {
+                    log,
+                    onFailure: error => diagnostics.recordFailure({
+                        eventName: "notes.watcher.degraded",
+                        errorCode: error?.code,
+                        severityText: "WARN",
+                        attributes: { component: "watcher" },
+                        stack: error?.stack,
+                    }),
+                });
+            } catch (error) {
+                await notes.close();
+                throw error;
+            }
             activeLibrary = notes;
             return notes;
         });

@@ -19,7 +19,7 @@ beforeEach(async () => {
     fixture = await mkdtemp(join(tmpdir(), "notes-sync-"));
     library = new NotesLibrary(fixture);
 });
-afterEach(async () => { library.close(); await rm(fixture, { recursive: true, force: true }); });
+afterEach(async () => { await library.close(); await rm(fixture, { recursive: true, force: true }); });
 
 test("recursive watcher refreshes nested notes, moves, search, and folders without own-write churn", async () => {
     let changes = 0;
@@ -50,7 +50,7 @@ test("unsupported recursive watch falls back, reports the limitation, and closes
     await writeFile(join(fixture, "Folder", "new.md"), "# Fallback");
     await waitFor(async () => (await library.search({ query: "Fallback" })).total === 1);
     const before = changes;
-    library.close();
+    await library.close();
     await writeFile(join(fixture, "Folder", "new.md"), "# Closed");
     await new Promise(resolve => setTimeout(resolve, 75));
     expect(changes).toBe(before);
