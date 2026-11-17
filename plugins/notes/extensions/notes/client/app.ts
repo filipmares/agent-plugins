@@ -2005,11 +2005,8 @@ function connectEvents() {
     if (eventsConnected) return;
     eventsConnected = true;
     const events = new EventSource("api/events");
-    let opened = false;
-    events.addEventListener("open", () => {
-        if (opened) void refresh();
-        opened = true;
-    });
+    // Changes between the initial reads and subscribing have no listener to notify.
+    events.addEventListener("open", () => void refresh());
     events.addEventListener("changed", () => void refresh());
     events.addEventListener("reveal", event => void applyTarget(JSON.parse((event as MessageEvent).data)));
     addEventListener("pagehide", () => { events.close(); rich?.destroy(); }, { once: true });

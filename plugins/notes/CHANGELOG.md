@@ -12,6 +12,10 @@ and plugin versioning follows [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## [Unreleased]
 
+### Fixed - Notes list startup synchronization
+- Refresh notes and folder counts when the first live connection opens, catching changes missed while the last note was restoring without replacing unsaved edits.
+- Bumped the Notes plugin and marketplace entry to `1.0.3`.
+
 ### Fixed — Notes title tabs
 - Tab inserts a tab in the opening note heading without leaving the editor; Shift+Tab still navigates.
 - Bumped the Notes plugin and marketplace entry to `1.0.1`.
