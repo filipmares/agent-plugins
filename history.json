@@ -532,5 +532,94 @@
         "sample": 1
       }
     ]
+  },
+  {
+    "id": "45047648384:1",
+    "date": "2026-11-22T17:11:43.855Z",
+    "commit": "39dc8a56f6b596ef1d634bb4abeb23319caf63e4",
+    "url": "https://github.com/filipmares/agent-plugins/actions/runs/45047648384",
+    "runnerImage": "win22 20261116.370.1",
+    "benchmarkVersion": "3c981a620d07e0efefe30cc197f14e51084eebaa",
+    "results": [
+      {
+        "notes": 1000,
+        "status": "complete",
+        "exit": 0,
+        "metrics": {
+          "restored-note": {
+            "application-to-usable": {
+              "median": 5074.5506999999925,
+              "p90": 8720.8901
+            },
+            "initial-scan": {
+              "median": 1943.9712,
+              "p90": 2012.3624000000018
+            },
+            "open-note": {
+              "median": 2793.399999999994,
+              "p90": 2902.399999999994
+            },
+            "search": {
+              "median": 2638.600000000006,
+              "p90": 2768.7999999999884
+            },
+            "warm-folder": {
+              "median": 940.8999999999942,
+              "p90": 2866.5
+            },
+            "warm-all": {
+              "median": 939.1000000000058,
+              "p90": 981.2000000000116
+            }
+          },
+          "list-only": {
+            "application-to-usable": {
+              "median": 3092.3752000000095,
+              "p90": 3173.5425000000105
+            },
+            "initial-scan": {
+              "median": 2003.0607000000018,
+              "p90": 2087.53820000001
+            },
+            "open-note": {
+              "median": 2813.8000000000175,
+              "p90": 2902.5
+            },
+            "search": {
+              "median": 1144.7999999999884,
+              "p90": 2785.399999999965
+            },
+            "warm-folder": {
+              "median": 913.2000000000116,
+              "p90": 965.2000000000116
+            },
+            "warm-all": {
+              "median": 991.7000000000116,
+              "p90": 1053
+            }
+          }
+        },
+        "samples": 7,
+        "browserVersion": "Edg/157.0.4341.60",
+        "runtime": "Bun 1.4.4",
+        "os": "win32 10.0.20348 x64",
+        "cpu": "INTEL(R) XEON(R) PLATINUM 8573C",
+        "cpuThrottle": 1
+      },
+      {
+        "notes": 10000,
+        "status": "failed",
+        "exit": 1,
+        "metrics": {},
+        "samples": 7,
+        "browserVersion": "",
+        "runtime": "Bun 1.4.4",
+        "os": "win32 10.0.20348 x64",
+        "cpu": "INTEL(R) XEON(R) PLATINUM 8573C",
+        "cpuThrottle": 1,
+        "scenario": "restored-note",
+        "sample": 1
+      }
+    ]
   }
 ]
