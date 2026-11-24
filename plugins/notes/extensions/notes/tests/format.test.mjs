@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { markdownText, parseNote, renameAssetLinks, serializeNote, slug } from "../note-format.mjs";
+import { markdownText, newNoteBody, parseNote, renameAssetLinks, serializeNote, slug, titleOf } from "../note-format.mjs";
 import { parseMarkdown } from "../vendor/markdown.mjs";
 
 describe("Markdown preservation", () => {
@@ -101,5 +101,31 @@ describe("Markdown preservation", () => {
         expect(slug("\u010cesk\u00fd pl\u00e1n")).toBe("cesky-plan");
         expect(slug("\u65e5\u672c\u8a9e")).toBe("\u65e5\u672c\u8a9e");
         expect(slug("CON")).toBe("note-con");
+    });
+
+    test("derives plain titles from Markdown headings without exposing escapes or character references", () => {
+        expect(titleOf("# Canvas&#x20;")).toBe("Canvas");
+        expect(titleOf("# Canvas&#x9;")).toBe("Canvas");
+        expect(titleOf("# &#x20;Canvas&#x20;")).toBe("Canvas");
+        expect(titleOf("# &#x20;")).toBe("Untitled");
+        expect(titleOf("# &#x9;")).toBe("Untitled");
+        expect(titleOf("#")).toBe("Untitled");
+        expect(titleOf("# ###")).toBe("Untitled");
+        expect(titleOf("# Title ###")).toBe("Title");
+        expect(titleOf("# C# & F\\#")).toBe("C# & F#");
+        expect(titleOf("# Notes \\*draft\\*")).toBe("Notes *draft*");
+        expect(titleOf("# 2026-11-23 \\[todo]")).toBe("2026-11-23 [todo]");
+        expect(titleOf("# Price: $5 & \\<tag>")).toBe("Price: $5 & <tag>");
+        expect(titleOf("# Array<string>")).toBe("Array<string>");
+        expect(titleOf("# Fix <input> bug")).toBe("Fix <input> bug");
+        expect(titleOf("# <Canvas>")).toBe("<Canvas>");
+        expect(titleOf("1984.")).toBe("1984.");
+        expect(titleOf("2026. Q4 **Roadmap**")).toBe("2026. Q4 Roadmap");
+        expect(titleOf("1) First step")).toBe("1) First step");
+        expect(titleOf("# **Bold** and [Docs](https://example.com) &amp; `code`")).toBe("Bold and Docs & code");
+        expect(titleOf("# `a&#x20;b` and `\\*x\\*`")).toBe("a&#x20;b and \\*x\\*");
+        expect(titleOf("---\ntitle: [broken\n---\n# Broken")).toBe("Untitled");
+        expect(newNoteBody("#\n\nBody")).toBe("# \n\nBody");
+        expect(newNoteBody("# Canvas&#x20;")).toBe("# Canvas&#x20;");
     });
 });

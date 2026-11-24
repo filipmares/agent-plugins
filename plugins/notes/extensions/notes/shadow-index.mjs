@@ -8,9 +8,9 @@ export function shadowIndexDirectory(home = copilotHome()) {
     return join(home, "extensions", "notes", "index");
 }
 
-// v3 adds precomputed list/search fields; earlier writers cannot populate them.
+// v4 recomputes derived titles from parsed Markdown instead of raw heading escapes.
 export function shadowIndexFile(root) {
-    return `${createHash("sha256").update(root).digest("hex").slice(0, 32)}.v3.sqlite`;
+    return `${createHash("sha256").update(root).digest("hex").slice(0, 32)}.v4.sqlite`;
 }
 
 // Synchronization sends invalidations and signatures, not full-library clones.

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runInNewContext } from "node:vm";
 import { FailureJournal } from "../failure-journal.mjs";
+import { markdownTitle } from "../client/markdown.ts";
 import { createNotesServer } from "../server.mjs";
 import { NotesLibrary } from "../storage.mjs";
 import { pushRecovery, recoveryPath, saveUiState } from "../ui-state.mjs";
@@ -156,7 +157,9 @@ async function openClient({ richSafe = false, importEditor, respond, startupToas
             richCallbacks = callbacks;
             return { safe: richSafe, editor: { destroy() {}, commands: { focus() {} }, isFocused: false, state: { selection: { from: 1 } } } };
         },
-        importEditor: () => importEditor ? importEditor({ createRichEditor: sandbox.createRichEditor }) : Promise.resolve({ createRichEditor: sandbox.createRichEditor }),
+        importEditor: () => importEditor
+            ? importEditor({ createRichEditor: sandbox.createRichEditor, markdownTitle })
+            : Promise.resolve({ createRichEditor: sandbox.createRichEditor, markdownTitle }),
         matchMedia: query => {
             const result = Object.assign(new EventTarget(), { matches: false });
             media.set(query, result);
@@ -931,6 +934,111 @@ describe("Notes client persistence", () => {
         const saved = await library.read(panel.state.note.id);
         expect(saved.title).toBe("Title");
         expect(saved.body).toBe("# Title&#x9;");
+        expect(saved.frontmatter.title).toBeUndefined();
+    });
+
+    test("new draft autosave does not freeze a partial title or leak trailing-space entities", async () => {
+        const panel = await openClient({ richSafe: true });
+        await panel.compose();
+        panel.richChange("# Canvas&#x20;");
+        expect(panel.toolbarTitle.textContent).toBe("Canvas");
+        expect(await panel.save()).toBe(true);
+
+        const first = await library.read(panel.state.note.id);
+        expect(first.title).toBe("Canvas");
+        expect(first.frontmatter.title).toBeUndefined();
+        expect(first.path).toBe("canvas.md");
+        expect(panel.toolbarTitle.textContent).toBe("Canvas");
+
+        panel.richChange("# Canvas Extensions");
+        expect(panel.toolbarTitle.textContent).toBe("Canvas Extensions");
+        expect(await panel.save()).toBe(true);
+
+        const second = await library.read(panel.state.note.id);
+        expect(second.title).toBe("Canvas Extensions");
+        expect(second.frontmatter.title).toBeUndefined();
+        expect(second.path).toBe("canvas-extensions.md");
+        expect(panel.toolbarTitle.textContent).toBe("Canvas Extensions");
+    });
+
+    test("whitespace-entity-only drafts stay clean and do not create empty notes", async () => {
+        const panel = await openClient({ richSafe: true });
+        await panel.compose();
+        panel.richChange("# &#x20;");
+        expect(panel.toolbarTitle.textContent).toBe("New Note");
+        expect(panel.saveButton.getAttribute("aria-label")).toBe("New note - not saved yet");
+        expect(await panel.save()).toBe(true);
+        expect(panel.state.draft).not.toBeNull();
+        expect((await library.list()).notes).toHaveLength(0);
+
+        panel.richChange("# &#x9;");
+        expect(panel.toolbarTitle.textContent).toBe("New Note");
+        expect(await panel.save()).toBe(true);
+        expect((await library.list()).notes).toHaveLength(0);
+    });
+
+    test("pagehide rescue and external-delete recovery only set frontmatter.title when explicitly renamed", async () => {
+        const draftPanel = await openClient({ richSafe: true });
+        await draftPanel.compose();
+        draftPanel.richChange("# Canvas&#x20;");
+        await draftPanel.close();
+        const rescued = (await library.list()).notes;
+        expect(rescued).toHaveLength(1);
+        const rescuedNote = await library.read(rescued[0].id);
+        expect(rescuedNote.title).toBe("Canvas");
+        expect(rescuedNote.frontmatter.title).toBeUndefined();
+        expect(rescuedNote.path).toBe("canvas.md");
+
+        const derived = await library.create({ body: "# First heading\nBody" }, context);
+        const panel = await openClient();
+        await panel.openNote(derived.id);
+        panel.textarea.value = "# Edited heading\nBody";
+        panel.textarea.dispatchEvent(new Event("input"));
+        await rm(join(root, derived.path));
+        await panel.refresh();
+        expect(panel.state.draft).not.toBeNull();
+        expect(panel.state.draft.title).toBeNull();
+        expect(await panel.save()).toBe(true);
+        const recreated = await library.read(panel.state.note.id);
+        expect(recreated.title).toBe("Edited heading");
+        expect(recreated.frontmatter.title).toBeUndefined();
+
+        const explicit = await library.create({ body: "# Heading\nBody", title: "Pinned title" }, context);
+        const explicitPanel = await openClient();
+        await explicitPanel.openNote(explicit.id);
+        explicitPanel.textarea.value = "# Changed heading\nBody";
+        explicitPanel.textarea.dispatchEvent(new Event("input"));
+        await rm(join(root, explicit.path));
+        await explicitPanel.refresh();
+        expect(explicitPanel.state.draft.title).toBe("Pinned title");
+    });
+
+    test("derived toolbar titles decode Markdown escapes and inline formatting on unsaved edits", async () => {
+        const note = await library.create({ body: "# Initial" }, context);
+        const panel = await openClient({ richSafe: true });
+        await panel.openNote(note.id);
+        panel.richChange("# C# & F\\# and **Bold** [Docs](https://example.com)&#x20;");
+        expect(panel.toolbarTitle.textContent).toBe("C# & F# and Bold Docs");
+        expect(await panel.save()).toBe(true);
+        const saved = await library.read(note.id);
+        expect(saved.title).toBe("C# & F# and Bold Docs");
+        expect(saved.frontmatter.title).toBeUndefined();
+    });
+
+    test("recovered draft updates both toolbar and list row titles once editor.js loads", async () => {
+        await pushRecovery(recoveryPath(statePath), { noteId: null, folder: "", body: "# **Recovered**&#x20;\nBody" });
+        const loaded = Promise.withResolvers();
+        const panel = await openClient({
+            richSafe: true,
+            importEditor: defaults => loaded.promise.then(() => defaults),
+            startupToast: true,
+        });
+        expect(panel.toolbarTitle.textContent).toBe("**Recovered**&#x20;");
+        expect(text(panel.rows.querySelector(".row-title-text"))).toBe("**Recovered**&#x20;");
+        loaded.resolve();
+        await new Promise(resolve => setImmediate(resolve));
+        expect(panel.toolbarTitle.textContent).toBe("Recovered");
+        expect(text(panel.rows.querySelector(".row-title-text"))).toBe("Recovered");
     });
 
     test("renaming a draft waits for its in-flight create before choosing the title save path", async () => {

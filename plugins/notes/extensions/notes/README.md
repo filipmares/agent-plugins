@@ -328,7 +328,7 @@ remain file-backed.
   replaced. Retired caches (including note text) remain on disk for safety;
   stop **all** Notes processes before manually deleting the index folder.
   Older schema versions also remain until deleted.
-  The background writer uses `.v3.sqlite` to isolate the new search columns
+  The background writer uses `.v4.sqlite` to isolate derived title changes
   from older writers.
 - It uses the host's built-in `node:sqlite` in a worker thread. Its folder is
   kept owner-only on macOS and Linux, and the index is
