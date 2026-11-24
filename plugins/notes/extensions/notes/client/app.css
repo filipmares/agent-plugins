@@ -383,6 +383,7 @@ mark { border-radius: 3px; background: var(--accent-subtle); color: var(--fg); }
 .tiptap ::selection, .note-text::selection { background: var(--selected); }
 .ask-note { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 0 12px 8px; }
 .ask-note .text-input { flex: 1; min-width: 160px; }
+.ask-note .button { min-height: 32px; }
 .ask-status { display: block; color: var(--muted); font-size: 12px; padding: 0 12px 8px; }
 .ask-status:empty { display: none; }
 .toolbar-separator { flex: none; height: 20px; border-left: 1px solid var(--border); margin: 0 4px; }

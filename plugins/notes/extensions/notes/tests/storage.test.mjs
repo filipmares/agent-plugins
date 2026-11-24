@@ -410,6 +410,19 @@ describe("search and filesystem boundaries", () => {
         expect((await library.search({ query: "cafe budget", offset: found.nextOffset })).notes[0].id).toBe(body.id);
         expect((await library.search({ query: "cafe absent" })).total).toBe(0);
         expect((await library.search({ query: "session-a" })).total).toBe(0);
+
+        const decomposed = `${"Cafe\u0301 ".repeat(60)}needle target`;
+        const nfd = await library.create({ body: decomposed, title: "IndependentTitle" }, author);
+        const nfdResult = await library.search({ query: "independenttitle needle" });
+        expect(nfdResult.notes[0].id).toBe(nfd.id);
+        expect(nfdResult.notes[0].snippet).toContain("needle target");
+        expect(nfdResult.notes[0].snippet.startsWith("...\u0301")).toBe(false);
+
+        const boundary = `${"x".repeat(179)}e\u0301 trailing`;
+        const boundaryNote = await library.create({ body: boundary, title: "BoundaryTitle" }, author);
+        const boundaryResult = await library.search({ query: "boundarytitle" });
+        expect(boundaryResult.notes[0].id).toBe(boundaryNote.id);
+        expect(boundaryResult.notes[0].snippet).toBe(`${"x".repeat(179)}e\u0301...`);
     });
 
     test("note titles are independent of Markdown headings and update automatic filenames", async () => {

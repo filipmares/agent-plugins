@@ -1,5 +1,5 @@
 {
-  "sourceHash": "39d0d0ea381836767bc213edd76915e6d3395e6624ac4bc85685bcff10538efb",
+  "sourceHash": "4ad64b6845e90373a16839ba240e9bfab09a9564f3e1beb578b3eb0369aff6ff",
   "bunVersion": "1.4.0",
   "adaptedSources": [
     {
@@ -26,15 +26,15 @@
     },
     {
       "file": "notes-client.js",
-      "sha256": "09303684c95b3abecb725682b5faef7f22a80be3f06d866e273a64132c605758"
+      "sha256": "40a18c5e228ed4b023a7c4b7a9d9115bbf3fc50c97cab2352fa0cf9324998dbb"
     },
     {
       "file": "notes-editor.js",
-      "sha256": "6ea77dfb030d5d7ee50f7c728bf5754775fa66c18cfc4484c82178c678cf8c63"
+      "sha256": "e667b70b2d7eaac8a9092bf1d2b5c5a03aa14305b06959ede565f45b0f4d9ce1"
     },
     {
       "file": "notes-client.css",
-      "sha256": "64b6e51991df785e2bdf94cb942f809efecdc0977558d70433a5db0304637094"
+      "sha256": "515802f5d680e8ad617db619897fb5e314370f53a24e41d965e02f8d3cd5b90b"
     }
   ],
   "packages": [

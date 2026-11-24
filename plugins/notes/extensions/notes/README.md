@@ -179,15 +179,16 @@ origin, pin status, custom properties, dates, and technical identifiers as
 read-only values. Malformed frontmatter hides properties and disables title
 renaming so the raw Markdown can be repaired.
 
-The **Copilot** button opens an inline prompt. Enter saves all current changes,
+**Ask Copilot** in the **Actions** menu opens an inline prompt. Enter or
+**Send** saves all current changes,
 then sends the prompt with the note's absolute file path attached to this panel's
 owning session. Conflicts or save failures block sending. The SDK's
 `session.send({ prompt, attachments: [{ type: "file", path, displayName }],
 mode: "enqueue" })` queues behind a busy turn; a returned message ID hides the
-prompt, returns focus to the Copilot button, and shows "Sent to chat" below the
-toolbar. Escape also hides the prompt; a failed send keeps it open with the
+prompt, returns focus to the **Actions** button, and shows "Sent to chat" below the
+toolbar. Escape also hides the prompt and restores focus; a failed send keeps it open with the
 text. There is no Ask Copilot shortcut and no retry that drops the attachment.
-The button is hidden when the panel was opened without a session, because
+The action is omitted when the panel was opened without a session, because
 there is no chat to send to.
 
 UI state (sidebar visibility, selection, open note, collapsed folders) is

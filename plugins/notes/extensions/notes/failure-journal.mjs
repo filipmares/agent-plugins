@@ -41,9 +41,9 @@ const TOOL_OPERATIONS = new Set(["append", "create", "delete", "folders", "move"
 const ROUTES = new Set([
     "/", "/app.css", "/app.js", "/editor.js",
     "/api/ask", "/api/diagnostics", "/api/events", "/api/folder/create", "/api/folder/delete",
-    "/api/folder/rename", "/api/folders", "/api/image", "/api/note", "/api/note/create",
-    "/api/note/delete", "/api/note/move", "/api/note/pin", "/api/note/rescue", "/api/note/update",
-    "/api/notes", "/api/open-link", "/api/startup", "/api/state", "/api/ui",
+    "/api/folder/rename", "/api/folders", "/api/image", "/api/index", "/api/note", "/api/note/create",
+    "/api/note/delete", "/api/note/move", "/api/note/pin", "/api/note/rescue", "/api/note/title",
+    "/api/note/update", "/api/notes", "/api/open-link", "/api/startup", "/api/state", "/api/ui",
 ]);
 const EVENTS = new Set([
     "notes.browser.editor_failure", "notes.browser.request_failure", "notes.browser.startup_stalled",

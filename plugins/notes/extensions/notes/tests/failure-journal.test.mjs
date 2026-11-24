@@ -259,4 +259,23 @@ describe("Notes failure journal", () => {
         expect(Buffer.byteLength(await readFile(journal.path))).toBeLessThanOrEqual(MAX_JOURNAL_BYTES);
         expect(Buffer.byteLength(await journal.renderIssueBundle())).toBeLessThanOrEqual(MAX_BUNDLE_BYTES);
     });
+
+    test("preserves /api/note/title and /api/index routes in failure records and recent operations", async () => {
+        const journal = await createJournal();
+        journal.recordOperation({ route: "/api/note/title", resultCode: "ok", durationMs: 5 });
+        journal.recordOperation({ route: "/api/index", resultCode: "index_busy", durationMs: 8 });
+        await journal.recordFailure({
+            eventName: "notes.request.failure",
+            errorCode: "io_error",
+            attributes: { component: "provider", route: "/api/note/title", status: 500 },
+        });
+        await journal.recordFailure({
+            eventName: "notes.request.failure",
+            errorCode: "index_unavailable",
+            attributes: { component: "provider", route: "/api/index", status: 503 },
+        });
+        const records = (await readFile(journal.path, "utf8")).trim().split("\n").map(JSON.parse);
+        expect(records.map(record => record.attributes.route)).toEqual(["/api/note/title", "/api/index"]);
+        expect(records[0].recentOperations.map(op => op.route)).toEqual(["/api/note/title", "/api/index"]);
+    });
 });
