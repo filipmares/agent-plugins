@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { Document, isMap, parseDocument, visit } from "./vendor/yaml.mjs";
-import { parseMarkdown } from "./vendor/markdown.mjs";
+import { markdownTitle, parseMarkdown } from "./vendor/markdown.mjs";
 import { NotesError, requireString } from "./errors.mjs";
 
 const ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
@@ -149,14 +149,14 @@ export function serializeNote(note, body, changes = {}) {
 }
 
 export function titleOf(body) {
-    return body.split(/\r?\n/, 1)[0].replace(/^#{1,6}\s+/, "").replace(/\s+#+\s*$/, "").trim() || "Untitled";
+    return markdownTitle(body) || "Untitled";
 }
 
 export function newNoteBody(body) {
     requireString(body, "body");
     const text = body.replace(/^(?:[ \t]*\r?\n)+/, "");
     const first = text.split(/\r?\n/, 1)[0];
-    return `# ${first.replace(/^#{1,6}\s+/, "").trim()}${text.slice(first.length)}`;
+    return `# ${first.replace(/^#{1,6}(?:\s+|$)/, "").trim()}${text.slice(first.length)}`;
 }
 
 export function slug(title) {

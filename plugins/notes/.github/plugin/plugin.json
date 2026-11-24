@@ -1,7 +1,7 @@
 {
   "name": "notes",
   "description": "Global Markdown notes for the GitHub Copilot app, with rich/plain editing, live sync, and Ask Copilot.",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "author": {
     "name": "filipmares"
   },

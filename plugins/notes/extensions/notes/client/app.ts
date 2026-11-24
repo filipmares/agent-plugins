@@ -226,8 +226,16 @@ const openKey = () => (state.note ? keyOf(state.note) : null);
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
 const inside = (path: string, folder: string) => folder === "" || path === folder || path.startsWith(`${folder}/`);
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
-const titleFromText = (text: string) => text.split("\n").find(line => line.trim())
-    ?.replace(/^\s*#+\s*/, "").replace(/&#(?:x0*9|0*9);/gi, "\t").trim() || "New Note";
+const fallbackTitle = (text: string) => {
+    const line = text.split(/\r?\n/, 1)[0];
+    const heading = line.replace(/^ {0,3}#{1,6}(?:[ \t]+|$)/, "");
+    return (heading === line ? line : heading.replace(/(?:^|[ \t])#+[ \t]*$/, "")).trim();
+};
+const titleFromText = (text: string, fallback = "New Note", skipBlankLines = false) => {
+    const source = skipBlankLines ? text.replace(/^(?:[ \t]*\r?\n)+/, "") : text;
+    return (editorModule?.markdownTitle?.(source) ?? fallbackTitle(source)) || fallback;
+};
+const hasDraftText = (text: string) => /[^#\s]/.test(text.replace(/&#(?:x0*(?:9|a|d|20)|0*(?:9|10|13|32));/gi, " "));
 
 // ---------- Layout ----------
 
@@ -550,7 +558,7 @@ let navGen = 0;
 
 const newDraft = (folder: string, title: string | null = null) => ({ folder, key: crypto.randomUUID(), title });
 const dirty = () => (state.draft
-    ? /[^#\s]/.test(textarea.value) || state.draft.title !== null
+    ? hasDraftText(textarea.value) || state.draft.title !== null
     : state.note !== null && (textarea.value !== state.sent || state.pendingTitle !== null));
 
 function resetSaveStatus() {
@@ -663,6 +671,7 @@ function prepareEditor() {
             const focus = editorFocus;
             prepareEditor();
             renderEditor();
+            if (state.draft) renderList();
             if (focus) focusEditor();
         }, error => {
             if (token !== editorToken) return;
@@ -808,7 +817,7 @@ async function save(): Promise<boolean> {
             const created = draft !== null;
             let note = draft
                 ? await request<Note>("api/note/create", {
-                    body: text, title: draft.title ?? titleFromText(text), folder: draft.folder, draft: draft.key,
+                    body: text, ...(draft.title !== null ? { title: draft.title } : {}), folder: draft.folder, draft: draft.key,
                 })
                 : state.note!;
             if (!created && text !== state.sent) {
@@ -915,7 +924,7 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
 addEventListener("pagehide", () => {
     if (!dirty() && !state.conflict) return;
     const body = state.draft
-        ? { draft: state.draft.key, folder: state.draft.folder, body: textarea.value, title: state.draft.title ?? titleFromText(textarea.value) }
+        ? { draft: state.draft.key, folder: state.draft.folder, body: textarea.value, ...(state.draft.title !== null ? { title: state.draft.title } : {}) }
         : { id: keyOf(state.note!), folder: state.note!.folder, body: textarea.value, expectedVersion: state.note!.version,
             ...(state.pendingTitle !== null ? { title: state.pendingTitle } : {}),
             ...(state.conflict ? { stash: true } : {}) };
@@ -1067,7 +1076,8 @@ async function refresh() {
         if (!(error instanceof ApiError && error.code === "not_found") || stale()) return;
         if (dirty()) {
             navGen++;
-            state.draft = newDraft(state.note!.folder, state.pendingTitle ?? state.note!.title);
+            state.draft = newDraft(state.note!.folder,
+                state.pendingTitle ?? (typeof state.note!.frontmatter.title === "string" ? state.note!.frontmatter.title : null));
             state.note = null;
             state.pendingTitle = null;
             state.conflict = false;
@@ -1789,7 +1799,7 @@ function renderList(preserveScroll = false) {
     const children: HTMLElement[] = [];
     if (state.draft) {
         children.push(h("div", { class: "row draft", role: "option", tabindex: "-1", "aria-selected": "true" },
-            h("div", { class: "row-title" }, h("span", { class: "row-title-text" }, state.draft.title ?? titleFromText(textarea.value))),
+            h("div", { class: "row-title" }, h("span", { class: "row-title-text" }, currentTitle())),
             h("div", { class: "row-meta" }, h("span", { class: "row-date" }, "Now"), h("span", { class: "row-preview" }, "No additional text"))));
     }
     const today = startOfDay(new Date());
@@ -1988,10 +1998,11 @@ function fillFrontmatter(note: Note) {
 }
 
 function currentTitle() {
-    if (state.draft) return state.draft.title ?? titleFromText(textarea.value);
+    if (state.draft) return state.draft.title ?? titleFromText(textarea.value, "New Note", true);
     if (!state.note) return "";
     if (state.pendingTitle !== null) return state.pendingTitle;
-    return typeof state.note.frontmatter.title === "string" ? state.note.title : titleFromText(textarea.value);
+    return typeof state.note.frontmatter.title === "string" || textarea.value === state.sent
+        ? state.note.title : titleFromText(textarea.value, "Untitled");
 }
 
 function renderToolbarTitle() {

@@ -12,6 +12,12 @@ and plugin versioning follows [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## [Unreleased]
 
+### Fixed — Note titles
+- Stop autosave, close-time rescue, and external-delete recovery from locking implicit draft headings into `frontmatter.title`, so derived titles and automatic filenames keep tracking heading edits until explicitly renamed.
+- Derive note titles from parsed CommonMark headings instead of raw Markdown text so escapes and trailing-space/tab character references (such as `&#x20;`, `&#x9;`, `\#`, `\*`) never leak into the toolbar, note list, or filenames.
+- Keep whitespace-entity-only drafts clean and advance the SQLite shadow index to `.v4.sqlite` so cached derived titles recompute cleanly.
+- Bumped Notes to `1.0.6` and the independent marketplace catalog to `4.0.6`.
+
 ### Changed — SQLite list and search
 - Use verified SQLite results for list and search, with Markdown fallback when the cache cannot answer. Note contents and edits remain file-backed.
 - Bumped Notes to `1.0.5` and the independent marketplace catalog to `4.0.5`.
