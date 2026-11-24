@@ -12,6 +12,14 @@ and plugin versioning follows [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## [Unreleased]
 
+### Fixed — Notes UI polish, popovers, diagnostics, and Unicode search
+- Removed the detached `copilotButton`, added a visible **Send** button to Ask Copilot, and restored focus to the **Actions** trigger when hiding the prompt.
+- Dismissed the **Properties** and link popovers on outside click and Escape, restoring focus to **Properties** when dismissed via keyboard from inside.
+- Added `/api/note/title` and `/api/index` to the Notes diagnostic route allowlists so failures on those endpoints keep their route metadata.
+- Highlighted accent-folded precomposed and decomposed search matches in the note list and mapped Unicode snippet offsets accurately when diacritics or title-first multi-word queries appear.
+- Updated Settings SQLite index copy and Formatting help shortcuts, and removed unused `expandedFrontmatter` and `headerExtension` code.
+- Bumped Notes to `1.0.7` and the independent marketplace catalog to `4.0.7`.
+
 ### Fixed — Note titles
 - Stop autosave, close-time rescue, and external-delete recovery from locking implicit draft headings into `frontmatter.title`, so derived titles and automatic filenames keep tracking heading edits until explicitly renamed.
 - Derive note titles from parsed CommonMark headings instead of raw Markdown text so escapes and trailing-space/tab character references (such as `&#x20;`, `&#x9;`, `\#`, `\*`) never leak into the toolbar, note list, or filenames.

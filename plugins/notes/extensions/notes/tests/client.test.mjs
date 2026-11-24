@@ -16,7 +16,7 @@ if (instrumented === source) throw new Error("Cannot await Notes client startup.
 const lazy = instrumented.replace(/^const importEditor = .+;$/m, "");
 if (lazy === instrumented) throw new Error("Cannot replace the Notes editor loader.");
 const script = new Bun.Transpiler({ loader: "ts" }).transformSync(lazy + `
-globalThis.client = { state, textarea, toast, openNote, moveNote, save, resolveConflict, refresh, select, askInput, askStatus, askPanel, copilotButton, compose, toggleMarkdown, rows, renderList, listCount, formattingHelp,
+globalThis.client = { state, textarea, toast, openNote, moveNote, save, resolveConflict, refresh, select, askInput, askSend, askStatus, askPanel, toggleAsk, compose, toggleMarkdown, editLink, rows, renderList, listCount, formattingHelp,
     flushDiagnostics, showDiagnostics, settingsButton, editNoteTitle,
     frontmatterView, frontmatterContext, frontmatterDetails, frontmatterMore, toolbarTitle, toolbarActions, isPlain: () => plain,
     editorLoading, richElement, markdownButton, focusEditor, isWaiting: () => editorWaiting, listStatus: () => listStatus,
@@ -81,9 +81,12 @@ class Element extends EventTarget {
     focus(options) {
         const modal = this.ownerDocument?.body.querySelectorAll("dialog").find(dialog => dialog.hasAttribute("open"));
         if (modal && !modal.contains(this)) return;
+        let root = this;
         for (let element = this; element; element = element.parentElement) {
             if (element.hidden || element.inert) return;
+            root = element;
         }
+        if (this.ownerDocument && root !== this.ownerDocument.body) return;
         this.lastFocusOptions = options;
         if (this.ownerDocument) this.ownerDocument.activeElement = this;
     }
@@ -132,9 +135,11 @@ async function openClient({ richSafe = false, importEditor, respond, startupToas
         body: new Element("body"), activeElement: null,
         createElement: tag => Object.assign(new Element(tag), { ownerDocument: document }),
         createElementNS: () => Object.assign(new Element("svg"), { ownerDocument: document }),
-        getElementById: () => new Element(),
+        getElementById: () => appRoot,
     });
     document.body.ownerDocument = document;
+    const appRoot = Object.assign(new Element("div"), { ownerDocument: document });
+    document.body.append(appRoot);
     const pending = new Set();
     const calls = [];
     const clipboard = [];
@@ -155,7 +160,7 @@ async function openClient({ richSafe = false, importEditor, respond, startupToas
         // Only the rendered view is inert. Real codec/schema and browser tests cover the rich view separately.
         createRichEditor: callbacks => {
             richCallbacks = callbacks;
-            return { safe: richSafe, editor: { destroy() {}, commands: { focus() {} }, isFocused: false, state: { selection: { from: 1 } } } };
+            return { safe: richSafe, editor: { destroy() {}, commands: { focus() {} }, getAttributes: () => ({}), isFocused: false, state: { selection: { from: 1, to: 1, empty: true } } } };
         },
         importEditor: () => importEditor
             ? importEditor({ createRichEditor: sandbox.createRichEditor, markdownTitle })
@@ -1285,7 +1290,7 @@ describe("Notes client persistence", () => {
         expect(panel.calls.filter(call => call.path === "api/ask")).toHaveLength(count);
     });
 
-    test("Ask Copilot hides on Escape and after sending, but stays open with the prompt when sending fails", async () => {
+    test("Ask Copilot opens from Actions, hides on Escape or Send, restores focus, and stays open on failure", async () => {
         await server.close();
         const sent = [];
         let fail = true;
@@ -1297,32 +1302,39 @@ describe("Notes client persistence", () => {
         const note = await library.create({ body: "# Ask\nsend me" }, context);
         const panel = await openClient();
         await panel.openNote(note.id);
-        expect(panel.copilotButton.hidden).toBe(false);
-        const press = key => panel.askInput.dispatchEvent(Object.assign(new Event("keydown"), { key }));
+        const openAsk = () => {
+            panel.toolbarActions.dispatchEvent(new Event("click"));
+            const menu = panel.document.body.querySelector(".menu");
+            const item = menu.querySelectorAll("button").find(button => text(button) === "Ask Copilot");
+            expect(item).toBeDefined();
+            item.dispatchEvent(new Event("click"));
+        };
         const settled = async status => {
             for (let i = 0; i < 200 && panel.askStatus.textContent !== status; i++) await Bun.sleep(5);
             expect(panel.askStatus.textContent).toBe(status);
         };
-        panel.copilotButton.dispatchEvent(new Event("click"));
+        openAsk();
         expect(panel.askPanel.hidden).toBe(false);
-        press("Escape");
+        expect(panel.activeElement).toBe(panel.askInput);
+        panel.askPanel.dispatchEvent(Object.assign(new Event("keydown"), { key: "Escape" }));
         expect(panel.askPanel.hidden).toBe(true);
-        expect(panel.copilotButton.getAttribute("aria-expanded")).toBe("false");
+        expect(panel.activeElement).toBe(panel.toolbarActions);
 
-        panel.copilotButton.dispatchEvent(new Event("click"));
+        openAsk();
         panel.askInput.value = "Summarize";
-        press("Enter");
+        panel.askSend.dispatchEvent(new Event("click"));
         await settled("Not sent");
         expect(panel.askPanel.hidden).toBe(false);
         expect(panel.askInput.value).toBe("Summarize");
 
         fail = false;
-        press("Enter");
+        panel.askSend.focus();
+        panel.askSend.dispatchEvent(new Event("click"));
         await settled("Sent to chat");
         expect(sent).toMatchObject([{ prompt: "Summarize" }]);
         expect(panel.askPanel.hidden).toBe(true);
-        expect(panel.copilotButton.getAttribute("aria-expanded")).toBe("false");
         expect(panel.askInput.value).toBe("");
+        expect(panel.activeElement).toBe(panel.toolbarActions);
     });
 
     test.each([false, true])("close/reopen preserves unresolved recovery until explicit resolution (keep mine: %s)", async keepMine => {
@@ -1414,15 +1426,94 @@ describe("Notes client persistence", () => {
         const panel = await openClient();
         expect(panel.state.context).toEqual({ sessionId: null, project: null, sessionName: null });
         expect(panel.state.ui.selection).toEqual({ view: "all" });
-        expect(panel.copilotButton.hidden).toBe(true);
 
         await panel.compose();
         panel.textarea.value = "# Loose\nNo session";
         expect(await panel.save()).toBe(true);
         expect(panel.toast.hidden).toBe(true);
+        panel.toolbarActions.dispatchEvent(new Event("click"));
+        const menu = panel.document.body.querySelector(".menu");
+        expect(text(menu)).not.toContain("Ask Copilot");
         const [saved] = (await library.list()).notes;
         expect((await library.read(saved.id)).frontmatter).toMatchObject({ created_by: "user", sessions: [] });
         expect((await library.read(saved.id)).frontmatter).not.toHaveProperty("session_id");
+    });
+
+    test("Properties and link popovers close on outside pointerdown and Escape", async () => {
+        const project = "owner/a-project-name-that-is-long-enough-to-truncate";
+        const note = await library.create({ body: "# Popovers\nBody" }, { ...context, project });
+        const panel = await openClient({ richSafe: true });
+        await panel.openNote(note.id);
+
+        panel.frontmatterMore.dispatchEvent(new Event("click"));
+        expect(panel.frontmatterDetails.hidden).toBe(false);
+        const insidePointer = new Event("pointerdown");
+        Object.defineProperty(insidePointer, "target", { value: panel.frontmatterDetails });
+        panel.document.dispatchEvent(insidePointer);
+        expect(panel.frontmatterDetails.hidden).toBe(false);
+
+        const outsidePointer = new Event("pointerdown");
+        Object.defineProperty(outsidePointer, "target", { value: panel.rows });
+        panel.document.dispatchEvent(outsidePointer);
+        expect(panel.frontmatterDetails.hidden).toBe(true);
+
+        panel.frontmatterMore.dispatchEvent(new Event("click"));
+        const copy = property(panel, "project").querySelector("button");
+        copy.focus();
+        expect(panel.activeElement).toBe(copy);
+        const composingEscape = Object.assign(new Event("keydown", { cancelable: true }), { key: "Escape", isComposing: true });
+        panel.document.dispatchEvent(composingEscape);
+        expect(panel.frontmatterDetails.hidden).toBe(false);
+        const escape = Object.assign(new Event("keydown", { cancelable: true }), { key: "Escape" });
+        panel.document.dispatchEvent(escape);
+        expect(panel.frontmatterDetails.hidden).toBe(true);
+        expect(panel.activeElement).toBe(panel.frontmatterMore);
+
+        panel.frontmatterMore.dispatchEvent(new Event("click"));
+        expect(panel.frontmatterDetails.hidden).toBe(false);
+        panel.toolbarActions.dispatchEvent(new Event("click"));
+        expect(panel.frontmatterDetails.hidden).toBe(true);
+        panel.document.dispatchEvent(outsidePointer);
+
+        panel.editLink();
+        expect(panel.editorPane.querySelector(".link-popover")).not.toBeNull();
+        panel.document.dispatchEvent(outsidePointer);
+        expect(panel.editorPane.querySelector(".link-popover")).toBeNull();
+
+        panel.editLink();
+        expect(panel.editorPane.querySelector(".link-popover")).not.toBeNull();
+        panel.document.dispatchEvent(Object.assign(new Event("keydown", { cancelable: true }), { key: "Escape" }));
+        expect(panel.editorPane.querySelector(".link-popover")).toBeNull();
+    });
+
+    test("search highlights accent-folded precomposed and decomposed matches", async () => {
+        await library.create({ body: "# Caf\u00e9 menu\nVisit Cafe\u0301 today" }, context);
+        const panel = await openClient();
+        panel.state.query = "cafe";
+        await panel.refresh();
+        const marks = descendants(panel.rows).filter(node => node.tagName === "mark").map(node => text(node));
+        expect(marks).toEqual(["Caf\u00e9", "Cafe\u0301"]);
+    });
+
+    test("captures /api/index browser failures with route metadata", async () => {
+        const panel = await openClient({ respond: path => {
+            if (path !== "api/index") return;
+            return new Response(JSON.stringify({ error: { code: "index_unavailable", message: "Index offline." } }), { status: 503 });
+        } });
+        try {
+            panel.settingsButton.dispatchEvent(new Event("click"));
+            await panel.settle();
+            await new Promise(resolve => setTimeout(resolve, 0));
+            await panel.flushDiagnostics();
+            await panel.settle();
+            const records = (await readFile(diagnostics.path, "utf8")).trim().split("\n").map(JSON.parse);
+            expect(records).toContainEqual(expect.objectContaining({
+                eventName: "notes.browser.request_failure",
+                attributes: expect.objectContaining({ route: "/api/index", errorCode: "index_unavailable", status: 503 }),
+            }));
+        } finally {
+            panel.document.body.querySelector("dialog")?.close();
+        }
     });
 
     test("Keep Mine writes text undone to the old saved body instead of treating it as clean", async () => {

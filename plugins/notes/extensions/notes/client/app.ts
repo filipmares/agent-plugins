@@ -30,7 +30,7 @@ class ApiError extends Error {
 const NOTE_KEY = "application/x-copilot-note";
 const diagnosticRoutes = new Set([
     "/api/ask", "/api/folder/create", "/api/folder/delete", "/api/folder/rename", "/api/folders",
-    "/api/image", "/api/note", "/api/note/create", "/api/note/delete", "/api/note/move", "/api/note/title",
+    "/api/image", "/api/index", "/api/note", "/api/note/create", "/api/note/delete", "/api/note/move", "/api/note/title",
     "/api/note/pin", "/api/note/rescue", "/api/note/update", "/api/notes", "/api/open-link",
     "/api/startup", "/api/state", "/api/ui",
 ]);
@@ -262,7 +262,7 @@ const textarea = h("textarea", { class: "note-text", "aria-label": "Note", spell
 const richElement = h("div", { class: "rich-note", hidden: true });
 const editorLoading = h("div", { class: "editor-loading", role: "status", hidden: true }, "Loading editor…");
 let rich: Editor | null = null;
-let heldFrontmatterFocus: string | null = null;
+let heldFrontmatterFocus = false;
 let plain = false;
 let guarded = false;
 let editorError = false;
@@ -288,16 +288,11 @@ const saveButton = iconButton("check", "Saved", () => {
 }, { class: "icon-button save-button", "aria-controls": "save-details", "aria-expanded": "false", hidden: true });
 const markdownButton = h("button", { type: "button", class: "toolbar-label-button markdown-button", onclick: () => toggleMarkdown() },
     icon("code"), h("span", {}, "Markdown"));
-const copilotButton = iconButton("copilot", "Ask Copilot about this note", () => {
-    if (!askPanel.hidden) return hideAsk();
-    askPanel.hidden = false;
-    copilotButton.setAttribute("aria-expanded", "true");
-    askInput.focus();
-}, { "aria-expanded": "false", "aria-controls": "ask-note" });
 const askInput = h("input", { type: "text", class: "text-input", "aria-label": "Ask Copilot about this note", placeholder: "Ask about this note", maxlength: "16000" });
+const askSend = h("button", { type: "button", class: "button primary", onclick: () => void submitAsk() }, "Send");
 // Stays visible below the toolbar after the prompt hides, without crowding the action buttons.
 const askStatus = h("span", { role: "status", class: "ask-status" });
-const askPanel = h("div", { id: "ask-note", class: "ask-note", hidden: true }, askInput);
+const askPanel = h("div", { id: "ask-note", class: "ask-note", hidden: true }, askInput, askSend);
 const emptyEditor = h("div", { class: "empty-editor" }, icon("note"), h("p", {}, "No note selected"));
 const formattingHelp = h("footer", { class: "editor-help", hidden: true },
     h("button", { type: "button", class: "text-button", onclick: () => void showFormattingHelp() }, "Formatting help"));
@@ -717,7 +712,7 @@ function toggleMarkdown(forceRich = false) {
     if ((!state.note && !state.draft) || editorWaiting) return;
     if (editorError) { showToast("Resolve the rich-editor error before changing views; your rich text is still in the panel."); return; }
     heldFrontmatterFocus = frontmatterFocus();
-    const keepPropertyFocus = heldFrontmatterFocus !== null;
+    const keepPropertyFocus = heldFrontmatterFocus;
     if (!plain) plain = true;
     else {
         prepareEditor();
@@ -759,8 +754,8 @@ function editLink() {
         h("button", { type: "button", class: "button", onclick: close }, "Cancel"),
         h("button", { type: "button", class: "button primary", onclick: () => apply(false) }, "Apply")));
     panel.addEventListener("keydown", event => {
-        if (event.key === "Escape") { event.preventDefault(); close(); }
-        if (event.key === "Enter" && event.target === input) { event.preventDefault(); apply(false); }
+        if (event.key === "Escape" && !event.isComposing) { event.preventDefault(); close(); }
+        if (event.key === "Enter" && !event.isComposing && event.target === input) { event.preventDefault(); apply(false); }
     });
     editorPane.querySelector(".link-popover")?.remove();
     editorPane.append(panel);
@@ -768,23 +763,28 @@ function editLink() {
     input.select();
 }
 
-// Hiding the focused input would drop focus to the page, so return it to the toggle.
+function toggleAsk() {
+    if (!state.context.sessionId || (!state.note && !state.draft)) return;
+    if (!askPanel.hidden) return hideAsk();
+    askPanel.hidden = false;
+    askInput.focus();
+}
+
+// Hiding the focused prompt would drop focus to the page, so return it to the Actions button.
 function hideAsk() {
     const focused = askPanel.contains(document.activeElement);
     askPanel.hidden = true;
-    copilotButton.setAttribute("aria-expanded", "false");
-    if (focused) copilotButton.focus();
+    if (focused && !toolbarActions.hidden && !toolbarActions.disabled) toolbarActions.focus();
 }
 
 let asking = false;
-askInput.addEventListener("keydown", async event => {
-    if (event.key === "Escape" && !event.isComposing) { event.preventDefault(); hideAsk(); return; }
-    if (event.key !== "Enter" || event.isComposing || asking || !askInput.value.trim()) return;
-    event.preventDefault();
+async function submitAsk() {
+    if (asking || !askInput.value.trim()) return;
     const prompt = askInput.value;
     const gen = navGen;
     asking = true;
     askInput.readOnly = true;
+    askSend.disabled = true;
     askStatus.textContent = "Saving...";
     try {
         if (!(await flush({ keepDraft: true })) || gen !== navGen) { askStatus.textContent = "Not sent"; return; }
@@ -796,7 +796,16 @@ askInput.addEventListener("keydown", async event => {
         hideAsk();
         window.setTimeout(() => { if (gen === navGen && askStatus.textContent === "Sent to chat") askStatus.textContent = ""; }, 3000);
     } catch (error) { askStatus.textContent = "Not sent"; showToast(message(error)); }
-    finally { asking = false; askInput.readOnly = false; }
+    finally { asking = false; askInput.readOnly = false; askSend.disabled = false; }
+}
+
+askPanel.addEventListener("keydown", event => {
+    if (event.key === "Escape" && !event.isComposing) { event.preventDefault(); hideAsk(); }
+});
+askInput.addEventListener("keydown", event => {
+    if (event.key !== "Enter" || event.isComposing) return;
+    event.preventDefault();
+    void submitAsk();
 });
 
 function scheduleSave() {
@@ -1222,8 +1231,8 @@ function openToolbarActions(event: MouseEvent) {
         label: plain ? "View as rich text" : "View as Markdown",
         icon: "code", disabled: !!note?.warning || editorWaiting, action: () => toggleMarkdown(),
     });
-    if (note && !copilotButton.hidden) items.push({
-        label: "Ask Copilot", icon: "copilot", action: () => copilotButton.dispatchEvent(new Event("click")),
+    if (note && state.context.sessionId) items.push({
+        label: askPanel.hidden ? "Ask Copilot" : "Hide Ask Copilot", icon: "copilot", action: toggleAsk,
     });
     if (note) items.push(
         { label: note.pinned ? "Unpin note" : "Pin note", icon: note.pinned ? "pin-slash" : "pin", action: () => void togglePin(note) },
@@ -1340,6 +1349,7 @@ function closeMenu(restore = false) {
 
 function showMenu(x: number, y: number, items: MenuItem[], returnTarget?: HTMLElement) {
     closeMenu();
+    if (!frontmatterDetails.hidden) setFrontmatterOpen(false);
     menuReturn = returnTarget ?? document.activeElement as HTMLElement | null;
     if (menuReturn?.getAttribute("aria-haspopup") === "menu") menuReturn.setAttribute("aria-expanded", "true");
     menu = h("div", { class: "menu", role: "menu" }, ...items.map(item => item === "-"
@@ -1366,7 +1376,11 @@ function showMenu(x: number, y: number, items: MenuItem[], returnTarget?: HTMLEl
 }
 
 document.addEventListener("pointerdown", event => {
-    if (menu && !menu.contains(event.target as Node) && !toolbarActions.contains(event.target as Node)) closeMenu();
+    const target = event.target as Node;
+    if (menu && !menu.contains(target) && !toolbarActions.contains(target)) closeMenu();
+    if (!frontmatterDetails.hidden && !frontmatterView.contains(target)) setFrontmatterOpen(false);
+    const linkPopover = editorPane.querySelector(".link-popover");
+    if (linkPopover && !linkPopover.contains(target)) linkPopover.remove();
 }, true);
 addEventListener("blur", () => closeMenu());
 addEventListener("resize", () => closeMenu());
@@ -1408,19 +1422,23 @@ function actions<T>(close: (value: T | null) => void, confirm: string, value: ()
 
 function showFormattingHelp() {
     return modal<void>("Formatting help", close => [
-        h("p", { class: "dialog-text" }, "In rich text, type these at the start of a line, then press Space:"),
+        h("p", { class: "dialog-text" }, "In rich text, type these Markdown shortcuts:"),
         h("dl", { class: "formatting-shortcuts" },
-            h("dt", {}, h("code", {}, "#"), " / ", h("code", {}, "##"), " / ", h("code", {}, "###")), h("dd", {}, "Headings"),
-            h("dt", {}, h("code", {}, "-"), " / ", h("code", {}, "1.")), h("dd", {}, "Bullet / numbered list"),
-            h("dt", {}, h("code", {}, ">")), h("dd", {}, "Quote")),
+            h("dt", {}, h("code", {}, "#"), " / ", h("code", {}, "##"), " / ", h("code", {}, "###"), " + Space"), h("dd", {}, "Headings"),
+            h("dt", {}, h("code", {}, "-"), " / ", h("code", {}, "1."), " + Space"), h("dd", {}, "Bullet / numbered list"),
+            h("dt", {}, h("code", {}, ">"), " + Space"), h("dd", {}, "Quote"),
+            h("dt", {}, h("code", {}, "```"), " / ", h("code", {}, "---")), h("dd", {}, "Code block / divider"),
+            h("dt", {}, h("code", {}, "[label](https://…)")), h("dd", {}, "Link when closing ) is typed"),
+            h("dt", {}, h("code", {}, "| A | B |"), " + Enter"), h("dd", {}, "Table (Tab moves cells and adds rows)")),
         h("p", { class: "dialog-text" }, "For a checklist, start a bullet, then type [ ] followed by Space."),
         h("p", { class: "dialog-text" }, "Use Ctrl on Windows/Linux or Command on Mac:"),
         h("dl", { class: "formatting-shortcuts" },
             h("dt", {}, "Ctrl / Command + B"), h("dd", {}, "Bold"),
             h("dt", {}, "Ctrl / Command + I"), h("dd", {}, "Italic"),
+            h("dt", {}, "Ctrl / Command + Shift + S"), h("dd", {}, "Strikethrough"),
             h("dt", {}, "Ctrl / Command + E"), h("dd", {}, "Inline code"),
             h("dt", {}, "Ctrl / Command + K"), h("dd", {}, "Edit link")),
-        h("p", { class: "dialog-text" }, "View as Markdown lets you edit the source, including tables and other formatting."),
+        h("p", { class: "dialog-text" }, "View as Markdown lets you edit the source, including adding table columns and other formatting."),
         h("div", { class: "dialog-actions" },
             h("button", { type: "button", class: "button", onclick: () => close(null) }, "Close")),
     ]);
@@ -1514,7 +1532,7 @@ function indexSettings() {
     return {
         element: h("section", { class: "settings-section", "aria-labelledby": "settings-index" },
             h("h3", { id: "settings-index", class: "settings-section-title" }, "SQLite index"),
-            h("p", { class: "dialog-text" }, "Local, shared cache only. Notes reads and searches Markdown files. Status is from this session, not a guarantee that the cache is current."),
+            h("p", { class: "dialog-text" }, "Local, shared cache used for verified list and search queries, with Markdown fallback; note contents and edits stay file-backed. Status is from this session."),
             status, details, errorText,
             h("p", { class: "dialog-text" }, "Check / retry verifies integrity and synchronizes. Rebuild switches to a new cache without changing notes. Other sessions switch on their next synchronization; old caches are retained for safety."),
             h("div", { class: "index-actions" }, check, rebuild)),
@@ -1733,30 +1751,53 @@ function shortDate(iso: string, today: number) {
     return dateFormats().date.format(time);
 }
 
+const foldText = (value: string) => value.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+
+function foldWithOffsets(text: string): { folded: string; starts: number[] } {
+    if (/^[\x00-\x7f]*$/.test(text)) return { folded: text.toLowerCase(), starts: [] };
+    let folded = "";
+    const starts: number[] = [];
+    for (let i = 0; i < text.length;) {
+        const cp = text.codePointAt(i)!;
+        const len = cp > 0xffff ? 2 : 1;
+        const part = foldText(text.slice(i, i + len));
+        for (let j = 0; j < part.length; j++) starts.push(i);
+        folded += part;
+        i += len;
+    }
+    return { folded, starts };
+}
+
 function highlight(text: string, words: string[]): Child[] {
     if (!words.length) return [text];
-    const lower = text.toLowerCase();
+    const { folded, starts } = foldWithOffsets(text);
+    const offset = (pos: number) => (!starts.length ? pos : pos < starts.length ? starts[pos] : text.length);
     const out: Child[] = [];
     let index = 0;
-    while (index < text.length) {
+    let rawCursor = 0;
+    while (index < folded.length) {
         let best = -1;
         let length = 0;
         for (const word of words) {
-            const found = lower.indexOf(word, index);
+            if (!word) continue;
+            const found = folded.indexOf(word, index);
             if (found !== -1 && (best === -1 || found < best || (found === best && word.length > length))) {
                 best = found;
                 length = word.length;
             }
         }
-        if (best === -1) {
-            out.push(text.slice(index));
-            break;
-        }
-        if (best > index) out.push(text.slice(index, best));
-        out.push(h("mark", {}, text.slice(best, best + length)));
-        index = best + length;
+        if (best === -1) break;
+        let end = best + length;
+        while (starts.length && end < starts.length && starts[end] === starts[end - 1]) end++;
+        const rawStart = offset(best);
+        const rawEnd = offset(end);
+        if (rawStart > rawCursor) out.push(text.slice(rawCursor, rawStart));
+        out.push(h("mark", {}, text.slice(rawStart, rawEnd)));
+        rawCursor = rawEnd;
+        index = end;
     }
-    return out;
+    if (rawCursor < text.length) out.push(text.slice(rawCursor));
+    return out.length ? out : [text];
 }
 
 function preview(note: Summary) {
@@ -1793,7 +1834,7 @@ function noteRow(note: Summary, words: string[], searching: boolean, today: numb
 
 function renderList(preserveScroll = false) {
     const searching = state.query.trim() !== "";
-    const words = state.query.toLowerCase().split(/\s+/).filter(Boolean);
+    const words = foldText(state.query).split(/\s+/).filter(Boolean);
     listTitle.textContent = searching ? "Search" : selectionName();
     listCount.textContent = listStatus !== "ready" ? "" : searching ? plural(state.notes.length, "result") : plural(state.notes.length, "note");
     const children: HTMLElement[] = [];
@@ -1892,13 +1933,13 @@ const frontmatterGroups = [
 ] as const;
 const builtInFields = new Set<string>(["title", "created_by", "project", "session_name", "pinned",
     ...frontmatterGroups.flatMap(group => group.fields.map(([key]) => key))]);
-const expandedFrontmatter = new Set<string>();
 let shownFrontmatter: { key: string; version: string } | null = null;
 
-function setFrontmatterOpen(open: boolean) {
+function setFrontmatterOpen(open: boolean, restoreFocus = false) {
+    const hadFocus = frontmatterDetails.contains(document.activeElement);
     frontmatterDetails.hidden = !open;
     frontmatterMore.setAttribute("aria-expanded", String(open));
-    frontmatterMore.replaceChildren("Properties", icon("chevron-down"));
+    if (!open && restoreFocus && hadFocus) frontmatterMore.focus();
 }
 
 function frontmatterRow(key: string, label: string, value: JsonValue) {
@@ -1939,19 +1980,16 @@ function frontmatterGroup(title: string, rows: HTMLElement[]) {
 }
 
 function frontmatterFocus() {
-    const active = document.activeElement;
-    if (active === frontmatterMore) return "more";
-    return active && frontmatterView.contains(active) ? active.getAttribute("data-frontmatter-field") : null;
+    return document.activeElement === frontmatterMore;
 }
 
 function renderFrontmatter() {
     const note = state.note;
-    const focused = heldFrontmatterFocus ?? frontmatterFocus();
-    heldFrontmatterFocus = null;
+    const focused = heldFrontmatterFocus || frontmatterFocus();
+    heldFrontmatterFocus = false;
     frontmatterView.hidden = !note || !!note.warning;
     if (!note || note.warning) {
         shownFrontmatter = null;
-        expandedFrontmatter.clear();
         frontmatterContext.replaceChildren();
         frontmatterDetails.replaceChildren();
         setFrontmatterOpen(false);
@@ -1960,17 +1998,13 @@ function renderFrontmatter() {
     const key = keyOf(note);
     const sameNote = key === shownFrontmatter?.key;
     if (!(sameNote && note.version === shownFrontmatter?.version)) {
-        if (!sameNote) {
-            expandedFrontmatter.clear();
-            setFrontmatterOpen(false);
-        }
+        if (!sameNote) setFrontmatterOpen(false);
         fillFrontmatter(note);
         shownFrontmatter = { key, version: note.version };
     }
-    // Moving between the rich editor and Markdown view, or rebuilding either, drops focus from the row.
+    // Moving between the rich editor and Markdown view, or rebuilding either, drops focus from the toggle.
     if (sameNote && focused && !frontmatterView.contains(document.activeElement)) {
-        const field = Array.from(frontmatterContext.children).find(item => item.getAttribute("data-frontmatter-field") === focused) as HTMLElement | undefined;
-        (field ?? frontmatterMore).focus();
+        frontmatterMore.focus();
     }
 }
 
@@ -2028,7 +2062,6 @@ function renderEditor() {
     markdownButton.title = plain ? "View as rich text" : "View as Markdown";
     markdownButton.replaceChildren(icon("code"), h("span", {}, plain ? "Rich text" : "Markdown"));
     renderFrontmatter();
-    copilotButton.disabled = !active;
     toolbarActions.hidden = !active;
     fidelityBanner.hidden = !active || !guarded;
     if (guarded) fidelityBanner.replaceChildren(h("span", {}, GUARD_MESSAGE),
@@ -2079,7 +2112,20 @@ function closeOverlayOnEscape(target: EventTarget | null) {
 }
 
 document.addEventListener("keydown", event => {
-    if (event.key === "Escape") closeOverlayOnEscape(event.target);
+    if (event.key !== "Escape" || event.defaultPrevented || event.isComposing) return;
+    if ((event.target as Element | null)?.closest?.("dialog[open]")) return;
+    const linkPopover = editorPane.querySelector(".link-popover");
+    if (linkPopover) {
+        event.preventDefault();
+        linkPopover.remove();
+        return;
+    }
+    if (!frontmatterDetails.hidden) {
+        event.preventDefault();
+        setFrontmatterOpen(false, true);
+        return;
+    }
+    closeOverlayOnEscape(event.target);
 });
 
 let eventsConnected = false;
@@ -2206,7 +2252,6 @@ async function start(gen = navGen) {
     }
     state.context = initial.context;
     stateLoaded = true;
-    copilotButton.hidden = !state.context.sessionId;
     const stale = gen !== navGen;
     state.ui = stale ? { ...initial.ui, selection: state.ui.selection, noteId: state.ui.noteId } : initial.ui;
     const selection = state.ui.selection;

@@ -22,6 +22,21 @@ export function summary(note) {
     };
 }
 
+function foldedOffset(text, target) {
+    if (target <= 0) return 0;
+    if (/^[\x00-\x7f]*$/.test(text)) return target;
+    let folded = 0;
+    for (let i = 0; i < text.length;) {
+        const cp = text.codePointAt(i);
+        const len = cp > 0xffff ? 2 : 1;
+        const width = foldText(text.slice(i, i + len)).length;
+        if (width > 0 && folded >= target) return i;
+        folded += width;
+        i += len;
+    }
+    return text.length;
+}
+
 export function listNotes({ notes, warnings }, { words, project, session, folder }) {
     const matches = [];
     for (const note of notes) {
@@ -33,9 +48,21 @@ export function listNotes({ notes, warnings }, { words, project, session, folder
         const folded = words.length ? foldText(text) : "";
         const title = words.length ? foldText(item.title) : "";
         if (!words.every(word => folded.includes(word) || title.includes(word))) continue;
-        const match = words.length ? Math.max(0, folded.indexOf(words[0])) : 0;
-        const start = Math.max(0, match - 40);
-        const snippet = ((start ? "..." : "") + text.slice(start, start + 180) + (text.length > start + 180 ? "..." : ""))
+        let match = -1;
+        for (const word of words) {
+            match = folded.indexOf(word);
+            if (match >= 0) break;
+        }
+        const start = match > 40 ? foldedOffset(text, match - 40) : 0;
+        let end = Math.min(text.length, start + 180);
+        if (end < text.length && text.charCodeAt(end) >= 0xdc00 && text.charCodeAt(end) <= 0xdfff) end++;
+        while (end < text.length) {
+            const cp = text.codePointAt(end);
+            const len = cp > 0xffff ? 2 : 1;
+            if (!/\p{M}/u.test(text.slice(end, end + len))) break;
+            end += len;
+        }
+        const snippet = ((start ? "..." : "") + text.slice(start, end) + (text.length > end ? "..." : ""))
             .replace(/\s+([.,;:!?)\]])/g, "$1");
         matches.push({ ...item, snippet, titleMatch: words.every(word => title.includes(word)) });
     }
