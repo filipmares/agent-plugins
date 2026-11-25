@@ -799,5 +799,94 @@
         "sample": 1
       }
     ]
+  },
+  {
+    "id": "45683117717:1",
+    "date": "2026-11-25T19:21:09.906Z",
+    "commit": "efa0868caf2a71c9793e5ccc851b4eef3c0edecc",
+    "url": "https://github.com/filipmares/agent-plugins/actions/runs/45683117717",
+    "runnerImage": "win22 20261116.370.1",
+    "benchmarkVersion": "3c981a620d07e0efefe30cc197f14e51084eebaa",
+    "results": [
+      {
+        "notes": 1000,
+        "status": "complete",
+        "exit": 0,
+        "metrics": {
+          "restored-note": {
+            "application-to-usable": {
+              "median": 4292.187700000002,
+              "p90": 6911.8896
+            },
+            "initial-scan": {
+              "median": 1458.7606000000087,
+              "p90": 1542.0538000000015
+            },
+            "open-note": {
+              "median": 1316.600000000035,
+              "p90": 1992.1000000000058
+            },
+            "search": {
+              "median": 1354.5999999999767,
+              "p90": 1956.5
+            },
+            "warm-folder": {
+              "median": 1955.9000000000233,
+              "p90": 2009.0999999999767
+            },
+            "warm-all": {
+              "median": 731.3000000000175,
+              "p90": 915.8999999999942
+            }
+          },
+          "list-only": {
+            "application-to-usable": {
+              "median": 2643.693900000013,
+              "p90": 2827.438200000004
+            },
+            "initial-scan": {
+              "median": 1498.9890000000014,
+              "p90": 1576.5013999999937
+            },
+            "open-note": {
+              "median": 2002.2000000000116,
+              "p90": 2035.9000000000233
+            },
+            "search": {
+              "median": 868.7999999999884,
+              "p90": 1993.2999999999884
+            },
+            "warm-folder": {
+              "median": 701.9000000000233,
+              "p90": 1922.600000000035
+            },
+            "warm-all": {
+              "median": 724.8999999999651,
+              "p90": 750.9000000000233
+            }
+          }
+        },
+        "samples": 7,
+        "browserVersion": "Edg/157.0.4341.60",
+        "runtime": "Bun 1.4.4",
+        "os": "win32 10.0.20348 x64",
+        "cpu": "AMD EPYC 9V74 80-Core Processor                ",
+        "cpuThrottle": 1
+      },
+      {
+        "notes": 10000,
+        "status": "failed",
+        "exit": 1,
+        "metrics": {},
+        "samples": 7,
+        "browserVersion": "",
+        "runtime": "Bun 1.4.4",
+        "os": "win32 10.0.20348 x64",
+        "cpu": "AMD EPYC 9V74 80-Core Processor                ",
+        "cpuThrottle": 1,
+        "scenario": "restored-note",
+        "sample": 1
+      }
+    ]
   }
 ]
